@@ -12,7 +12,7 @@ publishing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Optional
 import logging
 import datetime
 import cv2  # type: ignore
@@ -59,6 +59,7 @@ class Pipeline:
         detector: YoloDetector,
         tracker: SimpleTracker,
         callback: Callable[[List[DetectedObject]], None],
+        stop_check: Optional[Callable[[], bool]] = None,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.source = source
@@ -66,6 +67,7 @@ class Pipeline:
         self.detector = detector
         self.tracker = tracker
         self.callback = callback
+        self.stop_check = stop_check
 
     def run(self) -> None:
         """
@@ -81,6 +83,9 @@ class Pipeline:
             return
         try:
             while True:
+                if self.stop_check and self.stop_check():
+                    self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
+                    break
                 ret, frame = cap.read()
                 if not ret or frame is None:
                     self.logger.info("End of stream for camera %s", self.camera_id)

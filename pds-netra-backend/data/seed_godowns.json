@@ -1,0 +1,12 @@
+[
+  {
+    "id": "GDN_001",
+    "name": "Surat Central Godown",
+    "district": "Surat",
+    "code": "SRT-001",
+    "cameras": [
+      { "id": "CAM_GATE_1", "label": "Gate 1", "role": "GATE" },
+      { "id": "CAM_AISLE_3", "label": "Aisle 3", "role": "AISLE" }
+    ]
+  }
+]

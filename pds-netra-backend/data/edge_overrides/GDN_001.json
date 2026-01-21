@@ -1,0 +1,11 @@
+{
+  "mode": "test",
+  "godown_id": "GDN_001",
+  "camera_overrides": {
+    "CAM_GATE_1": {
+      "source_type": "file",
+      "path": "/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/uploads/GDN_001/eeb232e1bfa7491197e2ef36d9f4b356/CAM_GATE_1.mp4"
+    }
+  },
+  "active_run_id": "eeb232e1bfa7491197e2ef36d9f4b356"
+}

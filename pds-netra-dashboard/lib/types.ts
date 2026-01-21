@@ -2,6 +2,7 @@ export type UserRole = 'STATE_ADMIN' | 'DISTRICT_OFFICER' | 'GODOWN_MANAGER';
 
 export type Severity = 'info' | 'warning' | 'critical';
 export type AlertStatus = 'OPEN' | 'CLOSED';
+export type TestRunStatus = 'UPLOADED' | 'ACTIVE' | 'DEACTIVATED';
 
 export interface LoginResponse {
   access_token: string;
@@ -122,6 +123,10 @@ export interface HealthSummary {
     last_frame_utc?: string | null;
     last_tamper_reason?: string | null;
   }>;
+  mqtt_consumer?: {
+    enabled: boolean;
+    connected: boolean;
+  };
 }
 
 export interface GodownHealth {
@@ -154,3 +159,22 @@ export interface OverviewData {
   };
   godowns: GodownListItem[];
 }
+
+export interface TestRunItem {
+  run_id: string;
+  godown_id: string;
+  camera_id: string;
+  zone_id?: string | null;
+  run_name?: string | null;
+  status: TestRunStatus;
+  created_at?: string | null;
+  updated_at?: string | null;
+  activated_at?: string | null;
+  deactivated_at?: string | null;
+  saved_path?: string | null;
+  config_path?: string | null;
+  override_path?: string | null;
+  events_count?: number | null;
+}
+
+export interface TestRunDetail extends TestRunItem {}

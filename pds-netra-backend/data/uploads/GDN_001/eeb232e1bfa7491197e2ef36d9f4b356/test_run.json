@@ -1,0 +1,14 @@
+{
+  "run_id": "eeb232e1bfa7491197e2ef36d9f4b356",
+  "godown_id": "GDN_001",
+  "camera_id": "CAM_GATE_1",
+  "zone_id": null,
+  "run_name": null,
+  "status": "ACTIVE",
+  "created_at": "2026-01-21T10:08:52Z",
+  "updated_at": "2026-01-21T10:08:54Z",
+  "saved_path": "/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/uploads/GDN_001/eeb232e1bfa7491197e2ef36d9f4b356/CAM_GATE_1.mp4",
+  "config_path": "/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/uploads/GDN_001/eeb232e1bfa7491197e2ef36d9f4b356/test_run_config.json",
+  "override_path": "/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/edge_overrides/GDN_001.json",
+  "activated_at": "2026-01-21T10:08:54Z"
+}

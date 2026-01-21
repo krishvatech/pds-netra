@@ -55,6 +55,12 @@ class MQTTClient:
 
     def on_disconnect(self, client: mqtt.Client, userdata, rc) -> None:  # type: ignore
         self.logger.warning("MQTT disconnected with return code %s", rc)
+        if rc == 7:
+            self.logger.warning(
+                "MQTT connection refused. Check that the broker is running at %s:%s",
+                self.settings.mqtt_broker_host,
+                self.settings.mqtt_broker_port,
+            )
         self._connected.clear()
         # Attempt reconnection in background thread
         if not self._stop_flag.is_set():

@@ -9,11 +9,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ...core.db import get_db
+from ...core.config import settings
 from ...models.godown import Godown, Camera
 from ...models.event import Event
 
@@ -41,7 +42,7 @@ def _event_to_item(event: Event) -> dict:
 
 
 @router.get("/summary")
-def health_summary(db: Session = Depends(get_db)) -> dict:
+def health_summary(request: Request, db: Session = Depends(get_db)) -> dict:
     # Recent health-related events (last 24h)
     since = datetime.utcnow() - timedelta(hours=24)
     recent_events = (
@@ -103,12 +104,31 @@ def health_summary(db: Session = Depends(get_db)) -> dict:
             }
         )
 
+    mqtt_status = {"enabled": False, "connected": False}
+    consumer = getattr(request.app.state, "mqtt_consumer", None)
+    if consumer is not None:
+        mqtt_status = {"enabled": True, "connected": consumer.is_connected()}
+
     return {
         "timestamp_utc": datetime.utcnow().isoformat() + "Z",
         "godowns_with_issues": godowns_with_issues,
         "cameras_offline": offline_cameras,
         "recent_health_events": [_event_to_item(e) for e in recent_events],
         "recent_camera_status": recent_status,
+        "mqtt_consumer": mqtt_status,
+    }
+
+
+@router.get("/mqtt")
+def mqtt_health(request: Request) -> dict:
+    consumer = getattr(request.app.state, "mqtt_consumer", None)
+    if consumer is None:
+        return {"enabled": False, "connected": False, "host": settings.mqtt_broker_host, "port": settings.mqtt_broker_port}
+    return {
+        "enabled": True,
+        "connected": consumer.is_connected(),
+        "host": settings.mqtt_broker_host,
+        "port": settings.mqtt_broker_port,
     }
 
 

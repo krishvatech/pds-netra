@@ -13,7 +13,7 @@ import datetime
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable, Any
 
 from zoneinfo import ZoneInfo
 import math
@@ -171,6 +171,8 @@ class RulesEvaluator:
         objects: List[DetectedObject],
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
     ) -> None:
         """
         Evaluate all applicable rules for a batch of detected objects.
@@ -189,6 +191,10 @@ class RulesEvaluator:
             Current time in UTC (naive or aware with UTC tz).
         mqtt_client: MQTTClient
             Client used to publish events.
+        frame: Any
+            Optional frame used for snapshot capture.
+        snapshotter: Optional[Callable]
+            Optional snapshot writer returning image URL/path.
         """
         # Ensure we have a timezone-aware UTC datetime
         if now_utc.tzinfo is None:
@@ -208,16 +214,17 @@ class RulesEvaluator:
                     if isinstance(rule, (UnauthPersonAfterHoursRule, NoPersonDuringRule)):
                         if self._evaluate_time_rules(rule, now_local_time):
                             severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
+                            event_id = str(uuid.uuid4())
                             event = EventModel(
                                 godown_id=self.godown_id,
                                 camera_id=self.camera_id,
-                                event_id=str(uuid.uuid4()),
+                                event_id=event_id,
                                 event_type="UNAUTH_PERSON",
                                 severity=severity,
                                 timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                                 bbox=obj.bbox,
                                 track_id=obj.track_id,
-                                image_url=None,
+                                image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
                                 clip_url=None,
                                 meta=MetaModel(
                                     zone_id=zone_id,
@@ -230,7 +237,7 @@ class RulesEvaluator:
                 # Loitering rules
                 for rule in self.rules_by_zone.get(zone_id, []):
                     if isinstance(rule, LoiteringRule):
-                        self._process_loitering(rule, obj, zone_id, now_utc, mqtt_client)
+                        self._process_loitering(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
                 continue  # person handled
 
             # Handle animal intrusion
@@ -239,13 +246,13 @@ class RulesEvaluator:
                     continue
                 for rule in self.rules_by_zone.get(zone_id, []):
                     if isinstance(rule, AnimalForbiddenRule):
-                        self._process_animal(rule, obj, zone_id, now_utc, mqtt_client)
+                        self._process_animal(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
                 continue
 
             # Handle bag movement
             if cls in BAG_CLASSES:
                 # zone_id may be None when bag is outside defined zones
-                self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client)
+                self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client, frame, snapshotter)
                 continue
 
             # Other classes are ignored
@@ -263,6 +270,8 @@ class RulesEvaluator:
         zone_id: str,
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
     ) -> None:
         """
         Update tracking history for loitering and publish an event if the
@@ -285,16 +294,17 @@ class RulesEvaluator:
             dwell_seconds = (entry.last_seen - entry.first_seen).total_seconds()
             if dwell_seconds >= rule.threshold_seconds:
                 # Publish loitering event
+                event_id = str(uuid.uuid4())
                 event = EventModel(
                     godown_id=self.godown_id,
                     camera_id=self.camera_id,
-                    event_id=str(uuid.uuid4()),
+                    event_id=event_id,
                     event_type="LOITERING",
                     severity="warning",
                     timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                     bbox=obj.bbox,
                     track_id=obj.track_id,
-                    image_url=None,
+                    image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
                     clip_url=None,
                     meta=MetaModel(
                         zone_id=zone_id,
@@ -351,6 +361,8 @@ class RulesEvaluator:
         zone_id: str,
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
     ) -> None:
         """
         Handle animal intrusion events. An event is published the first time a
@@ -376,16 +388,17 @@ class RulesEvaluator:
             # Suppress duplicate alerts for the same track in the same zone
             return
         # Publish animal intrusion event
+        event_id = str(uuid.uuid4())
         event = EventModel(
             godown_id=self.godown_id,
             camera_id=self.camera_id,
-            event_id=str(uuid.uuid4()),
+            event_id=event_id,
             event_type="ANIMAL_INTRUSION",
             severity="warning",
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
             track_id=obj.track_id,
-            image_url=None,
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
             clip_url=None,
             meta=MetaModel(
                 zone_id=zone_id,
@@ -421,6 +434,8 @@ class RulesEvaluator:
         now_utc: datetime.datetime,
         now_local_time: datetime.time,
         mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
     ) -> None:
         """
         Handle bag movement logic for monitored zones.
@@ -480,16 +495,17 @@ class RulesEvaluator:
                         # Movement must exceed a basic threshold to avoid noise
                         # Use a default of 50 pixels
                         if zone_changed or distance_moved >= 50:
+                            event_id = str(uuid.uuid4())
                             event = EventModel(
                                 godown_id=self.godown_id,
                                 camera_id=self.camera_id,
-                                event_id=str(uuid.uuid4()),
+                                event_id=event_id,
                                 event_type="BAG_MOVEMENT",
                                 severity="warning",
                                 timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                                 bbox=obj.bbox,
                                 track_id=obj.track_id,
-                                image_url=None,
+                                image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
                                 clip_url=None,
                                 meta=MetaModel(
                                     zone_id=zone_id or (info.last_zone_id or ""),
@@ -507,16 +523,17 @@ class RulesEvaluator:
                     # Generic movement monitoring: check threshold distance
                     threshold = getattr(rule, 'threshold_distance', 50)
                     if zone_changed or distance_moved >= threshold:
+                        event_id = str(uuid.uuid4())
                         event = EventModel(
                             godown_id=self.godown_id,
                             camera_id=self.camera_id,
-                            event_id=str(uuid.uuid4()),
+                            event_id=event_id,
                             event_type="BAG_MOVEMENT",
                             severity="warning",
                             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                             bbox=obj.bbox,
                             track_id=obj.track_id,
-                            image_url=None,
+                            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
                             clip_url=None,
                             meta=MetaModel(
                                 zone_id=zone_id or (info.last_zone_id or ""),
@@ -534,3 +551,17 @@ class RulesEvaluator:
         # Update the bag state for next iteration
         info.last_position = current_pos
         info.last_zone_id = zone_id
+
+    @staticmethod
+    def _snapshot(
+        frame: Any,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]],
+        event_id: str,
+        now_utc: datetime.datetime,
+    ) -> Optional[str]:
+        if frame is None or snapshotter is None:
+            return None
+        try:
+            return snapshotter(frame, event_id, now_utc)
+        except Exception:
+            return None

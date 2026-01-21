@@ -98,6 +98,20 @@ class Scheduler:
                 # Determine if camera is considered online based on last frame timestamp
                 online = False
                 last_frame_iso: Optional[str] = None
+                if state.suppress_offline_events:
+                    if state.last_frame_utc is not None:
+                        last_frame_iso = state.last_frame_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                    online = True
+                    online_cameras += 1
+                    camera_status_list.append(
+                        {
+                            "camera_id": cam_id,
+                            "online": True,
+                            "last_frame_utc": last_frame_iso,
+                            "last_tamper_reason": state.last_tamper_reason,
+                        }
+                    )
+                    continue
                 if state.last_frame_utc is not None:
                     last_frame_iso = state.last_frame_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
                     time_since = (now_dt - state.last_frame_utc).total_seconds()

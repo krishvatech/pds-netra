@@ -59,7 +59,7 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         track_id=event_in.track_id,
         image_url=event_in.image_url,
         clip_url=event_in.clip_url,
-        meta=event_in.meta.dict(),
+        meta=event_in.meta.model_dump(),
     )
     db.add(event)
     db.commit()

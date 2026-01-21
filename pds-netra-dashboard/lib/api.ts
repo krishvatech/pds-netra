@@ -9,7 +9,9 @@ import type {
   LoginResponse,
   OverviewData,
   Paginated,
-  Severity
+  Severity,
+  TestRunDetail,
+  TestRunItem
 } from './types';
 import { getToken } from './auth';
 
@@ -40,6 +42,26 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const resp = await fetch(url, {
     ...init,
+    headers,
+    cache: 'no-store'
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`API ${resp.status}: ${text || resp.statusText}`);
+  }
+
+  return (await resp.json()) as T;
+}
+
+async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+  const token = typeof window !== 'undefined' ? getToken() : null;
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    body: form,
     headers,
     cache: 'no-store'
   });
@@ -118,4 +140,24 @@ export async function getGodownHealth(godownId: string): Promise<GodownHealth> {
 
 export async function getOverviewData(): Promise<OverviewData> {
   return apiFetch('/api/v1/overview');
+}
+
+export async function createTestRun(form: FormData): Promise<TestRunItem> {
+  return apiFetchForm<TestRunItem>('/api/v1/test-runs', form);
+}
+
+export async function getTestRuns(): Promise<TestRunItem[]> {
+  return apiFetch('/api/v1/test-runs');
+}
+
+export async function getTestRunDetail(runId: string): Promise<TestRunDetail> {
+  return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}`);
+}
+
+export async function activateTestRun(runId: string): Promise<{ run: TestRunItem; status: string; override_path: string }> {
+  return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}/activate`, { method: 'POST' });
+}
+
+export async function deactivateTestRun(runId: string): Promise<{ run: TestRunItem; status: string; override_path: string }> {
+  return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}/deactivate`, { method: 'POST' });
 }

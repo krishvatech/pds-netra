@@ -9,7 +9,8 @@ const nav = [
   { href: '/dashboard/overview', label: 'Overview', icon: OverviewIcon },
   { href: '/dashboard/godowns', label: 'Godowns', icon: WarehouseIcon },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertIcon },
-  { href: '/dashboard/health', label: 'Health', icon: HeartbeatIcon }
+  { href: '/dashboard/health', label: 'Health', icon: HeartbeatIcon },
+  { href: '/dashboard/test-runs', label: 'Test Runs', icon: TestRunIcon }
 ];
 
 function OverviewIcon({ active }: { active: boolean }) {
@@ -89,6 +90,37 @@ function HeartbeatIcon({ active }: { active: boolean }) {
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TestRunIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 4H14L18 8V20H6V4Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 4V8H18"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 13H16"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 17H14"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
       />
     </svg>
   );

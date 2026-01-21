@@ -9,7 +9,7 @@ via the REST API.
 from __future__ import annotations
 
 from typing import List, Optional, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 
@@ -52,5 +52,4 @@ class EventOut(BaseModel):
     clip_url: Optional[str]
     meta: Dict
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

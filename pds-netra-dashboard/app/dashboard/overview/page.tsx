@@ -57,10 +57,10 @@ export default function OverviewPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-3xl font-semibold font-display tracking-tight">
+          <div className="text-3xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
             Statewide Command View
           </div>
-          <div className="text-sm text-slate-600">
+          <div className="text-sm text-slate-300">
             Live telemetry, alert pressure, and godown readiness at a glance.
           </div>
         </div>

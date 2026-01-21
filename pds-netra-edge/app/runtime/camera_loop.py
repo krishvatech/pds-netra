@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import threading
 import logging
+import os
+from pathlib import Path
 
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.yolo_detector import YoloDetector
 from ..cv.tracker import SimpleTracker
 from ..events.mqtt_client import MQTTClient
-from ..config import Settings, HealthConfig
 from ..rules.loader import load_rules, AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule
 from ..rules.evaluator import RulesEvaluator
 from ..cv.anpr import AnprProcessor, PlateDetector
@@ -26,6 +27,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple
 from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig
 from ..cv.face_id import FaceRecognitionProcessor, load_known_faces
+from ..overrides import EdgeOverrideManager
+from ..snapshots import default_snapshot_writer
 
 
 @dataclass
@@ -42,6 +45,8 @@ class CameraHealthState:
     last_tamper_time: Optional[datetime.datetime] = None
     # Underlying state used by tamper analysis heuristics
     tamper_state: CameraTamperState = field(default_factory=CameraTamperState)
+    # Suppress offline events after test run completion
+    suppress_offline_events: bool = False
 
 
 def start_camera_loops(
@@ -70,14 +75,29 @@ def start_camera_loops(
     threads: list[threading.Thread] = []
     # Dictionary storing mutable health state per camera
     camera_states: Dict[str, CameraHealthState] = {}
+    override_path = os.getenv("EDGE_OVERRIDE_PATH")
+    override_manager = EdgeOverrideManager(override_path, refresh_interval=5)
+    if override_path:
+        logger.info("Edge override path: %s", override_path)
     # Load all rules once and convert into typed objects
     all_rules = load_rules(settings)
     for camera in settings.cameras:
-        source = camera.rtsp_url
+        default_source = camera.rtsp_url
         if camera.test_video:
-            # Use test video if provided, useful for Mac development
-            source = camera.test_video
-        logger.info("Creating pipeline for camera %s (source=%s)", camera.id, source)
+            test_path = Path(camera.test_video).expanduser()
+            if test_path.is_absolute():
+                resolved_test = test_path
+            else:
+                resolved_test = (Path.cwd() / test_path).resolve()
+            if resolved_test.exists():
+                # Use test video if provided and available
+                default_source = str(resolved_test)
+            else:
+                logger.warning(
+                    "Test video not found for camera %s: %s (falling back to rtsp)",
+                    camera.id,
+                    resolved_test,
+                )
         try:
             detector = YoloDetector(device=device)
         except Exception as exc:
@@ -152,101 +172,210 @@ def start_camera_loops(
                     logger.error("Failed to initialize face recognition for camera %s: %s", camera.id, exc)
                     face_processor = None
 
-        def callback(
-            objects: list[DetectedObject],
-            frame=None,
-            *,
-            evaluator=evaluator,
-            anpr_processor=anpr_processor,
-            face_processor=face_processor,
-            health_cfg=health_cfg,
-            state=state,
+        snapshot_writer = default_snapshot_writer()
+
+        def _is_file_source(source_val: str) -> bool:
+            return not (
+                source_val.startswith("rtsp://")
+                or source_val.startswith("http://")
+                or source_val.startswith("https://")
+            )
+
+        def camera_runner(
+            camera_obj,
+            default_source_local: str,
+            evaluator_local: RulesEvaluator,
+            anpr_processor_local: Optional[AnprProcessor],
+            face_processor_local: Optional[FaceRecognitionProcessor],
+            health_cfg_local: HealthConfig,
+            state_local: CameraHealthState,
+            detector_local: YoloDetector,
+            tracker_local: SimpleTracker,
+            snapshot_writer_local,
         ) -> None:
-            """Composite callback handling rule evaluation, ANPR and tamper detection."""
-            now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-            # Update last frame time and mark camera online
-            state.last_frame_utc = now
-            state.is_online = True
-            # Perform tamper analysis if a frame is available
-            if frame is not None:
-                try:
-                    tamper_candidates = analyze_frame_for_tamper(
-                        camera_id=camera.id,
-                        frame=frame,
-                        now_utc=now,
-                        config=health_cfg,
-                        state=state.tamper_state,
-                    )
-                    # Deduplicate and publish tamper events
-                    for cand in tamper_candidates:
-                        # Determine cooldown: avoid emitting repeated events of same type too often
-                        cooldown_sec = 30
-                        should_emit = False
-                        if state.last_tamper_reason != cand.reason:
-                            should_emit = True
-                        else:
-                            # If same reason, ensure cooldown expired
-                            if state.last_tamper_time is None:
+            def callback(
+                objects: list[DetectedObject],
+                frame=None,
+            ) -> None:
+                """Composite callback handling rule evaluation, ANPR and tamper detection."""
+                now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+                # Update last frame time and mark camera online
+                state_local.last_frame_utc = now
+                state_local.is_online = True
+                # Perform tamper analysis if a frame is available
+                if frame is not None:
+                    try:
+                        tamper_candidates = analyze_frame_for_tamper(
+                            camera_id=camera_obj.id,
+                            frame=frame,
+                            now_utc=now,
+                            config=health_cfg_local,
+                            state=state_local.tamper_state,
+                        )
+                        # Deduplicate and publish tamper events
+                        for cand in tamper_candidates:
+                            # Determine cooldown: avoid emitting repeated events of same type too often
+                            cooldown_sec = 30
+                            should_emit = False
+                            if state_local.last_tamper_reason != cand.reason:
                                 should_emit = True
                             else:
-                                elapsed = (now - state.last_tamper_time).total_seconds()
-                                if elapsed > cooldown_sec:
+                                # If same reason, ensure cooldown expired
+                                if state_local.last_tamper_time is None:
                                     should_emit = True
-                        if should_emit:
-                            # Determine event_type and severity
-                            if cand.reason == "LOW_LIGHT":
-                                event_type = "LOW_LIGHT"
-                            else:
-                                event_type = "CAMERA_TAMPERED"
-                            severity = "warning"
-                            # Construct event model
-                            from ..models.event import EventModel, MetaModel  # local import to avoid circular
-                            event = EventModel(
-                                godown_id=settings.godown_id,
-                                camera_id=camera.id,
-                                event_id=str(uuid.uuid4()),
-                                event_type=event_type,
-                                severity=severity,
-                                timestamp_utc=now.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-                                bbox=[],  # tamper events do not include bounding boxes
-                                track_id=-1,
-                                image_url=None,
-                                clip_url=None,
-                                meta=MetaModel(
-                                    zone_id="",  # zone not applicable
-                                    rule_id="CAM_TAMPER_HEURISTIC",
-                                    confidence=cand.confidence,
-                                    reason=cand.reason,
-                                    extra={},
-                                ),
-                            )
-                            mqtt_client.publish_event(event)
-                            # Update state
-                            state.last_tamper_reason = cand.reason
-                            state.last_tamper_time = now
-                except Exception as exc:
-                    logging.getLogger("camera_loop").exception(
-                        "Tamper analysis failed for camera %s: %s", camera.id, exc
-                    )
-            # Evaluate detections for this camera using the shared evaluator
-            try:
-                evaluator.process_detections(objects, now, mqtt_client)
-            except Exception as exc:
-                logging.getLogger("camera_loop").exception(
-                    "Rule evaluation failed for camera %s: %s", camera.id, exc
-                )
-            # Process ANPR if applicable and a frame is provided
-            if anpr_processor is not None and frame is not None:
+                                else:
+                                    elapsed = (now - state_local.last_tamper_time).total_seconds()
+                                    if elapsed > cooldown_sec:
+                                        should_emit = True
+                            if should_emit:
+                                # Determine event_type and severity
+                                if cand.reason == "LOW_LIGHT":
+                                    event_type = "LOW_LIGHT"
+                                else:
+                                    event_type = "CAMERA_TAMPERED"
+                                severity = "warning"
+                                # Construct event model
+                                from ..models.event import EventModel, MetaModel  # local import to avoid circular
+                                event = EventModel(
+                                    godown_id=settings.godown_id,
+                                    camera_id=camera_obj.id,
+                                    event_id=str(uuid.uuid4()),
+                                    event_type=event_type,
+                                    severity=severity,
+                                    timestamp_utc=now.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                                    bbox=[],  # tamper events do not include bounding boxes
+                                    track_id=-1,
+                                    image_url=None,
+                                    clip_url=None,
+                                    meta=MetaModel(
+                                        zone_id="",  # zone not applicable
+                                        rule_id="CAM_TAMPER_HEURISTIC",
+                                        confidence=cand.confidence,
+                                        reason=cand.reason,
+                                        extra={},
+                                    ),
+                                )
+                                mqtt_client.publish_event(event)
+                                # Update state
+                                state_local.last_tamper_reason = cand.reason
+                                state_local.last_tamper_time = now
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Tamper analysis failed for camera %s: %s", camera_obj.id, exc
+                        )
+                # Evaluate detections for this camera using the shared evaluator
                 try:
-                    anpr_processor.process_frame(frame, now, mqtt_client)
+                    def snapshotter(img, event_id: str, event_time: datetime.datetime):
+                        if snapshot_writer_local is None:
+                            return None
+                        timestamp_utc = event_time.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                        return snapshot_writer_local.save(
+                            img,
+                            godown_id=settings.godown_id,
+                            camera_id=camera_obj.id,
+                            event_id=event_id,
+                            timestamp_utc=timestamp_utc,
+                        )
+
+                    evaluator_local.process_detections(
+                        objects,
+                        now,
+                        mqtt_client,
+                        frame=frame,
+                        snapshotter=snapshotter,
+                    )
                 except Exception as exc:
                     logging.getLogger("camera_loop").exception(
-                        "ANPR processing failed for camera %s: %s", camera.id, exc
+                        "Rule evaluation failed for camera %s: %s", camera_obj.id, exc
                     )
-            if face_processor is not None and frame is not None:
-                face_processor.process_frame(frame, now, mqtt_client)
-        pipeline = Pipeline(source, camera.id, detector, tracker, callback)
-        t = threading.Thread(target=pipeline.run, name=f"Pipeline-{camera.id}", daemon=True)
+                # Process ANPR if applicable and a frame is provided
+                if anpr_processor_local is not None and frame is not None:
+                    try:
+                        anpr_processor_local.process_frame(frame, now, mqtt_client)
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "ANPR processing failed for camera %s: %s", camera_obj.id, exc
+                        )
+                if face_processor_local is not None and frame is not None:
+                    face_processor_local.process_frame(frame, now, mqtt_client)
+
+            def _resolve_source_local() -> tuple[str, str, Optional[str]]:
+                return override_manager.get_camera_source(camera_obj.id, default_source_local)
+
+            current_source, current_mode, current_run_id = _resolve_source_local()
+            while True:
+                state_local.suppress_offline_events = False
+                if _is_file_source(current_source):
+                    resolved = Path(current_source).expanduser().resolve()
+                    if not resolved.exists():
+                        logger.error(
+                            "Video source not found for camera %s: %s",
+                            camera_obj.id,
+                            resolved,
+                        )
+                        break
+                    current_source = str(resolved)
+                logger.info(
+                    "Creating pipeline for camera %s (mode=%s, source=%s)",
+                    camera_obj.id,
+                    current_mode,
+                    current_source,
+                )
+                next_source: dict[str, Optional[str]] = {"value": None}
+                next_mode: dict[str, Optional[str]] = {"value": None}
+                next_run_id: dict[str, Optional[str]] = {"value": None}
+
+                def should_stop() -> bool:
+                    desired_source, desired_mode, desired_run_id = _resolve_source_local()
+                    if desired_source != current_source:
+                        next_source["value"] = desired_source
+                        next_mode["value"] = desired_mode
+                        next_run_id["value"] = desired_run_id
+                        return True
+                    return False
+
+                pipeline = Pipeline(
+                    current_source,
+                    camera_obj.id,
+                    detector_local,
+                    tracker_local,
+                    callback,
+                    stop_check=should_stop,
+                )
+                pipeline.run()
+
+                if next_source["value"]:
+                    current_source = next_source["value"]
+                    current_mode = next_mode["value"] or "live"
+                    current_run_id = next_run_id["value"]
+                    continue
+
+                if current_mode == "test":
+                    state_local.suppress_offline_events = True
+                    logger.info(
+                        "Test run completed for camera %s (run_id=%s)",
+                        camera_obj.id,
+                        current_run_id,
+                    )
+                break
+
+        t = threading.Thread(
+            target=camera_runner,
+            args=(
+                camera,
+                default_source,
+                evaluator,
+                anpr_processor,
+                face_processor,
+                health_cfg,
+                state,
+                detector,
+                tracker,
+                snapshot_writer,
+            ),
+            name=f"Pipeline-{camera.id}",
+            daemon=True,
+        )
         t.start()
         threads.append(t)
     # Return threads and camera health state mapping

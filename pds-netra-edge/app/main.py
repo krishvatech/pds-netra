@@ -23,6 +23,7 @@ from .logging_config import setup_logging
 from .events.mqtt_client import MQTTClient
 from .runtime.camera_loop import start_camera_loops
 from .runtime.scheduler import Scheduler
+from .preflight import main as preflight_main
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -46,6 +47,16 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         default="INFO",
         help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Run preflight checks and exit",
+    )
+    parser.add_argument(
+        "--preflight-on-start",
+        action="store_true",
+        help="Run preflight checks before starting the edge node",
+    )
     return parser.parse_args(argv)
 
 
@@ -54,6 +65,12 @@ def main(argv: List[str] | None = None) -> int:
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
     setup_logging(level=log_level)
     logger = logging.getLogger("main")
+    if args.preflight:
+        return preflight_main(["--config", args.config])
+    if args.preflight_on_start:
+        preflight_rc = preflight_main(["--config", args.config])
+        if preflight_rc != 0:
+            return preflight_rc
     try:
         settings: Settings = load_settings(args.config)
     except Exception as exc:

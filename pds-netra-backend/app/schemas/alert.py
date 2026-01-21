@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AlertOut(BaseModel):
@@ -26,5 +26,4 @@ class AlertOut(BaseModel):
     count_events: int
     linked_event_ids: List[int]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
