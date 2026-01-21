@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "pds-netra-backend"
+version = "0.1.0"
+description = "PDS Netra Central Backend"
+authors = ["PDS Team"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.104.0"
+uvicorn = "^0.23.0"
+sqlalchemy = "^2.0.23"
+psycopg2-binary = "^2.9.6"
+pydantic = "^1.10.12"
+pydantic-settings = "^2.2.1"
+python-dotenv = "^1.0.0"
+alembic = "^1.12.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
