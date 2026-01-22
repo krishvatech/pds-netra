@@ -17,7 +17,6 @@ import json
 
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.yolo_detector import YoloDetector
-from ..cv.tracker import SimpleTracker
 from ..events.mqtt_client import MQTTClient
 from ..rules.loader import load_rules, AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule
 from ..rules.evaluator import RulesEvaluator
@@ -28,7 +27,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple
 from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig
-from ..cv.face_id import FaceRecognitionProcessor, load_known_faces
+from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces
 from ..overrides import EdgeOverrideManager
 from ..snapshots import default_snapshot_writer
 from ..annotated_video import AnnotatedVideoWriter, LiveFrameWriter
@@ -103,11 +102,16 @@ def start_camera_loops(
                 )
         try:
             model_path = os.getenv("EDGE_YOLO_MODEL", "best.pt")
-            detector = YoloDetector(model_name=model_path, device=device)
+            detector = YoloDetector(
+                device=device,
+                tracker_name=settings.tracking.tracker_name,
+                track_persist=settings.tracking.track_persist,
+                track_conf=settings.tracking.conf,
+                track_iou=settings.tracking.iou,
+            )
         except Exception as exc:
             logger.error("Error loading YOLO detector: %s", exc)
             continue
-        tracker = SimpleTracker()
         # Prepare rules and zone polygons for this camera
         camera_rules = [r for r in all_rules if r.camera_id == camera.id]
         zone_polygons: dict[str, list[tuple[int, int]]] = {}
@@ -212,7 +216,6 @@ def start_camera_loops(
             health_cfg_local: HealthConfig,
             state_local: CameraHealthState,
             detector_local: YoloDetector,
-            tracker_local: SimpleTracker,
             snapshot_writer_local,
             detect_classes_local: set[str],
         ) -> None:
@@ -231,8 +234,14 @@ def start_camera_loops(
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+
                 if detect_classes_local:
                     objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
+
+                # Log per-frame counts for people and face recognition results.
+                person_count = sum(1 for obj in objects if obj.class_name == "person")
+                known_faces = 0
+                unknown_faces = 0
                 # Update last frame time and mark camera online
                 state_local.last_frame_utc = now
                 state_local.is_online = True
@@ -328,6 +337,7 @@ def start_camera_loops(
                         "Rule evaluation failed for camera %s: %s", camera_obj.id, exc
                     )
                 # Process ANPR if applicable and a frame is provided
+                face_overlays: list[FaceOverlay] = []
                 if anpr_processor_local is not None and frame is not None:
                     try:
                         anpr_processor_local.process_frame(frame, now, mqtt_client)
@@ -336,7 +346,23 @@ def start_camera_loops(
                             "ANPR processing failed for camera %s: %s", camera_obj.id, exc
                         )
                 if face_processor_local is not None and frame is not None:
-                    face_processor_local.process_frame(frame, now, mqtt_client)
+                    try:
+                        face_overlays = face_processor_local.process_frame(frame, now, mqtt_client)
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Face recognition failed for camera %s: %s", camera_obj.id, exc
+                        )
+                    known_faces = sum(1 for face in face_overlays if face.status == "KNOWN")
+                    unknown_faces = sum(1 for face in face_overlays if face.status == "UNKNOWN")
+                    return {"faces": face_overlays}
+                logging.getLogger("camera_loop").info(
+                    "Frame persons=%d faces_known=%d faces_unknown=%d camera=%s mode=%s",
+                    person_count,
+                    known_faces,
+                    unknown_faces,
+                    camera_obj.id,
+                    current_state["mode"],
+                )
                 if frame is not None:
                     dets = [(o.class_name, o.confidence, o.bbox) for o in objects]
                     if annotated_writer is not None:
@@ -441,7 +467,6 @@ def start_camera_loops(
                     current_source,
                     camera_obj.id,
                     detector_local,
-                    tracker_local,
                     callback,
                     stop_check=should_stop,
                 )
@@ -511,7 +536,6 @@ def start_camera_loops(
                 health_cfg,
                 state,
                 detector,
-                tracker,
                 snapshot_writer,
                 detect_classes,
             ),

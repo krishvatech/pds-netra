@@ -122,8 +122,10 @@ class RulesEvaluator:
         self.camera_id = camera_id
         self.godown_id = godown_id
         self.rules_by_zone: Dict[str, List[BaseRule]] = {}
+        self.rule_zone_by_id: Dict[str, str] = {}
         for rule in rules:
             self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
+            self.rule_zone_by_id[rule.id] = rule.zone_id
         self.zone_polygons = zone_polygons
         # Use zoneinfo for accurate timezone handling
         try:
@@ -141,6 +143,10 @@ class RulesEvaluator:
         self.bag_state: Dict[Tuple[str, int], "BagInfo"] = {}
         # Cleanup threshold for stale bag and animal entries in seconds.
         self.bag_cleanup_threshold: int = 300
+        # Track active persons by (rule_id, track_id) and last seen by (zone_id, track_id).
+        self.person_active: set[Tuple[str, int]] = set()
+        self.person_last_seen: Dict[Tuple[str, int], datetime.datetime] = {}
+        self.person_exit_threshold_sec: int = 2
         # Instant alert controls (test mode)
         self.alert_on_person = alert_on_person
         self.person_alert_cooldown_sec = person_alert_cooldown_sec
@@ -177,6 +183,25 @@ class RulesEvaluator:
             end_t = _parse_time_string(rule.end)
             return _is_time_in_range(now_local, start_t, end_t)
         return False
+
+    def _cleanup_person_state(self, now_utc: datetime.datetime) -> None:
+        """Expire person entries after they have left the scene."""
+        stale_keys: List[Tuple[str, int]] = []
+        for key, last_seen in self.person_last_seen.items():
+            if (now_utc - last_seen).total_seconds() > self.person_exit_threshold_sec:
+                stale_keys.append(key)
+        if not stale_keys:
+            return
+        for zone_id, track_id in stale_keys:
+            self.person_last_seen.pop((zone_id, track_id), None)
+            to_remove = []
+            for rule_id, active_track_id in self.person_active:
+                if active_track_id != track_id:
+                    continue
+                if self.rule_zone_by_id.get(rule_id) == zone_id:
+                    to_remove.append((rule_id, active_track_id))
+            for key in to_remove:
+                self.person_active.discard(key)
 
     def process_detections(
         self,
@@ -267,33 +292,44 @@ class RulesEvaluator:
                         snapshotter,
                         meta_extra=meta_extra,
                     )
+                    self.logger.debug(
+                        "Person detected: track_id=%s conf=%.3f zone=%s bbox=%s",
+                        obj.track_id,
+                        obj.confidence,
+                        zone_id,
+                        obj.bbox,
+                    )
                 if zone_id is None:
                     continue
+                self.person_last_seen[(zone_id, obj.track_id)] = now_utc
                 # Unauthorized person rules
                 for rule in self.rules_by_zone.get(zone_id, []):
                     if isinstance(rule, (UnauthPersonAfterHoursRule, NoPersonDuringRule)):
                         if self._evaluate_time_rules(rule, now_local_time):
-                            severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
-                            event_id = str(uuid.uuid4())
-                            event = EventModel(
-                                godown_id=self.godown_id,
-                                camera_id=self.camera_id,
-                                event_id=event_id,
-                                event_type="UNAUTH_PERSON",
-                                severity=severity,
-                                timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-                                bbox=obj.bbox,
-                                track_id=obj.track_id,
-                                image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
-                                clip_url=None,
-                                meta=MetaModel(
-                                    zone_id=zone_id,
-                                    rule_id=rule.id,
-                                    confidence=obj.confidence,
-                                    extra={},
-                                ),
-                            )
-                            mqtt_client.publish_event(event)
+                            entry_key = (rule.id, obj.track_id)
+                            if entry_key not in self.person_active:
+                                # Emit only once per entry; track until exit threshold expires.
+                                severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
+                                event = EventModel(
+                                    godown_id=self.godown_id,
+                                    camera_id=self.camera_id,
+                                    event_id=str(uuid.uuid4()),
+                                    event_type="UNAUTH_PERSON",
+                                    severity=severity,
+                                    timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                                    bbox=obj.bbox,
+                                    track_id=obj.track_id,
+                                    image_url=None,
+                                    clip_url=None,
+                                    meta=MetaModel(
+                                        zone_id=zone_id,
+                                        rule_id=rule.id,
+                                        confidence=obj.confidence,
+                                        extra={},
+                                    ),
+                                )
+                                mqtt_client.publish_event(event)
+                                self.person_active.add(entry_key)
                 # Loitering rules
                 for rule in self.rules_by_zone.get(zone_id, []):
                     if isinstance(rule, LoiteringRule):
@@ -319,6 +355,7 @@ class RulesEvaluator:
             continue
 
         # Clean up stale state
+        self._cleanup_person_state(now_utc)
         self._cleanup_history(now_utc)
         self._cleanup_animal_alerts(now_utc)
         self._cleanup_bag_state(now_utc)

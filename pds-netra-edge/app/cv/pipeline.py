@@ -14,11 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, List, Tuple, Optional
 import logging
+import os
 import datetime
 import cv2  # type: ignore
 
 from .yolo_detector import YoloDetector
-from .tracker import SimpleTracker
 
 
 @dataclass
@@ -45,8 +45,6 @@ class Pipeline:
         Identifier for the camera.
     detector : YoloDetector
         Detector instance used to perform object detection.
-    tracker : SimpleTracker
-        Tracker instance used to assign track IDs to detections.
     callback : Callable[[List[DetectedObject]], None]
         User-supplied callback invoked on each frame with the list of
         detected objects.
@@ -57,7 +55,6 @@ class Pipeline:
         source: str,
         camera_id: str,
         detector: YoloDetector,
-        tracker: SimpleTracker,
         callback: Callable[[List[DetectedObject]], None],
         stop_check: Optional[Callable[[], bool]] = None,
     ) -> None:
@@ -65,7 +62,6 @@ class Pipeline:
         self.source = source
         self.camera_id = camera_id
         self.detector = detector
-        self.tracker = tracker
         self.callback = callback
         self.stop_check = stop_check
 
@@ -81,6 +77,9 @@ class Pipeline:
         if not cap.isOpened():
             self.logger.error("Unable to open video source: %s", self.source)
             return
+        debug_draw = os.getenv("PDS_DEBUG_DRAW", "0") == "1"
+        debug_out = os.getenv("PDS_DEBUG_VIDEO_PATH", f"logs/debug_{self.camera_id}.mp4")
+        writer = None
         try:
             while True:
                 if self.stop_check and self.stop_check():
@@ -90,10 +89,8 @@ class Pipeline:
                 if not ret or frame is None:
                     self.logger.info("End of stream for camera %s", self.camera_id)
                     break
-                # Perform detection
-                detections = self.detector.detect(frame)
-                # Assign track IDs
-                tracked = self.tracker.update(detections)
+                # Perform tracking using the detector's built-in tracker.
+                tracked = self.detector.track(frame)
                 # Convert to DetectedObject instances
                 timestamp = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
                 objects: List[DetectedObject] = []
@@ -108,15 +105,74 @@ class Pipeline:
                     )
                     objects.append(obj)
                 # Invoke callback; if callback accepts a frame argument, pass it
+                overlay_payload = None
                 try:
                     # Try passing frame via keyword. This allows callbacks that accept
                     # an optional ``frame`` parameter to receive the raw image.
-                    self.callback(objects, frame=frame)
+                    overlay_payload = self.callback(objects, frame=frame)
                 except TypeError:
                     # Fallback for callbacks that only accept the list of objects
-                    self.callback(objects)
+                    overlay_payload = self.callback(objects)
                 except Exception as exc:
                     self.logger.exception("Callback raised exception: %s", exc)
+                if debug_draw:
+                    if writer is None:
+                        fps = cap.get(cv2.CAP_PROP_FPS)
+                        if not fps or fps <= 0:
+                            fps = 15.0
+                        height, width = frame.shape[:2]
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        writer = cv2.VideoWriter(debug_out, fourcc, fps, (width, height))
+                        if not writer.isOpened():
+                            self.logger.error("Failed to open debug video writer at %s", debug_out)
+                            writer = None
+                    for track_id, (cls_name, conf, bbox) in tracked:
+                        x1, y1, x2, y2 = bbox
+                        label = f"{cls_name} {conf:.2f} id={track_id}"
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 180, 255), 2)
+                        cv2.putText(
+                            frame,
+                            label,
+                            (x1, max(10, y1 - 5)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (0, 180, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                    if isinstance(overlay_payload, dict):
+                        faces = overlay_payload.get("faces") or []
+                        for face in faces:
+                            if isinstance(face, dict):
+                                bbox = face.get("bbox")
+                                status = face.get("status")
+                                name = face.get("person_name")
+                                conf = face.get("confidence")
+                            else:
+                                bbox = getattr(face, "bbox", None)
+                                status = getattr(face, "status", None)
+                                name = getattr(face, "person_name", None)
+                                conf = getattr(face, "confidence", None)
+                            if not bbox or status is None:
+                                continue
+                            x1, y1, x2, y2 = bbox
+                            color = (0, 200, 0) if status == "KNOWN" else (0, 0, 255)
+                            label = f"{name or status} {float(conf or 0.0):.2f}"
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                            cv2.putText(
+                                frame,
+                                label,
+                                (x1, max(10, y1 - 5)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                color,
+                                2,
+                                cv2.LINE_AA,
+                            )
+                    if writer is not None:
+                        writer.write(frame)
         finally:
+            if writer is not None:
+                writer.release()
             cap.release()
             self.logger.info("Pipeline for camera %s stopped", self.camera_id)
