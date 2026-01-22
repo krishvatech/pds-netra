@@ -27,8 +27,14 @@ class Settings(BaseSettings):
     mqtt_broker_port: int = Field(default=1883, env="MQTT_BROKER_PORT")
     mqtt_username: str | None = Field(default=None, env="MQTT_USERNAME")
     mqtt_password: str | None = Field(default=None, env="MQTT_PASSWORD")
+    mqtt_protocol: str = Field(default="v311", env="MQTT_PROTOCOL")
+    auto_create_db: bool = Field(default=True, env="AUTO_CREATE_DB")
+    auto_seed_godowns: bool = Field(default=True, env="AUTO_SEED_GODOWNS")
+    auto_seed_cameras_from_edge: bool = Field(default=True, env="AUTO_SEED_CAMERAS_FROM_EDGE")
+    enable_mqtt_consumer: bool = Field(default=True, env="ENABLE_MQTT_CONSUMER")
+    edge_config_path: str | None = Field(default=None, env="EDGE_CONFIG_PATH")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

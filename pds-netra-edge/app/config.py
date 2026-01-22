@@ -191,9 +191,12 @@ def load_settings(config_path: str) -> Settings:
         except Exception:
             # Leave health_cfg as None if parsing fails
             health_cfg = None
+        cam_id = cam_dict['id']
+        rtsp_env_key = f"RTSP_URL_{cam_id}"
+        rtsp_url = os.getenv(rtsp_env_key, cam_dict['rtsp_url'])
         cameras_cfg.append(CameraConfig(
-            id=cam_dict['id'],
-            rtsp_url=cam_dict['rtsp_url'],
+            id=cam_id,
+            rtsp_url=rtsp_url,
             test_video=cam_dict.get('test_video'),
             zones=zones,
             health=health_cfg,

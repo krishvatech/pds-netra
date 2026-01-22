@@ -11,7 +11,7 @@ mqtt:
 
 cameras:
   - id: CAM_GATE_1
-    rtsp_url: "rtsp://username:password@192.168.1.10:554/stream"
+    rtsp_url: "rtsp://username:password@192.168.1.2:554/stream1"
     test_video: "./data/gate_1.mp4"
     zones:
       - id: gate_outer

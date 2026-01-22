@@ -6,7 +6,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    yaml = None  # type: ignore
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -60,4 +65,51 @@ def seed_godowns(db: Session, seed_path: Path) -> int:
             db.add(camera)
         count += 1
     db.commit()
+    return count
+
+
+def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
+    """
+    Seed cameras from the edge YAML config into the backend DB.
+
+    Returns number of cameras inserted.
+    """
+    if yaml is None or not config_path.exists():
+        return 0
+    with config_path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    godown_id = data.get("godown_id")
+    if not godown_id:
+        return 0
+    godown = db.get(Godown, godown_id)
+    if godown is None:
+        godown = Godown(id=godown_id, name=godown_id)
+        db.add(godown)
+        db.commit()
+        db.refresh(godown)
+    count = 0
+    for cam in data.get("cameras", []) or []:
+        cam_id = cam.get("id")
+        if not cam_id:
+            continue
+        existing = db.get(Camera, cam_id)
+        if existing:
+            continue
+        zones_json = None
+        if cam.get("zones") is not None:
+            try:
+                zones_json = json.dumps(cam.get("zones"))
+            except Exception:
+                zones_json = None
+        camera = Camera(
+            id=cam_id,
+            godown_id=godown_id,
+            label=cam.get("label") or cam_id,
+            role=cam.get("role"),
+            zones_json=zones_json,
+        )
+        db.add(camera)
+        count += 1
+    if count:
+        db.commit()
     return count

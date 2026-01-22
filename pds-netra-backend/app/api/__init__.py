@@ -14,6 +14,7 @@ from .v1.godowns import router as godowns_router
 from .v1.health import router as health_router
 from .v1.overview import router as overview_router
 from .v1.test_runs import router as test_runs_router
+from .v1.live import router as live_router
 
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(godowns_router)
 api_router.include_router(health_router)
 api_router.include_router(overview_router)
 api_router.include_router(test_runs_router)
+api_router.include_router(live_router)

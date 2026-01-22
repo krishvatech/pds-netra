@@ -31,7 +31,7 @@ from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig
 from ..cv.face_id import FaceRecognitionProcessor, load_known_faces
 from ..overrides import EdgeOverrideManager
 from ..snapshots import default_snapshot_writer
-from ..annotated_video import AnnotatedVideoWriter
+from ..annotated_video import AnnotatedVideoWriter, LiveFrameWriter
 
 
 @dataclass
@@ -211,7 +211,14 @@ def start_camera_loops(
             snapshot_writer_local,
         ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
+            live_writer: Optional[LiveFrameWriter] = None
             current_state = {"mode": "live", "run_id": None, "last_snapshot_ts": 0.0}
+            live_dir = os.getenv(
+                "EDGE_LIVE_ANNOTATED_DIR",
+                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "live"),
+            )
+            live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
+            live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
             def callback(
                 objects: list[DetectedObject],
                 frame=None,
@@ -322,9 +329,12 @@ def start_camera_loops(
                         )
                 if face_processor_local is not None and frame is not None:
                     face_processor_local.process_frame(frame, now, mqtt_client)
-                if annotated_writer is not None and frame is not None:
+                if frame is not None:
                     dets = [(o.class_name, o.confidence, o.bbox) for o in objects]
-                    annotated_writer.write_frame(frame, dets)
+                    if annotated_writer is not None:
+                        annotated_writer.write_frame(frame, dets)
+                    if live_writer is not None:
+                        live_writer.write_frame(frame, dets)
                 if (
                     frame is not None
                     and current_state["mode"] == "test"

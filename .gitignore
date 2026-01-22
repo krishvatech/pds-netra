@@ -44,6 +44,7 @@ pds-netra-backend/data/uploads/
 pds-netra-backend/data/snapshots/
 pds-netra-backend/data/annotated/
 pds-netra-backend/data/edge_overrides/
+pds-netra-backend/data/live/
 
 # Docker
 *.env

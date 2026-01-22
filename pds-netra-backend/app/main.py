@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .core.db import engine, SessionLocal
 from .models import Base
-from .services.seed import seed_godowns
+from .services.seed import seed_godowns, seed_cameras_from_edge_config
 from .services.mqtt_consumer import MQTTConsumer
 
 from .api import api_router
@@ -30,14 +30,17 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     media_root = Path(__file__).resolve().parents[1] / "data" / "snapshots"
     annotated_root = Path(__file__).resolve().parents[1] / "data" / "annotated"
+    live_root = Path(__file__).resolve().parents[1] / "data" / "live"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
+    app.mount("/media/live", StaticFiles(directory=live_root, check_dir=False), name="live")
     app.state.mqtt_consumer = None
     # Ensure tables exist for PoC/local use
     @app.on_event("startup")
     def _init_db() -> None:
         media_root.mkdir(parents=True, exist_ok=True)
         annotated_root.mkdir(parents=True, exist_ok=True)
+        live_root.mkdir(parents=True, exist_ok=True)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
             Base.metadata.create_all(bind=engine)
         if os.getenv("AUTO_SEED_GODOWNS", "true").lower() in {"1", "true", "yes"}:
@@ -49,6 +52,17 @@ def create_app() -> FastAPI:
             try:
                 with SessionLocal() as db:
                     seed_godowns(db, path)
+            except Exception:
+                pass
+        if os.getenv("AUTO_SEED_CAMERAS_FROM_EDGE", "true").lower() in {"1", "true", "yes"}:
+            edge_path = os.getenv("EDGE_CONFIG_PATH", "")
+            if edge_path:
+                path = Path(edge_path)
+            else:
+                path = Path(__file__).resolve().parents[3] / "pds-netra-edge" / "config" / "pds_netra_config.yaml"
+            try:
+                with SessionLocal() as db:
+                    seed_cameras_from_edge_config(db, path)
             except Exception:
                 pass
         if os.getenv("ENABLE_MQTT_CONSUMER", "true").lower() in {"1", "true", "yes"}:

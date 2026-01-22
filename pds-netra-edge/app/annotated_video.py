@@ -92,3 +92,44 @@ class AnnotatedVideoWriter:
 
     def frames_written(self) -> int:
         return self._frames_written
+
+
+class LiveFrameWriter:
+    """Writes a periodically updated annotated frame for live viewing."""
+
+    def __init__(self, latest_path: str, latest_interval: float = 0.2) -> None:
+        self.latest_path = Path(latest_path)
+        self.latest_interval = latest_interval
+        self._last_latest_ts = 0.0
+
+    def write_frame(
+        self,
+        frame,
+        detections: Sequence[Tuple[str, float, Sequence[int]]],
+    ) -> None:
+        if cv2 is None:
+            return
+        now = time.monotonic()
+        if now - self._last_latest_ts < self.latest_interval:
+            return
+        canvas = frame.copy()
+        for class_name, confidence, bbox in detections:
+            x1, y1, x2, y2 = bbox
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+            label = f"{class_name} {confidence:.2f}"
+            cv2.putText(
+                canvas,
+                label,
+                (x1, max(y1 - 6, 10)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 200, 255),
+                1,
+                cv2.LINE_AA,
+            )
+        self.latest_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            cv2.imwrite(str(self.latest_path), canvas)
+        except Exception:
+            pass
+        self._last_latest_ts = now
