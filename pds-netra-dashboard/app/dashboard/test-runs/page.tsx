@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   activateTestRun,
   createTestRun,
+  deleteTestRun,
   getGodownDetail,
   getGodowns,
   getTestRuns
@@ -135,6 +136,22 @@ export default function TestRunsPage() {
     }
   };
 
+  const handleDelete = async (runId: string) => {
+    const ok = window.confirm('Delete this test run and its files?');
+    if (!ok) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await deleteTestRun(runId);
+      setRuns((prev) => prev.filter((r) => r.run_id !== runId));
+      if (lastRun?.run_id === runId) setLastRun(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete test run');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <Card className="animate-fade-up">
@@ -215,9 +232,14 @@ export default function TestRunsPage() {
                     <TD>{run.created_at ? formatUtc(run.created_at) : '-'}</TD>
                     <TD>{run.status}</TD>
                     <TD>
-                      <Button variant="outline" onClick={() => handleActivate(run.run_id)} disabled={loading}>
-                        Activate
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => handleActivate(run.run_id)} disabled={loading}>
+                          Activate
+                        </Button>
+                        <Button variant="danger" onClick={() => handleDelete(run.run_id)} disabled={loading}>
+                          Delete
+                        </Button>
+                      </div>
                     </TD>
                   </TR>
                 ))}

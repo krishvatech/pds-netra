@@ -146,9 +146,15 @@ def list_alerts(
         key_meta = {}
         if alert.events:
             try:
+                meta = alert.events[0].event.meta or {}
+                extra = meta.get("extra") or {}
+                if not isinstance(extra, dict):
+                    extra = {}
                 key_meta = {
-                    "zone_id": alert.events[0].event.meta.get("zone_id"),
-                    "plate_text": alert.events[0].event.meta.get("plate_text"),
+                    "zone_id": meta.get("zone_id"),
+                    "plate_text": meta.get("plate_text"),
+                    "movement_type": meta.get("movement_type"),
+                    "run_id": extra.get("run_id"),
                 }
             except Exception:
                 key_meta = {}
@@ -183,9 +189,15 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
     events = [link.event for link in alert.events]
     key_meta = {}
     if events:
+        meta = events[0].meta or {}
+        extra = meta.get("extra") or {}
+        if not isinstance(extra, dict):
+            extra = {}
         key_meta = {
-            "zone_id": events[0].meta.get("zone_id"),
-            "plate_text": events[0].meta.get("plate_text"),
+            "zone_id": meta.get("zone_id"),
+            "plate_text": meta.get("plate_text"),
+            "movement_type": meta.get("movement_type"),
+            "run_id": extra.get("run_id"),
         }
     return {
         "id": alert.id,

@@ -29,12 +29,15 @@ def create_app() -> FastAPI:
     # Include API routers
     app.include_router(api_router)
     media_root = Path(__file__).resolve().parents[1] / "data" / "snapshots"
+    annotated_root = Path(__file__).resolve().parents[1] / "data" / "annotated"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
+    app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
     app.state.mqtt_consumer = None
     # Ensure tables exist for PoC/local use
     @app.on_event("startup")
     def _init_db() -> None:
         media_root.mkdir(parents=True, exist_ok=True)
+        annotated_root.mkdir(parents=True, exist_ok=True)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
             Base.metadata.create_all(bind=engine)
         if os.getenv("AUTO_SEED_GODOWNS", "true").lower() in {"1", "true", "yes"}:

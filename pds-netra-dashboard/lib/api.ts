@@ -161,3 +161,16 @@ export async function activateTestRun(runId: string): Promise<{ run: TestRunItem
 export async function deactivateTestRun(runId: string): Promise<{ run: TestRunItem; status: string; override_path: string }> {
   return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}/deactivate`, { method: 'POST' });
 }
+
+export async function deleteTestRun(runId: string): Promise<{ status: string; run_id: string }> {
+  return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+}
+
+export async function getTestRunSnapshots(
+  runId: string,
+  cameraId: string,
+  params?: { page?: number; page_size?: number }
+): Promise<{ items: string[]; page: number; page_size: number; total: number }> {
+  const q = params ? buildQuery(params as Record<string, any>) : '';
+  return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}/snapshots/${encodeURIComponent(cameraId)}${q}`);
+}

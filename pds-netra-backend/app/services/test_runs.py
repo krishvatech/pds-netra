@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import shutil
 from typing import Any, Dict, List, Optional
 
 
@@ -122,7 +123,9 @@ def list_test_runs() -> List[Dict[str, Any]]:
                 continue
             try:
                 with meta_path.open("r", encoding="utf-8") as f:
-                    runs.append(json.load(f))
+                    run = json.load(f)
+                run = _apply_completion_status(run)
+                runs.append(run)
             except Exception:
                 continue
     runs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
@@ -149,7 +152,8 @@ def get_test_run(run_id: str) -> Optional[Dict[str, Any]]:
         return None
     try:
         with meta_path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            run = json.load(f)
+        return _apply_completion_status(run)
     except Exception:
         return None
 
@@ -194,3 +198,38 @@ def write_edge_override(run: Dict[str, Any], *, mode: str) -> Path:
     with override_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     return override_path
+
+
+def delete_test_run(run_id: str) -> bool:
+    run = get_test_run(run_id)
+    if run is None:
+        return False
+    godown_id = run.get("godown_id")
+    if godown_id:
+        run_dir = uploads_dir() / godown_id / run_id
+        annotated_dir = data_dir() / "annotated" / godown_id / run_id
+        snapshots_dir = data_dir() / "snapshots" / godown_id / run_id
+        for path in (run_dir, annotated_dir, snapshots_dir):
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+    return True
+
+
+def _apply_completion_status(run: Dict[str, Any]) -> Dict[str, Any]:
+    if run.get("status") == "COMPLETED":
+        return run
+    annotated_dir = data_dir() / "annotated" / run.get("godown_id", "") / run.get("run_id", "")
+    marker = annotated_dir / "completed.json"
+    if marker.exists():
+        try:
+            completed = json.loads(marker.read_text(encoding="utf-8"))
+            run = update_test_run(
+                run["run_id"],
+                {
+                    "status": "COMPLETED",
+                    "completed_at": completed.get("completed_at"),
+                },
+            ) or run
+        except Exception:
+            return run
+    return run

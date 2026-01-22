@@ -6,7 +6,7 @@ Provides summary and per-godown camera health.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -39,6 +39,12 @@ def _event_to_item(event: Event) -> dict:
         "clip_url": event.clip_url,
         "meta": event.meta or {},
     }
+
+
+def _as_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 @router.get("/summary")
@@ -90,10 +96,8 @@ def health_summary(request: Request, db: Session = Depends(get_db)) -> dict:
         if key in seen:
             continue
         seen.add(key)
-        online = not (
-            ev.event_type == "CAMERA_OFFLINE"
-            and ev.timestamp_utc >= offline_since
-        )
+        ev_ts = _as_naive_utc(ev.timestamp_utc)
+        online = not (ev.event_type == "CAMERA_OFFLINE" and ev_ts >= offline_since)
         recent_status.append(
             {
                 "godown_id": ev.godown_id,

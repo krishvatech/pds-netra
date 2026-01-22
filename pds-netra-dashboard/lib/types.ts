@@ -2,7 +2,7 @@ export type UserRole = 'STATE_ADMIN' | 'DISTRICT_OFFICER' | 'GODOWN_MANAGER';
 
 export type Severity = 'info' | 'warning' | 'critical';
 export type AlertStatus = 'OPEN' | 'CLOSED';
-export type TestRunStatus = 'UPLOADED' | 'ACTIVE' | 'DEACTIVATED';
+export type TestRunStatus = 'UPLOADED' | 'ACTIVE' | 'DEACTIVATED' | 'COMPLETED';
 
 export interface LoginResponse {
   access_token: string;
@@ -103,6 +103,8 @@ export interface AlertItem {
   key_meta?: {
     zone_id?: string | null;
     plate_text?: string | null;
+    movement_type?: string | null;
+    run_id?: string | null;
   };
 }
 
@@ -171,6 +173,7 @@ export interface TestRunItem {
   updated_at?: string | null;
   activated_at?: string | null;
   deactivated_at?: string | null;
+  completed_at?: string | null;
   saved_path?: string | null;
   config_path?: string | null;
   override_path?: string | null;

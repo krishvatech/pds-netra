@@ -25,6 +25,7 @@ export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
                 <Link href={`/dashboard/alerts/${encodeURIComponent(a.id)}`} className="font-medium hover:underline">
                   {humanAlertType(a.alert_type)}
                 </Link>
+                {a.summary ? <div className="text-xs text-slate-500 mt-1">{a.summary}</div> : null}
               </TD>
               <TD>
                 <Badge className={severityBadgeClass(a.severity_final)}>

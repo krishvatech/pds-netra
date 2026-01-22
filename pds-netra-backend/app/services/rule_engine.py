@@ -84,6 +84,25 @@ def apply_rules(db: Session, event: Event) -> None:
 def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str]:
     """Map a raw event_type to a higher-level alert_type."""
     if event_type in {"UNAUTH_PERSON", "LOITERING"}:
+        movement = (meta or {}).get("movement_type")
+        if movement:
+            movement_norm = str(movement).strip().lower()
+            animal_classes = {
+                "cat",
+                "dog",
+                "cow",
+                "buffalo",
+                "deer",
+                "donkey",
+                "cheetah",
+                "leopard",
+                "lion",
+                "tiger",
+            }
+            if movement_norm in animal_classes:
+                return "ANIMAL_INTRUSION"
+            if movement_norm == "vehicle":
+                return "ANPR_MISMATCH_VEHICLE"
         return "SECURITY_UNAUTH_ACCESS"
     if event_type == "ANIMAL_INTRUSION":
         return "ANIMAL_INTRUSION"
@@ -111,7 +130,15 @@ def _severity_rank(sev: str) -> int:
 def _build_alert_summary(alert_type: str, event: Event) -> str:
     """Generate a human-readable summary for a new alert."""
     if alert_type == "SECURITY_UNAUTH_ACCESS":
-        return f"Unauthorized access detected in zone {event.meta.get('zone_id')} at {event.timestamp_utc}" if event.meta else "Unauthorized access detected"
+        movement = event.meta.get("movement_type") if event.meta else None
+        zone = event.meta.get("zone_id") if event.meta else None
+        if movement:
+            return f"Detected {movement} in zone {zone or 'unknown'} at {event.timestamp_utc}"
+        return (
+            f"Unauthorized access detected in zone {zone} at {event.timestamp_utc}"
+            if zone
+            else "Unauthorized access detected"
+        )
     if alert_type == "ANIMAL_INTRUSION":
         return f"Animal intrusion detected in zone {event.meta.get('zone_id')}"
     if alert_type == "OPERATION_BAG_MOVEMENT_ANOMALY":

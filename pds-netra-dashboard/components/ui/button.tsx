@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-type Variant = 'default' | 'outline' | 'ghost';
+type Variant = 'default' | 'outline' | 'ghost' | 'danger';
 
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
@@ -13,6 +13,8 @@ export function Button({ variant = 'default', className = '', ...props }: Props)
       ? 'btn-outline'
       : variant === 'ghost'
         ? 'hover:bg-white/70'
-        : 'btn-primary';
+        : variant === 'danger'
+          ? 'btn-danger'
+          : 'btn-primary';
   return <button className={`${base} ${v} ${className}`} {...props} />;
 }
