@@ -28,13 +28,13 @@ class YoloDetector:
     ----------
     model_name : str
         Path to a YOLO weights file or model name to load. Defaults to
-        ``yolov8n.pt`` which is a small model suitable for CPU inference.
+        ``best.pt`` which is a small model suitable for CPU inference.
     device : str
         Device to run inference on. Use ``"cpu"`` for CPU-only hosts or
         ``"cuda"`` when running on NVIDIA GPUs.
     """
 
-    def __init__(self, model_name: str = "yolov8n.pt", device: str = "cpu") -> None:
+    def __init__(self, model_name: str = "best.pt", device: str = "cpu") -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         if YOLO is None:
             raise RuntimeError(

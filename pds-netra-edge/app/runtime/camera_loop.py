@@ -12,6 +12,8 @@ import threading
 import logging
 import os
 from pathlib import Path
+import time
+import json
 
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.yolo_detector import YoloDetector
@@ -29,6 +31,7 @@ from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig
 from ..cv.face_id import FaceRecognitionProcessor, load_known_faces
 from ..overrides import EdgeOverrideManager
 from ..snapshots import default_snapshot_writer
+from ..annotated_video import AnnotatedVideoWriter
 
 
 @dataclass
@@ -99,7 +102,8 @@ def start_camera_loops(
                     resolved_test,
                 )
         try:
-            detector = YoloDetector(device=device)
+            model_path = os.getenv("EDGE_YOLO_MODEL", "best.pt")
+            detector = YoloDetector(model_name=model_path, device=device)
         except Exception as exc:
             logger.error("Error loading YOLO detector: %s", exc)
             continue
@@ -110,12 +114,25 @@ def start_camera_loops(
         for zone in camera.zones:
             # Convert lists to tuples for point-in-polygon checks
             zone_polygons[zone.id] = [tuple(pt) for pt in zone.polygon]
+        try:
+            alert_min_conf = float(os.getenv("EDGE_ALERT_MIN_CONF", "0.5"))
+        except ValueError:
+            alert_min_conf = 0.5
         evaluator = RulesEvaluator(
             camera_id=camera.id,
             godown_id=settings.godown_id,
             rules=camera_rules,
             zone_polygons=zone_polygons,
             timezone=settings.timezone,
+            alert_on_person=os.getenv("EDGE_ALERT_ON_PERSON", "false").lower() in {"1", "true", "yes"},
+            person_alert_cooldown_sec=int(os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10")),
+            alert_classes=[
+                c.strip()
+                for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",")
+                if c.strip()
+            ],
+            alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
+            alert_min_conf=alert_min_conf,
         )
         # Determine if ANPR rules apply for this camera
         anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
@@ -193,6 +210,8 @@ def start_camera_loops(
             tracker_local: SimpleTracker,
             snapshot_writer_local,
         ) -> None:
+            annotated_writer: Optional[AnnotatedVideoWriter] = None
+            current_state = {"mode": "live", "run_id": None, "last_snapshot_ts": 0.0}
             def callback(
                 objects: list[DetectedObject],
                 frame=None,
@@ -202,8 +221,8 @@ def start_camera_loops(
                 # Update last frame time and mark camera online
                 state_local.last_frame_utc = now
                 state_local.is_online = True
-                # Perform tamper analysis if a frame is available
-                if frame is not None:
+                # Perform tamper analysis if a frame is available (skip in test mode)
+                if frame is not None and current_state["mode"] != "test":
                     try:
                         tamper_candidates = analyze_frame_for_tamper(
                             camera_id=camera_obj.id,
@@ -277,12 +296,17 @@ def start_camera_loops(
                             timestamp_utc=timestamp_utc,
                         )
 
+                    meta_extra = None
+                    if current_state["mode"] == "test" and current_state["run_id"]:
+                        meta_extra = {"run_id": str(current_state["run_id"])}
                     evaluator_local.process_detections(
                         objects,
                         now,
                         mqtt_client,
                         frame=frame,
                         snapshotter=snapshotter,
+                        instant_only=current_state["mode"] == "test",
+                        meta_extra=meta_extra,
                     )
                 except Exception as exc:
                     logging.getLogger("camera_loop").exception(
@@ -298,6 +322,47 @@ def start_camera_loops(
                         )
                 if face_processor_local is not None and frame is not None:
                     face_processor_local.process_frame(frame, now, mqtt_client)
+                if annotated_writer is not None and frame is not None:
+                    dets = [(o.class_name, o.confidence, o.bbox) for o in objects]
+                    annotated_writer.write_frame(frame, dets)
+                if (
+                    frame is not None
+                    and current_state["mode"] == "test"
+                    and current_state["run_id"]
+                    and objects
+                ):
+                    now_ts = time.monotonic()
+                    if now_ts - current_state["last_snapshot_ts"] >= 0.5:
+                        snapshots_root = Path(
+                            os.getenv(
+                                "EDGE_SNAPSHOT_DIR",
+                                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "snapshots"),
+                            )
+                        )
+                        out_dir = snapshots_root / settings.godown_id / current_state["run_id"] / camera_obj.id
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        filename = f"det_{int(now_ts * 1000)}.jpg"
+                        try:
+                            import cv2  # type: ignore
+                            canvas = frame.copy()
+                            for obj in objects:
+                                x1, y1, x2, y2 = obj.bbox
+                                cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                                label = f"{obj.class_name} {obj.confidence:.2f}"
+                                cv2.putText(
+                                    canvas,
+                                    label,
+                                    (x1, max(y1 - 6, 10)),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (0, 200, 255),
+                                    1,
+                                    cv2.LINE_AA,
+                                )
+                            cv2.imwrite(str(out_dir / filename), canvas)
+                        except Exception:
+                            pass
+                        current_state["last_snapshot_ts"] = now_ts
 
             def _resolve_source_local() -> tuple[str, str, Optional[str]]:
                 return override_manager.get_camera_source(camera_obj.id, default_source_local)
@@ -305,6 +370,11 @@ def start_camera_loops(
             current_source, current_mode, current_run_id = _resolve_source_local()
             while True:
                 state_local.suppress_offline_events = False
+                current_state["mode"] = current_mode
+                current_state["run_id"] = current_run_id
+                if current_mode == "test":
+                    # Suppress offline events during test runs
+                    state_local.suppress_offline_events = True
                 if _is_file_source(current_source):
                     resolved = Path(current_source).expanduser().resolve()
                     if not resolved.exists():
@@ -321,6 +391,21 @@ def start_camera_loops(
                     current_mode,
                     current_source,
                 )
+                annotated_writer = None
+                if current_mode == "test" and current_run_id:
+                    annotated_dir = Path(
+                        os.getenv(
+                            "EDGE_ANNOTATED_DIR",
+                            str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "annotated"),
+                        )
+                    )
+                    annotated_path = annotated_dir / settings.godown_id / current_run_id / f"{camera_obj.id}.mp4"
+                    latest_path = annotated_dir / settings.godown_id / current_run_id / f"{camera_obj.id}_latest.jpg"
+                    annotated_writer = AnnotatedVideoWriter(
+                        str(annotated_path),
+                        latest_path=str(latest_path),
+                        latest_interval=0.2,
+                    )
                 next_source: dict[str, Optional[str]] = {"value": None}
                 next_mode: dict[str, Optional[str]] = {"value": None}
                 next_run_id: dict[str, Optional[str]] = {"value": None}
@@ -343,11 +428,26 @@ def start_camera_loops(
                     stop_check=should_stop,
                 )
                 pipeline.run()
+                if annotated_writer is not None:
+                    annotated_writer.close()
+                    if annotated_writer.frames_written() == 0:
+                        logger.warning(
+                            "Annotated video has zero frames for camera %s (run_id=%s).",
+                            camera_obj.id,
+                            current_run_id,
+                        )
 
                 if next_source["value"]:
                     current_source = next_source["value"]
                     current_mode = next_mode["value"] or "live"
                     current_run_id = next_run_id["value"]
+                    continue
+                # Handle overrides that arrived while pipeline exited early (e.g., RTSP open failed)
+                desired_source, desired_mode, desired_run_id = _resolve_source_local()
+                if desired_source != current_source:
+                    current_source = desired_source
+                    current_mode = desired_mode
+                    current_run_id = desired_run_id
                     continue
 
                 if current_mode == "test":
@@ -357,6 +457,29 @@ def start_camera_loops(
                         camera_obj.id,
                         current_run_id,
                     )
+                    if current_run_id:
+                        try:
+                            annotated_dir = Path(
+                                os.getenv(
+                                    "EDGE_ANNOTATED_DIR",
+                                    str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "annotated"),
+                                )
+                            )
+                            marker = annotated_dir / settings.godown_id / current_run_id / "completed.json"
+                            marker.parent.mkdir(parents=True, exist_ok=True)
+                            marker.write_text(
+                                json.dumps(
+                                    {
+                                        "run_id": current_run_id,
+                                        "camera_id": camera_obj.id,
+                                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                                    },
+                                    indent=2,
+                                ),
+                                encoding="utf-8",
+                            )
+                        except Exception:
+                            pass
                 break
 
         t = threading.Thread(

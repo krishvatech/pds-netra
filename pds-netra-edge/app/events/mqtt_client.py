@@ -90,6 +90,13 @@ class MQTTClient:
         """Publish an event message to the configured events topic."""
         topic = f"pds/{event.godown_id}/events"
         payload = event.json()
+        self.logger.info(
+            "Publishing event %s type=%s camera=%s track=%s",
+            event.event_id,
+            event.event_type,
+            event.camera_id,
+            event.track_id,
+        )
         result = self.client.publish(topic, payload, qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             self.logger.error("Failed to publish event: %s", mqtt.error_string(result.rc))

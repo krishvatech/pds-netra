@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from typing import List
+
+from dotenv import load_dotenv
 
 from .config import load_settings, Settings
 from .logging_config import setup_logging
@@ -61,10 +64,19 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
 
 def main(argv: List[str] | None = None) -> int:
+    # Load local .env so runtime flags (alerts, overrides, models) are honored.
+    load_dotenv()
     args = parse_args(argv or sys.argv[1:])
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
     setup_logging(level=log_level)
     logger = logging.getLogger("main")
+    logger.info(
+        "Alert config: EDGE_ALERT_ON_PERSON=%s EDGE_ALERT_ON_CLASSES=%s EDGE_ALERT_SEVERITY=%s EDGE_ALERT_PERSON_COOLDOWN=%s",
+        os.getenv("EDGE_ALERT_ON_PERSON", "false"),
+        os.getenv("EDGE_ALERT_ON_CLASSES", ""),
+        os.getenv("EDGE_ALERT_SEVERITY", "warning"),
+        os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10"),
+    )
     if args.preflight:
         return preflight_main(["--config", args.config])
     if args.preflight_on_start:

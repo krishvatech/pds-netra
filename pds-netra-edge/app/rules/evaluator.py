@@ -112,6 +112,11 @@ class RulesEvaluator:
         rules: List[BaseRule],
         zone_polygons: Dict[str, List[Tuple[int, int]]],
         timezone: str,
+        alert_on_person: bool = False,
+        person_alert_cooldown_sec: int = 10,
+        alert_classes: Optional[List[str]] = None,
+        alert_severity: str = "warning",
+        alert_min_conf: float = 0.0,
     ) -> None:
         self.logger = logging.getLogger(f"RulesEvaluator-{camera_id}")
         self.camera_id = camera_id
@@ -136,6 +141,13 @@ class RulesEvaluator:
         self.bag_state: Dict[Tuple[str, int], "BagInfo"] = {}
         # Cleanup threshold for stale bag and animal entries in seconds.
         self.bag_cleanup_threshold: int = 300
+        # Instant alert controls (test mode)
+        self.alert_on_person = alert_on_person
+        self.person_alert_cooldown_sec = person_alert_cooldown_sec
+        self.alert_classes = {c.strip().lower() for c in (alert_classes or []) if c.strip()}
+        self.alert_severity = alert_severity
+        self.alert_min_conf = alert_min_conf
+        self.person_alerts: Dict[Tuple[str, object, Optional[str]], datetime.datetime] = {}
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         """
@@ -173,6 +185,8 @@ class RulesEvaluator:
         mqtt_client: MQTTClient,
         frame: Any = None,
         snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
+        instant_only: bool = False,
+        meta_extra: Optional[Dict[str, str]] = None,
     ) -> None:
         """
         Evaluate all applicable rules for a batch of detected objects.
@@ -202,11 +216,57 @@ class RulesEvaluator:
         now_local_dt = now_utc.astimezone(self.tz)
         now_local_time = now_local_dt.timetz()
 
+        if instant_only:
+            for obj in objects:
+                cls = obj.class_name.lower()
+                zone_id = self._determine_zone(obj.bbox)
+                if cls in self.alert_classes:
+                    self._process_instant_class_alert(
+                        obj,
+                        zone_id,
+                        now_utc,
+                        mqtt_client,
+                        frame,
+                        snapshotter,
+                        meta_extra=meta_extra,
+                    )
+                elif cls == 'person' and self.alert_on_person:
+                    self._process_person_instant(
+                        obj,
+                        zone_id,
+                        now_utc,
+                        mqtt_client,
+                        frame,
+                        snapshotter,
+                        meta_extra=meta_extra,
+                    )
+            self._cleanup_person_alerts(now_utc)
+            return
         for obj in objects:
             cls = obj.class_name.lower()
             zone_id = self._determine_zone(obj.bbox)
+            if cls in self.alert_classes:
+                self._process_instant_class_alert(
+                    obj,
+                    zone_id,
+                    now_utc,
+                    mqtt_client,
+                    frame,
+                    snapshotter,
+                    meta_extra=meta_extra,
+                )
             # Handle person-related rules (unauthorized presence and loitering)
             if cls == 'person':
+                if self.alert_on_person:
+                    self._process_person_instant(
+                        obj,
+                        zone_id,
+                        now_utc,
+                        mqtt_client,
+                        frame,
+                        snapshotter,
+                        meta_extra=meta_extra,
+                    )
                 if zone_id is None:
                     continue
                 # Unauthorized person rules
@@ -262,6 +322,7 @@ class RulesEvaluator:
         self._cleanup_history(now_utc)
         self._cleanup_animal_alerts(now_utc)
         self._cleanup_bag_state(now_utc)
+        self._cleanup_person_alerts(now_utc)
 
     def _process_loitering(
         self,
@@ -412,6 +473,84 @@ class RulesEvaluator:
         # Record the alert time for deduplication
         self.animal_alerts[key] = now_utc
 
+    def _process_person_instant(
+        self,
+        obj: DetectedObject,
+        zone_id: Optional[str],
+        now_utc: datetime.datetime,
+        mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
+        meta_extra: Optional[Dict[str, str]] = None,
+    ) -> None:
+        if obj.confidence < self.alert_min_conf:
+            return
+        key = (self.camera_id, obj.track_id, zone_id)
+        last_alert = self.person_alerts.get(key)
+        if last_alert and (now_utc - last_alert).total_seconds() < self.person_alert_cooldown_sec:
+            return
+        event_id = str(uuid.uuid4())
+        event = EventModel(
+            godown_id=self.godown_id,
+            camera_id=self.camera_id,
+            event_id=event_id,
+            event_type="UNAUTH_PERSON",
+            severity=self.alert_severity,
+            timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+            bbox=obj.bbox,
+            track_id=obj.track_id,
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+            clip_url=None,
+            meta=MetaModel(
+                zone_id=zone_id or "",
+                rule_id="TEST_PERSON_DETECT",
+                confidence=obj.confidence,
+                extra=dict(meta_extra or {}),
+            ),
+        )
+        mqtt_client.publish_event(event)
+        self.person_alerts[key] = now_utc
+
+    def _process_instant_class_alert(
+        self,
+        obj: DetectedObject,
+        zone_id: Optional[str],
+        now_utc: datetime.datetime,
+        mqtt_client: MQTTClient,
+        frame: Any = None,
+        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]] = None,
+        meta_extra: Optional[Dict[str, str]] = None,
+    ) -> None:
+        if obj.confidence < self.alert_min_conf:
+            return
+        class_key = obj.class_name.lower()
+        key = (self.camera_id, class_key, zone_id)
+        last_alert = self.person_alerts.get(key)
+        if last_alert and (now_utc - last_alert).total_seconds() < self.person_alert_cooldown_sec:
+            return
+        event_id = str(uuid.uuid4())
+        event = EventModel(
+            godown_id=self.godown_id,
+            camera_id=self.camera_id,
+            event_id=event_id,
+            event_type="UNAUTH_PERSON",
+            severity=self.alert_severity,
+            timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+            bbox=obj.bbox,
+            track_id=obj.track_id,
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+            clip_url=None,
+            meta=MetaModel(
+                zone_id=zone_id or "",
+                rule_id="TEST_CLASS_DETECT",
+                confidence=obj.confidence,
+                movement_type=obj.class_name,
+                extra=dict(meta_extra or {}),
+            ),
+        )
+        mqtt_client.publish_event(event)
+        self.person_alerts[key] = now_utc
+
     def _is_within_window(
         self, start_str: Optional[str], end_str: Optional[str], now_local_time: datetime.time
     ) -> bool:
@@ -551,6 +690,14 @@ class RulesEvaluator:
         # Update the bag state for next iteration
         info.last_position = current_pos
         info.last_zone_id = zone_id
+
+    def _cleanup_person_alerts(self, now_utc: datetime.datetime) -> None:
+        to_remove: List[Tuple[str, int, Optional[str]]] = []
+        for key, ts in self.person_alerts.items():
+            if (now_utc - ts).total_seconds() > self.bag_cleanup_threshold:
+                to_remove.append(key)
+        for key in to_remove:
+            self.person_alerts.pop(key, None)
 
     @staticmethod
     def _snapshot(

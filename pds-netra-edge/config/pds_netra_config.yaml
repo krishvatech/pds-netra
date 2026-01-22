@@ -22,10 +22,10 @@ cameras:
           - [10, 400]
       - id: gate_inner
         polygon:
-          - [320, 20]
-          - [600, 20]
-          - [600, 400]
-          - [320, 400]
+          - [0, 0]
+          - [640, 0]
+          - [640, 384]
+          - [0, 384]
   - id: CAM_AISLE_3
     rtsp_url: "rtsp://username:password@192.168.1.11:554/stream"
     test_video: "./data/aisle_3.mp4"
@@ -44,6 +44,12 @@ rules:
     zone_id: gate_inner
     start_time: "20:00"
     end_time: "06:00"
+  - id: RULE_TEST_ALWAYS
+    type: NO_PERSON_DURING
+    camera_id: CAM_GATE_1
+    zone_id: gate_inner
+    start: "00:00"
+    end: "23:59"
   - id: RULE_NO_PERSON_DURING_FUMIGATION
     type: NO_PERSON_DURING
     camera_id: CAM_AISLE_3

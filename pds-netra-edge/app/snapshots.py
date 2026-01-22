@@ -51,6 +51,6 @@ def default_snapshot_writer() -> Optional[SnapshotWriter]:
     base_dir = os.getenv("EDGE_SNAPSHOT_DIR")
     if not base_dir:
         # Default to backend data/snapshots folder if present
-        base_dir = str(Path(__file__).resolve().parents[2] / "pds-netra-backend" / "data" / "snapshots")
+        base_dir = str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "snapshots")
     base_url = os.getenv("EDGE_SNAPSHOT_BASE_URL", "http://127.0.0.1:8001/media/snapshots")
     return SnapshotWriter(base_dir=base_dir, base_url=base_url)
