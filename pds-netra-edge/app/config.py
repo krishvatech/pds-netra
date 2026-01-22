@@ -70,6 +70,14 @@ class FaceRecognitionConfig:
     dedup_interval_seconds: int = 60
     cameras: List[FaceRecognitionCameraConfig] = field(default_factory=list)
 
+@dataclass
+class TrackingConfig:
+    """Tracking configuration for object IDs."""
+    tracker_name: str = "bytetrack.yaml"
+    track_persist: bool = True
+    conf: Optional[float] = None
+    iou: Optional[float] = None
+
 
 @dataclass
 class Settings:
@@ -90,6 +98,7 @@ class Settings:
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
     face_recognition: Optional[FaceRecognitionConfig] = None
+    tracking: TrackingConfig = field(default_factory=TrackingConfig)
 
 # Health configuration for camera monitoring and tamper detection
 @dataclass
@@ -177,6 +186,17 @@ def load_settings(config_path: str) -> Settings:
     mqtt_username = os.getenv('MQTT_USERNAME', data.get('mqtt', {}).get('username'))
     mqtt_password = os.getenv('MQTT_PASSWORD', data.get('mqtt', {}).get('password'))
 
+    tracking_data = data.get("tracking") or {}
+    try:
+        tracking_cfg = TrackingConfig(
+            tracker_name=str(tracking_data.get("tracker_name", "bytetrack.yaml")),
+            track_persist=bool(tracking_data.get("track_persist", True)),
+            conf=float(tracking_data["conf"]) if "conf" in tracking_data else None,
+            iou=float(tracking_data["iou"]) if "iou" in tracking_data else None,
+        )
+    except Exception:
+        tracking_cfg = TrackingConfig()
+
     # Load cameras
     cameras_cfg: List[CameraConfig] = []
     for cam_dict in data.get('cameras', []):
@@ -239,6 +259,7 @@ def load_settings(config_path: str) -> Settings:
         mqtt_username=mqtt_username,
         mqtt_password=mqtt_password,
         face_recognition=face_recognition_cfg,
+        tracking=tracking_cfg,
     )
 
 
@@ -250,5 +271,6 @@ __all__ = [
     'HealthConfig',
     'FaceRecognitionCameraConfig',
     'FaceRecognitionConfig',
+    'TrackingConfig',
     'load_settings',
 ]

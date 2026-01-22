@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import json
 import datetime
+import os
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Tuple
 
@@ -23,14 +24,16 @@ except ImportError:
     np = None  # type: ignore
 
 try:
-    import face_recognition  # type: ignore
+    from insightface.app import FaceAnalysis  # type: ignore
 except ImportError:
-    face_recognition = None  # type: ignore
+    FaceAnalysis = None  # type: ignore
 
 try:
-    import cv2  # type: ignore
-except ImportError:
-    cv2 = None  # type: ignore
+    import faiss  # type: ignore
+    _FAISS_OK = True
+except Exception:
+    faiss = None  # type: ignore
+    _FAISS_OK = False
 
 from zoneinfo import ZoneInfo
 
@@ -57,6 +60,16 @@ class MatchResult:
     person_id: str
     person_name: str
     person_role: str
+    confidence: float
+
+
+@dataclass
+class FaceOverlay:
+    """Overlay metadata for drawing face recognition results."""
+    bbox: List[int]
+    status: str
+    person_id: Optional[str]
+    person_name: Optional[str]
     confidence: float
 
 
@@ -102,9 +115,80 @@ def load_known_faces(file_path: str) -> List[KnownPerson]:
     return known
 
 
-def detect_faces(frame: any) -> List[List[int]]:
+_face_app: Optional["FaceAnalysis"] = None
+
+
+def _ensure_model() -> "FaceAnalysis":
+    if FaceAnalysis is None:
+        raise RuntimeError("insightface is not installed; please install insightface to use face recognition")
+    global _face_app
+    if _face_app is None:
+        app = FaceAnalysis(name="antelopev2")
+        app.prepare(ctx_id=-1, det_size=(640, 640))
+        _face_app = app
+    return _face_app
+
+
+def _l2_normalize(arr: "np.ndarray") -> "np.ndarray":
+    if np is None:
+        return arr
+    norm = float(np.linalg.norm(arr))
+    if norm > 0:
+        return arr / norm
+    return arr
+
+
+class _FaceIndex:
+    def __init__(self, dim: int = 512) -> None:
+        self.dim = dim
+        self.ids: List[int] = []
+        if _FAISS_OK:
+            self.index = faiss.IndexFlatIP(self.dim)  # type: ignore[attr-defined]
+        else:
+            self.index = None
+            self._mat: Optional["np.ndarray"] = None
+
+    def build(self, embeddings: "np.ndarray", ids: List[int]) -> None:
+        if np is None or embeddings.size == 0:
+            self.ids = []
+            self._mat = None
+            if _FAISS_OK:
+                self.index = faiss.IndexFlatIP(self.dim)  # type: ignore[attr-defined]
+            return
+        embeddings = embeddings.astype("float32")
+        self.dim = int(embeddings.shape[1])
+        self.ids = list(ids)
+        if _FAISS_OK:
+            self.index = faiss.IndexFlatIP(self.dim)  # type: ignore[attr-defined]
+            self.index.add(embeddings)
+        else:
+            self._mat = embeddings
+
+    def ready(self) -> bool:
+        return bool(self.ids)
+
+    def query(self, embedding: "np.ndarray", k: int = 1) -> Optional[Tuple[int, float]]:
+        if np is None or not self.ready():
+            return None
+        vec = embedding.astype("float32").reshape(1, -1)
+        if _FAISS_OK and self.index is not None:
+            scores, idx = self.index.search(vec, k)
+            if idx.size == 0:
+                return None
+            match_idx = int(idx[0][0])
+            if match_idx < 0 or match_idx >= len(self.ids):
+                return None
+            return self.ids[match_idx], float(scores[0][0])
+        if self._mat is None:
+            return None
+        scores = vec @ self._mat.T
+        match_idx = int(scores.argmax())
+        return self.ids[match_idx], float(scores[0][match_idx])
+
+
+def detect_faces(frame: any) -> List[Tuple[List[int], List[float]]]:
     """
-    Detect face bounding boxes in a frame using face_recognition library.
+    Detect face bounding boxes and embeddings using InsightFace.
 
     Parameters
     ----------
@@ -113,58 +197,28 @@ def detect_faces(frame: any) -> List[List[int]]:
 
     Returns
     -------
-    List[List[int]]
-        List of bounding boxes [x1, y1, x2, y2] for each detected face.
+    List[Tuple[List[int], List[float]]]
+        List of (bbox, embedding) pairs, bbox is [x1, y1, x2, y2].
     """
-    if face_recognition is None:
+    if np is None:
         return []
-    rgb_frame = frame[:, :, ::-1]
+    app = _ensure_model()
     try:
-        face_locations = face_recognition.face_locations(rgb_frame)
+        faces = app.get(frame)
     except Exception:
         return []
-    bboxes: List[List[int]] = []
-    for top, right, bottom, left in face_locations:
-        bboxes.append([left, top, right, bottom])
-    return bboxes
-
-
-def get_face_embedding(frame: any, bbox: List[int]) -> Optional[List[float]]:
-    """
-    Compute a face embedding for the region defined by bbox.
-
-    Parameters
-    ----------
-    frame: numpy.ndarray
-        The original image in BGR format.
-    bbox: List[int]
-        Bounding box [x1, y1, x2, y2] specifying the face region.
-
-    Returns
-    -------
-    Optional[List[float]]
-        The embedding vector (list of floats) if computation succeeds;
-        otherwise, None.
-    """
-    if face_recognition is None:
-        return None
-    try:
-        rgb_frame = frame[:, :, ::-1]
-        top = bbox[1]
-        left = bbox[0]
-        bottom = bbox[3]
-        right = bbox[2]
-        locations = [(top, right, bottom, left)]
-        encodings = face_recognition.face_encodings(rgb_frame, known_face_locations=locations)
-        if encodings:
-            return [float(x) for x in encodings[0]]
-    except Exception:
-        pass
-    return None
+    results: List[Tuple[List[int], List[float]]] = []
+    for face in faces:
+        emb = face.embedding
+        emb = _l2_normalize(emb)
+        bbox = face.bbox.tolist()
+        results.append(([int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])], [float(x) for x in emb]))
+    return results
 
 
 def match_face(
     embedding: List[float],
+    index: _FaceIndex,
     known_people: List[KnownPerson],
     min_confidence: float,
 ) -> Optional[MatchResult]:
@@ -172,15 +226,16 @@ def match_face(
     Match a face embedding against known persons and return the best match
     if its confidence exceeds the threshold.
 
-    Confidence is computed as (1 - Euclidean distance) between embeddings
-    and clamped to [0, 1].
+    Confidence is cosine similarity between L2-normalized embeddings.
 
     Parameters
     ----------
     embedding: List[float]
         Embedding of the detected face.
+    index: _FaceIndex
+        Index of known embeddings.
     known_people: List[KnownPerson]
-        List of known persons with embeddings to compare against.
+        List of known persons (same order as embeddings in index).
     min_confidence: float
         Minimum confidence threshold to consider a match valid.
 
@@ -189,24 +244,18 @@ def match_face(
     Optional[MatchResult]
         The best match if confidence >= min_confidence; otherwise None.
     """
-    if face_recognition is None or not known_people:
+    if np is None or not known_people or not index.ready():
         return None
     try:
-        candidate = np.array(embedding)
+        candidate = np.array(embedding, dtype="float32")
     except Exception:
         return None
-    known_embeddings = [np.array(kp.embedding) for kp in known_people]
-    try:
-        distances = face_recognition.face_distance(known_embeddings, candidate)
-    except Exception:
+    result = index.query(candidate, k=1)
+    if result is None:
         return None
-    if len(distances) == 0:
-        return None
-    idx = int(distances.argmin())
-    best_distance = float(distances[idx])
-    confidence = max(0.0, 1.0 - best_distance)
-    if confidence >= min_confidence:
-        kp = known_people[idx]
+    match_id, confidence = result
+    if confidence >= min_confidence and 0 <= match_id < len(known_people):
+        kp = known_people[match_id]
         return MatchResult(
             person_id=kp.person_id,
             person_name=kp.name,
@@ -244,8 +293,17 @@ class FaceRecognitionProcessor:
         except Exception:
             self.tz = ZoneInfo("UTC")
         self.known_people = known_people
+        self._index = _FaceIndex()
+        if np is not None and known_people:
+            try:
+                emb = np.vstack([np.asarray(kp.embedding, dtype="float32") for kp in known_people])
+                emb = np.vstack([_l2_normalize(e) for e in emb])
+                self._index.build(emb, list(range(len(known_people))))
+            except Exception:
+                self._index = _FaceIndex()
         # Deduplication cache: maps (status, identifier) to last event time
         self.dedup_cache: Dict[Tuple[str, str], datetime.datetime] = {}
+        self._last_face_log: Optional[datetime.datetime] = None
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         """Return the zone ID whose polygon contains the bounding box center."""
@@ -273,7 +331,7 @@ class FaceRecognitionProcessor:
         frame: any,
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
-    ) -> None:
+    ) -> List[FaceOverlay]:
         """
         Detect and recognize faces in the frame and publish events
         according to configured policies.
@@ -288,26 +346,41 @@ class FaceRecognitionProcessor:
             Client used to publish events.
         """
         if frame is None:
-            return
+            return []
         if not self.global_config.enabled:
-            return
+            return []
         if now_utc.tzinfo is None:
             now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
-        now_local = now_utc.astimezone(self.tz)
         timestamp_iso = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        log_faces = os.getenv("PDS_FACE_LOG", "0") == "1"
         try:
             faces = detect_faces(frame)
         except Exception as exc:
             self.logger.error("Face detection failed: %s", exc)
-            return
-        for bbox in faces:
-            zone_id = self._determine_zone(bbox)
-            if zone_id is None or zone_id != self.camera_config.zone_id:
-                continue
-            embedding = get_face_embedding(frame, bbox)
+            return []
+        if log_faces:
+            if self._last_face_log is None or (now_utc - self._last_face_log).total_seconds() >= 2:
+                self.logger.info(
+                    "Face detection: camera=%s faces=%d",
+                    self.camera_id,
+                    len(faces),
+                )
+                self._last_face_log = now_utc
+        overlays: List[FaceOverlay] = []
+        for bbox, embedding in faces:
+            zone_cfg = (self.camera_config.zone_id or "").strip().lower()
+            if zone_cfg and zone_cfg not in {"all", "*"}:
+                zone_id = self._determine_zone(bbox)
+                if zone_id is None or zone_id != self.camera_config.zone_id:
+                    continue
             if embedding is None:
                 continue
-            match = match_face(embedding, self.known_people, self.global_config.min_match_confidence)
+            match = match_face(
+                embedding,
+                self._index,
+                self.known_people,
+                self.global_config.min_match_confidence,
+            )
             match_status: str
             event_type: str
             severity: str
@@ -328,8 +401,24 @@ class FaceRecognitionProcessor:
                 event_type = "FACE_UNKNOWN_ACCESS"
                 severity = "warning"
                 confidence = 0.0
+            overlays.append(
+                FaceOverlay(
+                    bbox=bbox,
+                    status=match_status,
+                    person_id=person_id,
+                    person_name=person_name,
+                    confidence=confidence,
+                )
+            )
             if match_status == "UNKNOWN":
                 if not self.camera_config.allow_unknown and self.global_config.unknown_event_enabled:
+                    if log_faces:
+                        self.logger.info(
+                            "Face unknown: camera=%s zone=%s bbox=%s",
+                            self.camera_id,
+                            self.camera_config.zone_id,
+                            bbox,
+                        )
                     dedup_key = (match_status, self.camera_config.zone_id)
                     if not self._should_emit(dedup_key, now_utc):
                         continue
@@ -360,6 +449,17 @@ class FaceRecognitionProcessor:
                 continue
             else:
                 if self.camera_config.log_known_only:
+                    if log_faces:
+                        self.logger.info(
+                            "Face identified: camera=%s zone=%s person_id=%s name=%s role=%s conf=%.3f bbox=%s",
+                            self.camera_id,
+                            self.camera_config.zone_id,
+                            person_id,
+                            person_name,
+                            person_role,
+                            confidence,
+                            bbox,
+                        )
                     dedup_key = (match_status, person_id or "")
                     if not self._should_emit(dedup_key, now_utc):
                         continue
@@ -388,6 +488,17 @@ class FaceRecognitionProcessor:
                     mqtt_client.publish_event(event)
                     self._update_cache(dedup_key, now_utc)
                 else:
+                    if log_faces:
+                        self.logger.info(
+                            "Face identified: camera=%s zone=%s person_id=%s name=%s role=%s conf=%.3f bbox=%s",
+                            self.camera_id,
+                            self.camera_config.zone_id,
+                            person_id,
+                            person_name,
+                            person_role,
+                            confidence,
+                            bbox,
+                        )
                     dedup_key = (match_status, person_id or "")
                     if not self._should_emit(dedup_key, now_utc):
                         continue
@@ -415,3 +526,4 @@ class FaceRecognitionProcessor:
                     )
                     mqtt_client.publish_event(event)
                     self._update_cache(dedup_key, now_utc)
+        return overlays
