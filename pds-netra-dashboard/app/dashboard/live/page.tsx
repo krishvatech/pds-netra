@@ -55,7 +55,21 @@ export default function LiveCamerasPage() {
     };
   }, [selectedGodown]);
 
-  const cameras = godownDetail?.cameras ?? [];
+  const cameras = useMemo(() => {
+    const list = godownDetail?.cameras ? [...godownDetail.cameras] : [];
+    const rank = (role?: string | null) => {
+      const r = (role || '').toUpperCase();
+      if (r === 'GATE') return 0;
+      if (r === 'PERIMETER') return 1;
+      if (r === 'AISLE') return 2;
+      return 3;
+    };
+    return list.sort((a, b) => {
+      const diff = rank(a.role) - rank(b.role);
+      if (diff !== 0) return diff;
+      return String(a.label ?? a.camera_id).localeCompare(String(b.label ?? b.camera_id));
+    });
+  }, [godownDetail]);
   const streamUrl = useMemo(() => {
     if (!selectedGodown || !selectedCamera) return '';
     return `/api/v1/live/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(selectedCamera)}?v=${streamNonce}`;
@@ -103,7 +117,7 @@ export default function LiveCamerasPage() {
         </CardHeader>
         <CardContent>
           {cameras.length > 0 ? (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-8">
               {cameras.map((camera) => {
                 const camUrl = `/api/v1/live/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(
                   camera.camera_id
@@ -113,11 +127,11 @@ export default function LiveCamerasPage() {
                     <div className="text-base font-semibold text-slate-800">
                       {camera.label ?? camera.camera_id}
                     </div>
-                    <div className="aspect-video w-full overflow-hidden rounded-2xl border border-white/40 bg-black/80 shadow-inner">
+                    <div className="aspect-video w-full overflow-hidden rounded-3xl border border-white/40 bg-black/80 shadow-inner">
                       <img
                         src={camUrl}
                         alt={`Live ${camera.camera_id}`}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-contain"
                       />
                     </div>
                   </div>

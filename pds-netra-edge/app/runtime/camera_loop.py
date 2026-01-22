@@ -118,6 +118,11 @@ def start_camera_loops(
             alert_min_conf = float(os.getenv("EDGE_ALERT_MIN_CONF", "0.5"))
         except ValueError:
             alert_min_conf = 0.5
+        detect_classes = {
+            c.strip().lower()
+            for c in os.getenv("EDGE_DETECT_CLASSES", "").split(",")
+            if c.strip()
+        }
         evaluator = RulesEvaluator(
             camera_id=camera.id,
             godown_id=settings.godown_id,
@@ -209,6 +214,7 @@ def start_camera_loops(
             detector_local: YoloDetector,
             tracker_local: SimpleTracker,
             snapshot_writer_local,
+            detect_classes_local: set[str],
         ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
             live_writer: Optional[LiveFrameWriter] = None
@@ -225,6 +231,8 @@ def start_camera_loops(
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+                if detect_classes_local:
+                    objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
                 # Update last frame time and mark camera online
                 state_local.last_frame_utc = now
                 state_local.is_online = True
@@ -505,6 +513,7 @@ def start_camera_loops(
                 detector,
                 tracker,
                 snapshot_writer,
+                detect_classes,
             ),
             name=f"Pipeline-{camera.id}",
             daemon=True,
