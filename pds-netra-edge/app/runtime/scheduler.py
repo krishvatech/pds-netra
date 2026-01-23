@@ -160,7 +160,7 @@ class Scheduler:
                 camera_status_list.append(
                     {
                         "camera_id": cam_id,
-                        "online": online,
+                        "online": "true" if online else "false",
                         "last_frame_utc": last_frame_iso,
                         "last_tamper_reason": last_tamper_reason,
                     }

@@ -121,11 +121,36 @@ _face_app: Optional["FaceAnalysis"] = None
 def _ensure_model() -> "FaceAnalysis":
     if FaceAnalysis is None:
         raise RuntimeError("insightface is not installed; please install insightface to use face recognition")
+
     global _face_app
-    if _face_app is None:
-        app = FaceAnalysis(name="antelopev2")
+    if _face_app is not None:
+        return _face_app
+
+    logger = logging.getLogger("face_id")
+    model_name = os.getenv("PDS_FACE_MODEL", "antelopev2")
+    root = os.getenv("INSIGHTFACE_HOME", os.path.expanduser("~/.insightface"))
+
+    def _init(name: str) -> "FaceAnalysis":
+        # allowed_modules is optional but keeps it lean/faster
+        app = FaceAnalysis(name=name, root=root, allowed_modules=["detection", "recognition"])
         app.prepare(ctx_id=-1, det_size=(640, 640))
-        _face_app = app
+        return app
+
+    try:
+        _face_app = _init(model_name)
+    except AssertionError:
+        logger.error(
+            "InsightFace model '%s' loaded without 'detection'. "
+            "This usually means the model files are missing or stored in a nested folder. "
+            "Check %s/models/%s for *.onnx files (no extra subfolder).",
+            model_name, root, model_name
+        )
+        if model_name != "buffalo_l":
+            logger.warning("Falling back to buffalo_l.")
+            _face_app = _init("buffalo_l")
+        else:
+            raise
+
     return _face_app
 
 
@@ -205,7 +230,7 @@ def detect_faces(frame: any) -> List[Tuple[List[int], List[float]]]:
     app = _ensure_model()
     try:
         faces = app.get(frame)
-    except Exception:
+    except Exception as e:
         return []
     results: List[Tuple[List[int], List[float]]] = []
     for face in faces:
@@ -356,7 +381,7 @@ class FaceRecognitionProcessor:
         try:
             faces = detect_faces(frame)
         except Exception as exc:
-            self.logger.error("Face detection failed: %s", exc)
+            self.logger.exception("Face detection failed: %r", exc)
             return []
         if log_faces:
             if self._last_face_log is None or (now_utc - self._last_face_log).total_seconds() >= 2:
