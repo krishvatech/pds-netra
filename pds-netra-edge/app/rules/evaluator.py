@@ -117,6 +117,7 @@ class RulesEvaluator:
         alert_classes: Optional[List[str]] = None,
         alert_severity: str = "warning",
         alert_min_conf: float = 0.0,
+        zone_enforce: bool = True,
     ) -> None:
         self.logger = logging.getLogger(f"RulesEvaluator-{camera_id}")
         self.camera_id = camera_id
@@ -153,6 +154,7 @@ class RulesEvaluator:
         self.alert_classes = {c.strip().lower() for c in (alert_classes or []) if c.strip()}
         self.alert_severity = alert_severity
         self.alert_min_conf = alert_min_conf
+        self.zone_enforce = zone_enforce
         self.person_alerts: Dict[Tuple[str, object, Optional[str]], datetime.datetime] = {}
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
@@ -303,7 +305,12 @@ class RulesEvaluator:
                     continue
                 self.person_last_seen[(zone_id, obj.track_id)] = now_utc
                 # Unauthorized person rules
-                for rule in self.rules_by_zone.get(zone_id, []):
+                rules_for_zone = (
+                    self.rules_by_zone.get(zone_id, [])
+                    + self.rules_by_zone.get("all", [])
+                    + self.rules_by_zone.get("*", [])
+                )
+                for rule in rules_for_zone:
                     if isinstance(rule, (UnauthPersonAfterHoursRule, NoPersonDuringRule)):
                         if self._evaluate_time_rules(rule, now_local_time):
                             entry_key = (rule.id, obj.track_id)
@@ -331,7 +338,7 @@ class RulesEvaluator:
                                 mqtt_client.publish_event(event)
                                 self.person_active.add(entry_key)
                 # Loitering rules
-                for rule in self.rules_by_zone.get(zone_id, []):
+                for rule in rules_for_zone:
                     if isinstance(rule, LoiteringRule):
                         self._process_loitering(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
                 continue  # person handled
@@ -340,7 +347,12 @@ class RulesEvaluator:
             if cls in ANIMAL_CLASSES:
                 if zone_id is None:
                     continue
-                for rule in self.rules_by_zone.get(zone_id, []):
+                rules_for_zone = (
+                    self.rules_by_zone.get(zone_id, [])
+                    + self.rules_by_zone.get("all", [])
+                    + self.rules_by_zone.get("*", [])
+                )
+                for rule in rules_for_zone:
                     if isinstance(rule, AnimalForbiddenRule):
                         self._process_animal(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
                 continue
@@ -402,7 +414,7 @@ class RulesEvaluator:
                     timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                     bbox=obj.bbox,
                     track_id=obj.track_id,
-                    image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+                    image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
                     clip_url=None,
                     meta=MetaModel(
                         zone_id=zone_id,
@@ -496,7 +508,7 @@ class RulesEvaluator:
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
             track_id=obj.track_id,
-            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
             clip_url=None,
             meta=MetaModel(
                 zone_id=zone_id,
@@ -522,6 +534,8 @@ class RulesEvaluator:
     ) -> None:
         if obj.confidence < self.alert_min_conf:
             return
+        if self.zone_enforce and not zone_id:
+            return
         key = (self.camera_id, obj.track_id, zone_id)
         last_alert = self.person_alerts.get(key)
         if last_alert and (now_utc - last_alert).total_seconds() < self.person_alert_cooldown_sec:
@@ -536,7 +550,7 @@ class RulesEvaluator:
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
             track_id=obj.track_id,
-            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
             clip_url=None,
             meta=MetaModel(
                 zone_id=zone_id or "",
@@ -560,6 +574,8 @@ class RulesEvaluator:
     ) -> None:
         if obj.confidence < self.alert_min_conf:
             return
+        if self.zone_enforce and not zone_id:
+            return
         class_key = obj.class_name.lower()
         key = (self.camera_id, class_key, zone_id)
         last_alert = self.person_alerts.get(key)
@@ -575,7 +591,7 @@ class RulesEvaluator:
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
             track_id=obj.track_id,
-            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+            image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
             clip_url=None,
             meta=MetaModel(
                 zone_id=zone_id or "",
@@ -681,7 +697,7 @@ class RulesEvaluator:
                                 timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                                 bbox=obj.bbox,
                                 track_id=obj.track_id,
-                                image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+                                image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
                                 clip_url=None,
                                 meta=MetaModel(
                                     zone_id=zone_id or (info.last_zone_id or ""),
@@ -709,7 +725,7 @@ class RulesEvaluator:
                             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                             bbox=obj.bbox,
                             track_id=obj.track_id,
-                            image_url=self._snapshot(frame, snapshotter, event_id, now_utc),
+                            image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label=obj.class_name),
                             clip_url=None,
                             meta=MetaModel(
                                 zone_id=zone_id or (info.last_zone_id or ""),
@@ -739,13 +755,15 @@ class RulesEvaluator:
     @staticmethod
     def _snapshot(
         frame: Any,
-        snapshotter: Optional[Callable[[Any, str, datetime.datetime], Optional[str]]],
+        snapshotter: Optional[Callable[..., Optional[str]]],
         event_id: str,
         now_utc: datetime.datetime,
+        bbox: Optional[List[int]] = None,
+        label: Optional[str] = None,
     ) -> Optional[str]:
         if frame is None or snapshotter is None:
             return None
         try:
-            return snapshotter(frame, event_id, now_utc)
+            return snapshotter(frame, event_id, now_utc, bbox=bbox, label=label)
         except Exception:
             return None

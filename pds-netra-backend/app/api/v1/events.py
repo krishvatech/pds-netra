@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 from datetime import datetime
+from urllib.parse import urlparse
+from pathlib import Path
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -16,7 +19,7 @@ from sqlalchemy import func
 
 from ...core.db import get_db
 from ...models.event import Event, Alert, AlertEventLink
-from ...models.godown import Godown
+from ...models.godown import Godown, Camera
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
@@ -35,7 +38,83 @@ def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
     return None
 
 
+def _point_in_polygon(x: float, y: float, polygon: list[tuple[float, float]]) -> bool:
+    num = len(polygon)
+    j = num - 1
+    inside = False
+    for i in range(num):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        intersects = ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-9) + xi)
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _bbox_in_zone(bbox: list[int], polygon: list[tuple[float, float]]) -> bool:
+    if len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    if _point_in_polygon(cx, cy, polygon):
+        return True
+    corners = [(x1, y1), (x1, y2), (x2, y1), (x2, y2)]
+    if any(_point_in_polygon(x, y, polygon) for x, y in corners):
+        return True
+    xs = [pt[0] for pt in polygon]
+    ys = [pt[1] for pt in polygon]
+    if not xs or not ys:
+        return False
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return not (x2 < min_x or x1 > max_x or y2 < min_y or y1 > max_y)
+
+
+def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
+    bbox = _parse_bbox(event.bbox)
+    if not bbox:
+        return None
+    camera = db.get(Camera, event.camera_id)
+    if not camera or not camera.zones_json:
+        return None
+    try:
+        zones = json.loads(camera.zones_json)
+    except Exception:
+        return None
+    if not isinstance(zones, list):
+        return None
+    for zone in zones:
+        zone_id = zone.get("id") if isinstance(zone, dict) else None
+        polygon = zone.get("polygon") if isinstance(zone, dict) else None
+        if not zone_id or not isinstance(polygon, list):
+            continue
+        try:
+            poly_pts = [tuple(map(float, pt)) for pt in polygon if isinstance(pt, list) and len(pt) == 2]
+        except Exception:
+            continue
+        if not poly_pts:
+            continue
+        if _bbox_in_zone(bbox, poly_pts):
+            return zone_id
+    return None
+
+
 def _event_to_item(event: Event) -> dict:
+    image_url = event.image_url
+    if image_url and "/media/snapshots/" in image_url:
+        try:
+            parsed = urlparse(image_url)
+            path = parsed.path
+            if path.startswith("/media/snapshots/"):
+                rel = path.replace("/media/snapshots/", "")
+                snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
+                file_path = snapshots_root / rel
+                if not file_path.exists():
+                    image_url = None
+        except Exception:
+            pass
     return {
         "id": event.id,
         "event_id": event.event_id_edge,
@@ -46,7 +125,7 @@ def _event_to_item(event: Event) -> dict:
         "timestamp_utc": event.timestamp_utc,
         "bbox": _parse_bbox(event.bbox),
         "track_id": event.track_id,
-        "image_url": event.image_url,
+        "image_url": image_url,
         "clip_url": event.clip_url,
         "meta": event.meta or {},
     }
@@ -94,6 +173,18 @@ def list_events(
         .limit(page_size)
         .all()
     )
+    updated = False
+    for event in events:
+        meta = event.meta or {}
+        if not meta.get("zone_id") and event.bbox:
+            inferred_zone = _infer_zone_id(db, event)
+            if inferred_zone:
+                meta = dict(meta)
+                meta["zone_id"] = inferred_zone
+                event.meta = meta
+                updated = True
+    if updated:
+        db.commit()
     return {
         "items": [_event_to_item(e) for e in events],
         "total": total,

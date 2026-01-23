@@ -9,12 +9,74 @@ engine to create or update alerts.
 
 from __future__ import annotations
 
+import json
+from typing import List, Tuple
+
 from sqlalchemy.orm import Session
 
 from ..models.godown import Godown, Camera
 from ..models.event import Event
 from ..schemas.event import EventIn
 from .rule_engine import apply_rules
+
+
+def _point_in_polygon(x: float, y: float, polygon: List[Tuple[float, float]]) -> bool:
+    num = len(polygon)
+    j = num - 1
+    inside = False
+    for i in range(num):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        intersects = ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-9) + xi)
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _bbox_in_zone(bbox: List[int], polygon: List[Tuple[float, float]]) -> bool:
+    if len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    if _point_in_polygon(cx, cy, polygon):
+        return True
+    corners = [(x1, y1), (x1, y2), (x2, y1), (x2, y2)]
+    if any(_point_in_polygon(x, y, polygon) for x, y in corners):
+        return True
+    xs = [pt[0] for pt in polygon]
+    ys = [pt[1] for pt in polygon]
+    if not xs or not ys:
+        return False
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return not (x2 < min_x or x1 > max_x or y2 < min_y or y1 > max_y)
+
+
+def _infer_zone_id(bbox: List[int], zones_json: str | None) -> str | None:
+    if not zones_json:
+        return None
+    try:
+        zones = json.loads(zones_json)
+    except Exception:
+        return None
+    if not isinstance(zones, list):
+        return None
+    for zone in zones:
+        zone_id = zone.get("id") if isinstance(zone, dict) else None
+        polygon = zone.get("polygon") if isinstance(zone, dict) else None
+        if not zone_id or not isinstance(polygon, list):
+            continue
+        try:
+            poly_pts = [tuple(map(float, pt)) for pt in polygon if isinstance(pt, list) and len(pt) == 2]
+        except Exception:
+            continue
+        if not poly_pts:
+            continue
+        if _bbox_in_zone(bbox, poly_pts):
+            return zone_id
+    return None
 
 
 def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
@@ -47,6 +109,11 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         db.add(camera)
         db.commit()
         db.refresh(camera)
+    meta = event_in.meta.model_dump()
+    if not meta.get("zone_id") and event_in.bbox:
+        inferred_zone = _infer_zone_id(event_in.bbox, camera.zones_json)
+        if inferred_zone:
+            meta["zone_id"] = inferred_zone
     # Create Event instance
     event = Event(
         godown_id=event_in.godown_id,
@@ -59,7 +126,7 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         track_id=event_in.track_id,
         image_url=event_in.image_url,
         clip_url=event_in.clip_url,
-        meta=event_in.meta.model_dump(),
+        meta=meta,
     )
     db.add(event)
     db.commit()

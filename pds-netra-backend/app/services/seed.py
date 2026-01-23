@@ -92,15 +92,27 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
         cam_id = cam.get("id")
         if not cam_id:
             continue
-        existing = db.get(Camera, cam_id)
-        if existing:
-            continue
         zones_json = None
         if cam.get("zones") is not None:
             try:
                 zones_json = json.dumps(cam.get("zones"))
             except Exception:
                 zones_json = None
+        existing = db.get(Camera, cam_id)
+        if existing:
+            updated = False
+            if zones_json is not None and existing.zones_json != zones_json:
+                existing.zones_json = zones_json
+                updated = True
+            if cam.get("label") and existing.label != cam.get("label"):
+                existing.label = cam.get("label")
+                updated = True
+            if cam.get("role") and existing.role != cam.get("role"):
+                existing.role = cam.get("role")
+                updated = True
+            if updated:
+                db.add(existing)
+            continue
         camera = Camera(
             id=cam_id,
             godown_id=godown_id,

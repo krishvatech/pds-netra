@@ -12,6 +12,7 @@ history.
 from __future__ import annotations
 
 import datetime
+import json
 from datetime import timedelta
 from typing import Optional, List
 
@@ -19,6 +20,82 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..models.event import Event, Alert, AlertEventLink
+from ..models.godown import Camera
+
+
+def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
+    if not bbox_raw:
+        return None
+    try:
+        if bbox_raw.startswith("[") and bbox_raw.endswith("]"):
+            parts = bbox_raw.strip("[]").split(",")
+            return [int(float(p.strip())) for p in parts if p.strip()]
+    except Exception:
+        return None
+    return None
+
+
+def _point_in_polygon(x: float, y: float, polygon: list[tuple[float, float]]) -> bool:
+    num = len(polygon)
+    j = num - 1
+    inside = False
+    for i in range(num):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        intersects = ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-9) + xi)
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _bbox_in_zone(bbox: list[int], polygon: list[tuple[float, float]]) -> bool:
+    if len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    if _point_in_polygon(cx, cy, polygon):
+        return True
+    corners = [(x1, y1), (x1, y2), (x2, y1), (x2, y2)]
+    if any(_point_in_polygon(x, y, polygon) for x, y in corners):
+        return True
+    xs = [pt[0] for pt in polygon]
+    ys = [pt[1] for pt in polygon]
+    if not xs or not ys:
+        return False
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return not (x2 < min_x or x1 > max_x or y2 < min_y or y1 > max_y)
+
+
+def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
+    bbox = _parse_bbox(event.bbox)
+    if not bbox:
+        return None
+    camera = db.get(Camera, event.camera_id)
+    if not camera or not camera.zones_json:
+        return None
+    try:
+        zones = json.loads(camera.zones_json)
+    except Exception:
+        return None
+    if not isinstance(zones, list):
+        return None
+    for zone in zones:
+        zone_id = zone.get("id") if isinstance(zone, dict) else None
+        polygon = zone.get("polygon") if isinstance(zone, dict) else None
+        if not zone_id or not isinstance(polygon, list):
+            continue
+        try:
+            poly_pts = [tuple(map(float, pt)) for pt in polygon if isinstance(pt, list) and len(pt) == 2]
+        except Exception:
+            continue
+        if not poly_pts:
+            continue
+        if _bbox_in_zone(bbox, poly_pts):
+            return zone_id
+    return None
 
 
 def apply_rules(db: Session, event: Event) -> None:
@@ -29,14 +106,32 @@ def apply_rules(db: Session, event: Event) -> None:
     alert or associates the event with an existing open alert. Alerts
     group multiple related events and manage their lifecycle.
     """
+    # Ensure zone_id is populated when possible (helps zone-aware alerts).
+    meta = event.meta or {}
+    zone_id = meta.get("zone_id")
+    updated_meta = False
+    if not zone_id:
+        inferred_zone = _infer_zone_id(db, event)
+        if inferred_zone:
+            meta = dict(meta)
+            meta["zone_id"] = inferred_zone
+            event.meta = meta
+            updated_meta = True
+            zone_id = inferred_zone
     # Map raw event_type to alert_type. Unknown types result in no alert.
-    alert_type = _map_event_to_alert_type(event.event_type, event.meta)
+    alert_type = _map_event_to_alert_type(event.event_type, meta)
     if alert_type is None:
+        if updated_meta:
+            db.add(event)
+            db.commit()
         return
     # Determine zone_id from meta if available
-    zone_id = None
-    if event.meta:
+    if zone_id is None and event.meta:
         zone_id = event.meta.get("zone_id")
+    if not zone_id:
+        rule_id = (event.meta or {}).get("rule_id")
+        if rule_id in {"TEST_CLASS_DETECT", "TEST_PERSON_DETECT"}:
+            return
     # Determine severity: for now propagate raw severity
     severity_final = event.severity_raw
     # Find existing open alert within the last 10 minutes for the same godown, alert_type and zone

@@ -2,11 +2,12 @@
 
 import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { getCameraZones, getGodownDetail, getGodowns, getLiveCameras, updateCameraZones } from '@/lib/api';
+import { getCameraZones, getEvents, getGodownDetail, getGodowns, getLiveCameras, updateCameraZones } from '@/lib/api';
 import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { EventsTable } from '@/components/tables/EventsTable';
 
 export default function LiveCamerasPage() {
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
@@ -27,6 +28,7 @@ export default function LiveCamerasPage() {
   const [zoneImageError, setZoneImageError] = useState(false);
   const [cameraErrors, setCameraErrors] = useState<Record<string, boolean>>({});
   const [liveCameraIds, setLiveCameraIds] = useState<string[]>([]);
+  const [recentEvents, setRecentEvents] = useState<any[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -66,6 +68,27 @@ export default function LiveCamerasPage() {
     })();
     return () => {
       mounted = false;
+    };
+  }, [selectedGodown]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!selectedGodown) return;
+    const fetchEvents = async () => {
+      try {
+        const resp = await getEvents({ godown_id: selectedGodown, page: 1, page_size: 20 });
+        const items = Array.isArray(resp) ? resp : resp.items;
+        if (!mounted) return;
+        setRecentEvents(items);
+      } catch {
+        if (mounted) setRecentEvents([]);
+      }
+    };
+    fetchEvents();
+    const timer = window.setInterval(fetchEvents, 5000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
     };
   }, [selectedGodown]);
 
@@ -122,6 +145,12 @@ export default function LiveCamerasPage() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (zonePoints.length >= 3) {
+      setZonesError(null);
+    }
+  }, [zonePoints.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -295,6 +324,20 @@ export default function LiveCamerasPage() {
             </div>
           ) : (
             <div className="text-sm text-slate-600">No cameras available for this godown.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="text-lg font-semibold font-display">Recent events</div>
+          <div className="text-sm text-slate-600">Latest events for the selected godown.</div>
+        </CardHeader>
+        <CardContent>
+          {recentEvents.length > 0 ? (
+            <EventsTable events={recentEvents} showGodown={false} />
+          ) : (
+            <div className="text-sm text-slate-600">No recent events.</div>
           )}
         </CardContent>
       </Card>

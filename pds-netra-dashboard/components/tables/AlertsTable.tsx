@@ -13,6 +13,7 @@ export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
             <TH>Alert</TH>
             <TH>Severity</TH>
             <TH>Godown</TH>
+            <TH>Zone</TH>
             <TH>Start</TH>
             <TH>Status</TH>
             <TH className="text-right">Events</TH>
@@ -33,6 +34,7 @@ export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
                 </Badge>
               </TD>
               <TD>{a.godown_name ?? a.godown_id}</TD>
+              <TD>{a.key_meta?.zone_id ?? '-'}</TD>
               <TD>{formatUtc(a.start_time)}</TD>
               <TD>
                 <Badge variant="outline">{a.status}</Badge>

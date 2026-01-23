@@ -17,23 +17,11 @@ tracking:
 
 cameras:
   - id: CAM_GATE_1
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.2:554/stream1"
+    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     test_video: "./data/gate_1.mp4"
-    zones:
-      - id: gate_outer
-        polygon:
-          - [10, 20]
-          - [300, 20]
-          - [300, 400]
-          - [10, 400]
-      - id: gate_inner
-        polygon:
-          - [0, 0]
-          - [640, 0]
-          - [640, 384]
-          - [0, 384]
+
   - id: CAM_AISLE_3
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.2:554/stream1"
+    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     test_video: "./data/aisle_3.mp4"
     zones:
       - id: aisle_zone3
@@ -44,24 +32,28 @@ cameras:
           - [50, 350]
 
 rules:
-  - id: RULE_NO_PERSON_AFTER_20_00
-    type: UNAUTH_PERSON_AFTER_HOURS
-    camera_id: CAM_GATE_1
-    zone_id: gate_inner
-    start_time: "20:00"
-    end_time: "06:00"
-  - id: RULE_TEST_ALWAYS
+  - id: RULE_NO_PERSON_ALWAYS_GATE
     type: NO_PERSON_DURING
     camera_id: CAM_GATE_1
-    zone_id: gate_inner
+    zone_id: all
     start: "00:00"
     end: "23:59"
-  - id: RULE_NO_PERSON_DURING_FUMIGATION
+  - id: RULE_LOITERING_GATE
+    type: LOITERING
+    camera_id: CAM_GATE_1
+    zone_id: all
+    threshold_seconds: 120
+  - id: RULE_NO_PERSON_ALWAYS_AISLE
     type: NO_PERSON_DURING
     camera_id: CAM_AISLE_3
-    zone_id: aisle_zone3
-    start: "10:00"
-    end: "14:00"
+    zone_id: all
+    start: "00:00"
+    end: "23:59"
+  - id: RULE_LOITERING_AISLE
+    type: LOITERING
+    camera_id: CAM_AISLE_3
+    zone_id: all
+    threshold_seconds: 120
 
 # Face recognition configuration (optional)
 face_recognition:

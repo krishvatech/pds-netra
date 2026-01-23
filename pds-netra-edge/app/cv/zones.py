@@ -56,19 +56,24 @@ def bbox_center(bbox: List[int]) -> Tuple[float, float]:
 
 def is_bbox_in_zone(bbox: List[int], polygon: List[Tuple[float, float]]) -> bool:
     """
-    Check whether the center of a bounding box lies within a polygonal zone.
+    Check whether a bounding box intersects a polygonal zone.
 
-    Parameters
-    ----------
-    bbox: List[int]
-        Bounding box as [x1, y1, x2, y2].
-    polygon: List[Tuple[float, float]]
-        Zone polygon vertices.
-
-    Returns
-    -------
-    bool
-        True if the bounding box center is inside the polygon, otherwise False.
+    A hit is true if the center or any corner lies within the polygon.
+    This is more forgiving than center-only checks and matches operator
+    expectations for hand-drawn zones.
     """
     cx, cy = bbox_center(bbox)
-    return point_in_polygon(cx, cy, polygon)
+    if point_in_polygon(cx, cy, polygon):
+        return True
+    x1, y1, x2, y2 = bbox
+    corners = [(x1, y1), (x1, y2), (x2, y1), (x2, y2)]
+    if any(point_in_polygon(x, y, polygon) for x, y in corners):
+        return True
+    # Fallback: overlap with the polygon's bounding box (tolerant match).
+    xs = [pt[0] for pt in polygon]
+    ys = [pt[1] for pt in polygon]
+    if not xs or not ys:
+        return False
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return not (x2 < min_x or x1 > max_x or y2 < min_y or y1 > max_y)

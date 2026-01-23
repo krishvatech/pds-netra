@@ -12,6 +12,7 @@ import threading
 import logging
 import os
 import urllib.request
+import numpy as np
 from pathlib import Path
 import time
 import json
@@ -143,6 +144,7 @@ def start_camera_loops(
             ],
             alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
             alert_min_conf=alert_min_conf,
+            zone_enforce=os.getenv("EDGE_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
         )
         # Determine if ANPR rules apply for this camera
         anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
@@ -340,12 +342,32 @@ def start_camera_loops(
                         )
                 # Evaluate detections for this camera using the shared evaluator
                 try:
-                    def snapshotter(img, event_id: str, event_time: datetime.datetime):
+                    def snapshotter(img, event_id: str, event_time: datetime.datetime, bbox=None, label=None):
                         if snapshot_writer_local is None:
                             return None
                         timestamp_utc = event_time.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                        canvas = img
+                        if bbox:
+                            try:
+                                import cv2  # type: ignore
+                                canvas = img.copy()
+                                x1, y1, x2, y2 = bbox
+                                cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                                if label:
+                                    cv2.putText(
+                                        canvas,
+                                        str(label),
+                                        (x1, max(y1 - 6, 10)),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.5,
+                                        (0, 200, 255),
+                                        1,
+                                        cv2.LINE_AA,
+                                    )
+                            except Exception:
+                                canvas = img
                         return snapshot_writer_local.save(
-                            img,
+                            canvas,
                             godown_id=settings.godown_id,
                             camera_id=camera_obj.id,
                             event_id=event_id,
@@ -397,6 +419,26 @@ def start_camera_loops(
                 )
                 if frame is not None:
                     dets = [(o.class_name, o.confidence, o.bbox) for o in objects]
+                    try:
+                        import cv2  # type: ignore
+                        for zone_id, polygon in zone_polygons.items():
+                            if not polygon:
+                                continue
+                            pts = [(int(x), int(y)) for x, y in polygon]
+                            cv2.polylines(frame, [np.array(pts, dtype=np.int32)], True, (0, 180, 255), 2)
+                            label_pt = pts[0]
+                            cv2.putText(
+                                frame,
+                                zone_id,
+                                (label_pt[0], max(label_pt[1] - 6, 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (0, 180, 255),
+                                1,
+                                cv2.LINE_AA,
+                            )
+                    except Exception:
+                        pass
                     if annotated_writer is not None:
                         annotated_writer.write_frame(frame, dets)
                     if live_writer is not None:
