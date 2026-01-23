@@ -368,6 +368,12 @@ class FaceRecognitionProcessor:
                 self._last_face_log = now_utc
         overlays: List[FaceOverlay] = []
         for bbox, embedding in faces:
+            # Skip tiny faces that produce unreliable embeddings.
+            min_face_size = int(os.getenv("PDS_FACE_MIN_SIZE", "60"))
+            width = max(0, bbox[2] - bbox[0])
+            height = max(0, bbox[3] - bbox[1])
+            if width < min_face_size or height < min_face_size:
+                continue
             zone_cfg = (self.camera_config.zone_id or "").strip().lower()
             if zone_cfg and zone_cfg not in {"all", "*"}:
                 zone_id = self._determine_zone(bbox)
@@ -375,6 +381,35 @@ class FaceRecognitionProcessor:
                     continue
             if embedding is None:
                 continue
+            best_confidence = None
+            best_match_id = None
+            if np is not None and self.known_people and self._index.ready():
+                try:
+                    candidate = np.array(embedding, dtype="float32")
+                    result = self._index.query(candidate, k=1)
+                    if result is not None:
+                        best_match_id, best_confidence = result
+                except Exception:
+                    best_match_id = None
+                    best_confidence = None
+            if best_confidence is None:
+                self.logger.info(
+                    "Face similarity: camera=%s zone=%s bbox=%s similarity=NA threshold=%.3f",
+                    self.camera_id,
+                    self.camera_config.zone_id,
+                    bbox,
+                    self.global_config.min_match_confidence,
+                )
+            else:
+                self.logger.info(
+                    "Face similarity: camera=%s zone=%s bbox=%s similarity=%.3f threshold=%.3f match_id=%s",
+                    self.camera_id,
+                    self.camera_config.zone_id,
+                    bbox,
+                    float(best_confidence),
+                    self.global_config.min_match_confidence,
+                    best_match_id,
+                )
             match = match_face(
                 embedding,
                 self._index,
