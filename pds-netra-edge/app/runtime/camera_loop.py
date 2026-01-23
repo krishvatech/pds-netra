@@ -103,8 +103,9 @@ def start_camera_loops(
                     resolved_test,
                 )
         try:
-            model_path = os.getenv("EDGE_YOLO_MODEL", "best.pt")
+            model_path = os.getenv("EDGE_YOLO_MODEL", "animal.pt")
             detector = YoloDetector(
+                model_name=model_path,
                 device=device,
                 tracker_name=settings.tracking.tracker_name,
                 track_persist=settings.tracking.track_persist,

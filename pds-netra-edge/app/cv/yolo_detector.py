@@ -36,7 +36,7 @@ class YoloDetector:
 
     def __init__(
         self,
-        model_name: str = "yolov8n.pt",
+        model_name: str = "animal.pt",
         device: str = "cpu",
         tracker_name: str = "bytetrack.yaml",
         track_persist: bool = True,
