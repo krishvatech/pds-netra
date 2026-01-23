@@ -65,7 +65,7 @@ rules:
 
 # Face recognition configuration (optional)
 face_recognition:
-  enabled: true
+  enabled: false
   known_faces_file: "config/known_faces.json"
   min_match_confidence: 0.6
   unknown_event_enabled: true

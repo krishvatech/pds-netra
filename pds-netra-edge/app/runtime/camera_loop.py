@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import logging
 import os
+import urllib.request
 from pathlib import Path
 import time
 import json
@@ -222,18 +223,49 @@ def start_camera_loops(
             annotated_writer: Optional[AnnotatedVideoWriter] = None
             live_writer: Optional[LiveFrameWriter] = None
             current_state = {"mode": "live", "run_id": None, "last_snapshot_ts": 0.0}
+            last_zone_sync = 0.0
+            zone_sync_interval = float(os.getenv("EDGE_ZONES_SYNC_INTERVAL_SEC", "15"))
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
             live_dir = os.getenv(
                 "EDGE_LIVE_ANNOTATED_DIR",
                 str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "live"),
             )
             live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
             live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
+
+            def _sync_zones() -> None:
+                nonlocal last_zone_sync
+                now_ts = time.monotonic()
+                if now_ts - last_zone_sync < zone_sync_interval:
+                    return
+                last_zone_sync = now_ts
+                url = f"{backend_url}/api/v1/cameras/{camera_obj.id}/zones"
+                try:
+                    with urllib.request.urlopen(url, timeout=2) as resp:
+                        payload = json.loads(resp.read().decode("utf-8"))
+                    zones = payload.get("zones", [])
+                    if isinstance(zones, list):
+                        zone_polygons.clear()
+                        for zone in zones:
+                            zone_id = zone.get("id")
+                            polygon = zone.get("polygon")
+                            if not zone_id or not isinstance(polygon, list):
+                                continue
+                            try:
+                                zone_polygons[zone_id] = [tuple(pt) for pt in polygon]
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+
             def callback(
                 objects: list[DetectedObject],
                 frame=None,
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+
+                _sync_zones()
 
                 if detect_classes_local:
                     objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]

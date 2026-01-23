@@ -36,6 +36,7 @@ export interface CameraInfo {
   camera_id: string;
   label?: string | null;
   role?: 'GATE' | 'AISLE' | 'PERIMETER' | string | null;
+  zones_json?: string | null;
 
   // Health hints (if backend provides)
   online?: boolean | null;

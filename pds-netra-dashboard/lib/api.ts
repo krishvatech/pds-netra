@@ -95,6 +95,24 @@ export async function getGodownDetail(godownId: string): Promise<GodownDetail> {
   return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`);
 }
 
+export async function getCameraZones(cameraId: string): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones`);
+}
+
+export async function updateCameraZones(
+  cameraId: string,
+  zones: Array<{ id: string; polygon: number[][] }>
+): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones`, {
+    method: 'PUT',
+    body: JSON.stringify({ zones })
+  });
+}
+
+export async function getLiveCameras(godownId: string): Promise<{ godown_id: string; cameras: string[] }> {
+  return apiFetch(`/api/v1/live/${encodeURIComponent(godownId)}`);
+}
+
 export async function getAlerts(params?: {
   godown_id?: string;
   district?: string;
