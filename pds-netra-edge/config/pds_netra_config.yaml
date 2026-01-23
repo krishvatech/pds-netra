@@ -57,13 +57,17 @@ rules:
 
 # Face recognition configuration (optional)
 face_recognition:
-  enabled: false
+  enabled: true
   known_faces_file: "config/known_faces.json"
   min_match_confidence: 0.6
   unknown_event_enabled: true
   dedup_interval_seconds: 60
   cameras:
     - camera_id: CAM_GATE_1
+      zone_id: all
+      allow_unknown: false
+      log_known_only: false
+    - camera_id: CAM_AISLE_3
       zone_id: all
       allow_unknown: false
       log_known_only: false
