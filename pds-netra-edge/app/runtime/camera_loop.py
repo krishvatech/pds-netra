@@ -408,7 +408,6 @@ def start_camera_loops(
                         )
                     known_faces = sum(1 for face in face_overlays if face.status == "KNOWN")
                     unknown_faces = sum(1 for face in face_overlays if face.status == "UNKNOWN")
-                    return {"faces": face_overlays}
                 logging.getLogger("camera_loop").info(
                     "Frame persons=%d faces_known=%d faces_unknown=%d camera=%s mode=%s",
                     person_count,
