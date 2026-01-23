@@ -38,6 +38,10 @@ rules:
     zone_id: all
     start: "00:00"
     end: "23:59"
+  - id: RULE_ANIMAL_INTRUSION_GATE
+    type: ANIMAL_FORBIDDEN
+    camera_id: CAM_GATE_1
+    zone_id: zone_1
   - id: RULE_LOITERING_GATE
     type: LOITERING
     camera_id: CAM_GATE_1

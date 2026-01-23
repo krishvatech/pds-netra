@@ -425,7 +425,7 @@ def start_camera_loops(
                             if not polygon:
                                 continue
                             pts = [(int(x), int(y)) for x, y in polygon]
-                            cv2.polylines(frame, [np.array(pts, dtype=np.int32)], True, (0, 180, 255), 2)
+                            cv2.polylines(frame, [np.array(pts, dtype=np.int32)], True, (255, 150, 0), 2)
                             label_pt = pts[0]
                             cv2.putText(
                                 frame,
@@ -433,7 +433,7 @@ def start_camera_loops(
                                 (label_pt[0], max(label_pt[1] - 6, 10)),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.5,
-                                (0, 180, 255),
+                                (255, 150, 0),
                                 1,
                                 cv2.LINE_AA,
                             )
