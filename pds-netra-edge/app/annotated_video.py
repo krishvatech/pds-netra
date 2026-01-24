@@ -80,7 +80,10 @@ class AnnotatedVideoWriter:
             if now - self._last_latest_ts >= self.latest_interval:
                 self.latest_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    cv2.imwrite(str(self.latest_path), canvas)
+                    import os
+                    tmp_path = self.latest_path.with_suffix(".tmp")
+                    cv2.imwrite(str(tmp_path), canvas)
+                    os.replace(str(tmp_path), str(self.latest_path))
                 except Exception:
                     pass
                 self._last_latest_ts = now
@@ -129,14 +132,10 @@ class LiveFrameWriter:
             )
         self.latest_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            import logging
-            logger = logging.getLogger("LiveFrameWriter")
-            res = cv2.imwrite(str(self.latest_path), canvas)
-            if not res:
-                logger.error("Failed to write live frame to %s", self.latest_path)
-            else:
-                logger.info("Successfully updated live frame at %s", self.latest_path)
-        except Exception as exc:
-            import logging
-            logging.getLogger("LiveFrameWriter").error("Exception writing live frame to %s: %s", self.latest_path, exc)
+            import os
+            tmp_path = self.latest_path.with_suffix(".tmp")
+            cv2.imwrite(str(tmp_path), canvas)
+            os.replace(str(tmp_path), str(self.latest_path))
+        except Exception:
+            pass
         self._last_latest_ts = now

@@ -37,7 +37,7 @@ cameras:
 
   - id: CAM_AISLE_3
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
-    test_video: "./data/aisle_3.mp4"
+    #test_video: "./data/aisle_3.mp4"
     zones:
       - id: aisle_zone3
         polygon:

@@ -1,0 +1,57 @@
+PDS Netra is a monorepo with three parts:
+- pds-netra-edge: runs CV pipelines at the edge and publishes events/health over MQTT.
+- pds-netra-backend: FastAPI service that ingests MQTT data, stores it, and exposes REST APIs.
+- pds-netra-dashboard: Next.js UI that calls the backend APIs to show health, alerts, and test runs.
+
+How it works (high level):
+1) Edge detects objects/rules and publishes events + health heartbeats to MQTT (Mosquitto).
+2) Backend listens/ingests and serves data via REST endpoints.
+3) Dashboard proxies to the backend and renders views for operators.
+
+Dashboard behavior (what you see and where it comes from):
+- Overview/Health/Alerts pages call backend APIs (e.g., /api/v1/overview, /api/v1/health/summary, /api/v1/alerts).
+- Test Runs pages upload videos to the backend, which processes them and returns results/events.
+- Live page (if enabled) reads backend live endpoints and shows current activity.
+- The dashboard itself does not talk to MQTT directly; it only uses REST APIs.
+
+Technologies and their use:
+- Python: core runtime for edge and backend services.
+- FastAPI + Uvicorn: backend REST API server.
+- SQLAlchemy + Alembic: database models and migrations.
+- Postgres + psycopg2-binary: primary database and driver.
+- Pydantic + pydantic-settings: config and request/response validation.
+- paho-mqtt: MQTT client for edge publish and backend consume.
+- MQTT (Mosquitto broker): lightweight pub/sub messaging; carries edge events and health to the backend.
+- PyYAML: load YAML configs (edge config file).
+- python-dotenv: local environment overrides.
+- OpenCV + Ultralytics YOLO + NumPy: edge computer vision and detection pipeline.
+- Next.js + React: dashboard web app.
+- TypeScript: dashboard type safety.
+- Tailwind CSS + PostCSS + Autoprefixer: dashboard styling pipeline.
+- Recharts: dashboard charts/graphs.
+- Docker + Docker Compose: local MQTT broker and Postgres.
+- pytest: backend test runner (dev dependency).
+
+Daily run commands (PowerShell; one terminal per block):
+
+Infra (MQTT + Postgres)
+  cd d:\pds-netra\pds-netra\pds-netra-edge
+  docker compose up -d mosquitto
+  docker start pdsnetra-postgres
+
+Backend
+  cd d:\pds-netra\pds-netra\pds-netra-backend
+  .\.venv\Scripts\Activate.ps1
+  uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+
+Edge
+  cd d:\pds-netra\pds-netra\pds-netra-edge
+  .\.venv\Scripts\Activate.ps1
+  $env:EDGE_OVERRIDE_PATH="d:\pds-netra\pds-netra\pds-netra-backend\data\edge_overrides\GDN_001.json"
+  python -m app.main --config config/pds_netra_config.yaml --device cpu --log-level INFO
+
+Dashboard
+  cd d:\pds-netra\pds-netra\pds-netra-dashboard
+  npm run dev
+
+Open http://localhost:3000 after all services are running.
