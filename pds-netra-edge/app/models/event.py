@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 class MetaModel(BaseModel):
     """Additional metadata associated with an event."""
 
-    zone_id: str
+    zone_id: Optional[str] = None
     rule_id: str
     confidence: float
     # Optional movement type for bag movement events (e.g. "AFTER_HOURS", "GENERIC").
@@ -38,11 +38,21 @@ class EventModel(BaseModel):
     event_type: str
     severity: str
     timestamp_utc: str
-    bbox: List[int]
-    track_id: int
+    bbox: Optional[List[int]] = None
+    track_id: Optional[int] = None
     image_url: Optional[str] = None
     clip_url: Optional[str] = None
     meta: MetaModel
+
+
+class CameraStatusModel(BaseModel):
+    """Per-camera status entry for health heartbeats."""
+
+    camera_id: str
+    online: Optional[bool] = None
+    last_frame_utc: Optional[str] = None
+    last_tamper_reason: Optional[str] = None
+    fps_estimate: Optional[float] = None
 
 
 class HealthModel(BaseModel):
@@ -55,11 +65,12 @@ class HealthModel(BaseModel):
     total_cameras: int
     timestamp_utc: str
     # Detailed camera status list. Each entry describes one camera's health.
-    camera_status: Optional[List[Dict[str, Optional[str]]]] = None
+    camera_status: Optional[List[CameraStatusModel]] = None
 
 
 __all__ = [
     'MetaModel',
     'EventModel',
+    'CameraStatusModel',
     'HealthModel',
 ]

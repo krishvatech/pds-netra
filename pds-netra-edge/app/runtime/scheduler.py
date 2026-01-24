@@ -14,12 +14,11 @@ import time
 import datetime
 from typing import Optional, Dict
 
-from ..models.event import HealthModel
+from ..models.event import HealthModel, CameraStatusModel
 from ..events.mqtt_client import MQTTClient
-from ..config import Settings
-import uuid
-from ..config import HealthConfig
+from ..config import Settings, HealthConfig
 from .camera_loop import CameraHealthState
+import uuid
 
 
 class Scheduler:
@@ -81,6 +80,8 @@ class Scheduler:
         online_cameras = total_cameras
         camera_status_list = []
         device_status = "OK"
+        offline_count = 0
+        tamper_active = False
 
         # Build a lookup for camera health configuration
         health_configs: Dict[str, HealthConfig] = {}
@@ -95,33 +96,39 @@ class Scheduler:
             online_cameras = 0
             for cam_id, state in self.camera_states.items():
                 cfg = health_configs.get(cam_id, HealthConfig())
-                # Determine if camera is considered online based on last frame timestamp
                 online = False
                 last_frame_iso: Optional[str] = None
+
                 if state.suppress_offline_events:
                     if state.last_frame_utc is not None:
                         last_frame_iso = state.last_frame_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
                     online = True
                     online_cameras += 1
                     camera_status_list.append(
-                        {
-                            "camera_id": cam_id,
-                            "online": True,
-                            "last_frame_utc": last_frame_iso,
-                            "last_tamper_reason": state.last_tamper_reason,
-                        }
+                        CameraStatusModel(
+                            camera_id=cam_id,
+                            online=True,
+                            last_frame_utc=last_frame_iso,
+                            last_tamper_reason=state.last_tamper_reason,
+                            fps_estimate=state.fps_estimate,
+                        )
                     )
                     continue
+
                 if state.last_frame_utc is not None:
                     last_frame_iso = state.last_frame_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
                     time_since = (now_dt - state.last_frame_utc).total_seconds()
                     if time_since <= cfg.no_frame_timeout_seconds:
                         online = True
-                # If status has transitioned from online to offline, emit offline event
-                if state.is_online and not online:
-                    # Camera went offline
+                elif state.started_at_utc is not None:
+                    time_since_start = (now_dt - state.started_at_utc).total_seconds()
+                    if time_since_start > cfg.no_frame_timeout_seconds:
+                        online = False
+
+                if not online and not state.offline_reported and not state.suppress_offline_events:
                     try:
                         from ..models.event import EventModel, MetaModel  # local import to avoid cycle
+                        reason = "RTSP_OFFLINE" if state.is_online else "NO_FRAMES"
                         event = EventModel(
                             godown_id=self.settings.godown_id,
                             camera_id=cam_id,
@@ -129,43 +136,87 @@ class Scheduler:
                             event_type="CAMERA_OFFLINE",
                             severity="critical",
                             timestamp_utc=now_iso,
-                            bbox=[],
-                            track_id=-1,
+                            bbox=None,
+                            track_id=None,
                             image_url=None,
                             clip_url=None,
                             meta=MetaModel(
-                                zone_id="",
+                                zone_id=None,
                                 rule_id="CAM_TAMPER_HEURISTIC",
                                 confidence=1.0,
-                                reason="RTSP_OFFLINE",
+                                reason=reason,
                                 extra={},
                             ),
                         )
                         self.mqtt_client.publish_event(event)
+                        self.logger.warning("Camera offline: camera=%s reason=%s", cam_id, reason)
+                        state.offline_reported = True
                     except Exception:
                         self.logger.exception("Failed to publish offline event for camera %s", cam_id)
-                # Update state
+
                 state.is_online = online
                 if online:
                     online_cameras += 1
-                # Determine last tamper reason
+                    state.offline_reported = False
+
                 last_tamper_reason = None
                 if state.last_tamper_reason:
                     last_tamper_reason = state.last_tamper_reason
-                    # If tamper occurred recently (< cooldown), mark degraded
-                    device_status = "DEGRADED"
-                # Determine device status if offline
+                    tamper_active = True
+
                 if not online:
-                    device_status = "DEGRADED" if online_cameras > 0 else "ERROR"
+                    offline_count += 1
+
                 camera_status_list.append(
-                    {
-                        "camera_id": cam_id,
-                        "online": "true" if online else "false",
-                        "last_frame_utc": last_frame_iso,
-                        "last_tamper_reason": last_tamper_reason,
-                    }
+                    CameraStatusModel(
+                        camera_id=cam_id,
+                        online=online,
+                        last_frame_utc=last_frame_iso,
+                        last_tamper_reason=last_tamper_reason,
+                        fps_estimate=state.fps_estimate,
+                    )
                 )
-        # Build health model
+
+            if total_cameras > 0 and (offline_count / total_cameras) > 0.5:
+                device_status = "ERROR"
+            elif offline_count > 0 or tamper_active:
+                device_status = "DEGRADED"
+
+            for cam_id, state in self.camera_states.items():
+                cfg = health_configs.get(cam_id, HealthConfig())
+                if state.fps_estimate is not None and state.fps_estimate < cfg.min_fps:
+                    device_status = "DEGRADED"
+                    break
+
+            for cam_id, state in self.camera_states.items():
+                cfg = health_configs.get(cam_id, HealthConfig())
+                if state.fps_estimate is None:
+                    continue
+                if state.fps_estimate < cfg.min_fps and not state.fps_degraded:
+                    self.logger.warning(
+                        "FPS degraded: camera=%s fps=%.2f min_fps=%.2f",
+                        cam_id,
+                        state.fps_estimate,
+                        cfg.min_fps,
+                    )
+                    state.fps_degraded = True
+                elif state.fps_estimate >= cfg.min_fps and state.fps_degraded:
+                    self.logger.info(
+                        "FPS recovered: camera=%s fps=%.2f min_fps=%.2f",
+                        cam_id,
+                        state.fps_estimate,
+                        cfg.min_fps,
+                    )
+                    state.fps_degraded = False
+
+            mqtt_connected = False
+            try:
+                mqtt_connected = bool(getattr(self.mqtt_client, "_connected").is_set())
+            except Exception:
+                mqtt_connected = False
+            if not mqtt_connected and total_cameras > 0:
+                device_status = "ERROR"
+
         health = HealthModel(
             godown_id=self.settings.godown_id,
             device_id=f"PDSNETRA_EDGE_{self.settings.godown_id}",

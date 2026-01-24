@@ -19,6 +19,21 @@ cameras:
   - id: CAM_GATE_1
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     test_video: "./data/gate_1.mp4"
+    health:
+      enabled: true
+      no_frame_timeout_seconds: 15
+      min_fps: 3.0
+      low_light_threshold: 25
+      black_frame_threshold: 5.0
+      low_light_consecutive_frames: 30
+      uniform_std_threshold: 6.0
+      blur_threshold: 50.0
+      blackout_drop_ratio: 0.55
+      blackout_min_baseline: 25.0
+      moved_diff_threshold: 0.35
+      moved_consecutive_frames: 10
+      cooldown_seconds: 60
+      snapshot_on_tamper: false
 
   - id: CAM_AISLE_3
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
@@ -30,6 +45,21 @@ cameras:
           - [500, 50]
           - [500, 350]
           - [50, 350]
+    health:
+      enabled: true
+      no_frame_timeout_seconds: 15
+      min_fps: 3.0
+      low_light_threshold: 25
+      black_frame_threshold: 5.0
+      low_light_consecutive_frames: 30
+      uniform_std_threshold: 6.0
+      blur_threshold: 50.0
+      blackout_drop_ratio: 0.55
+      blackout_min_baseline: 25.0
+      moved_diff_threshold: 0.35
+      moved_consecutive_frames: 10
+      cooldown_seconds: 60
+      snapshot_on_tamper: false
 
 rules:
   - id: RULE_NO_PERSON_ALWAYS_GATE
@@ -47,6 +77,30 @@ rules:
     camera_id: CAM_GATE_1
     zone_id: all
     threshold_seconds: 120
+  - id: RULE_BAG_MONITOR_AISLE
+    type: BAG_MONITOR
+    camera_id: CAM_AISLE_3
+    zone_id: aisle_zone3
+    cooldown_seconds: 60
+  - id: RULE_BAG_ODD_HOURS_AISLE
+    type: BAG_ODD_HOURS
+    camera_id: CAM_AISLE_3
+    zone_id: aisle_zone3
+    start_local: "20:00"
+    end_local: "06:00"
+    cooldown_seconds: 60
+  - id: RULE_BAG_UNPLANNED_AISLE
+    type: BAG_UNPLANNED
+    camera_id: CAM_AISLE_3
+    zone_id: aisle_zone3
+    require_active_dispatch_plan: true
+    cooldown_seconds: 60
+  - id: RULE_BAG_TALLY_MISMATCH_AISLE
+    type: BAG_TALLY_MISMATCH
+    camera_id: CAM_AISLE_3
+    zone_id: aisle_zone3
+    allowed_overage_percent: 10
+    cooldown_seconds: 120
   - id: RULE_NO_PERSON_ALWAYS_AISLE
     type: NO_PERSON_DURING
     camera_id: CAM_AISLE_3

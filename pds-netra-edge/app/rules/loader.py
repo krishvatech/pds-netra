@@ -72,6 +72,34 @@ class BagMovementMonitorRule(BaseRule):
 
 
 @dataclass
+class BagMonitorRule(BaseRule):
+    """Rule emitting bag movement events for any movement inside a zone."""
+    cooldown_seconds: int = 60
+
+
+@dataclass
+class BagOddHoursRule(BaseRule):
+    """Rule emitting bag movement events during odd-hours windows."""
+    start_local: str
+    end_local: str
+    cooldown_seconds: int = 60
+
+
+@dataclass
+class BagUnplannedRule(BaseRule):
+    """Rule emitting bag movement events when no dispatch plan is active."""
+    require_active_dispatch_plan: bool = True
+    cooldown_seconds: int = 60
+
+
+@dataclass
+class BagTallyMismatchRule(BaseRule):
+    """Rule emitting bag movement events when tally exceeds expected plan count."""
+    allowed_overage_percent: float = 0.0
+    cooldown_seconds: int = 120
+
+
+@dataclass
 class AnprMonitorRule(BaseRule):
     """Rule that enables ANPR monitoring on a zone. All detected plates will
     result in events with match_status set to "UNKNOWN" by default.
@@ -187,6 +215,76 @@ def load_rules(settings: Settings) -> List[BaseRule]:
                     camera_id=rule_cfg.camera_id,
                     zone_id=rule_cfg.zone_id,
                     threshold_distance=threshold_px,
+                )
+            )
+        elif rule_type == 'BAG_MONITOR':
+            cooldown = getattr(rule_cfg, 'cooldown_seconds', None)
+            try:
+                cooldown_sec = int(cooldown) if cooldown is not None else 60
+            except Exception:
+                cooldown_sec = 60
+            typed_rules.append(
+                BagMonitorRule(
+                    id=rule_cfg.id,
+                    type=rule_cfg.type,
+                    camera_id=rule_cfg.camera_id,
+                    zone_id=rule_cfg.zone_id,
+                    cooldown_seconds=cooldown_sec,
+                )
+            )
+        elif rule_type == 'BAG_ODD_HOURS':
+            cooldown = getattr(rule_cfg, 'cooldown_seconds', None)
+            try:
+                cooldown_sec = int(cooldown) if cooldown is not None else 60
+            except Exception:
+                cooldown_sec = 60
+            typed_rules.append(
+                BagOddHoursRule(
+                    id=rule_cfg.id,
+                    type=rule_cfg.type,
+                    camera_id=rule_cfg.camera_id,
+                    zone_id=rule_cfg.zone_id,
+                    start_local=getattr(rule_cfg, 'start_local'),
+                    end_local=getattr(rule_cfg, 'end_local'),
+                    cooldown_seconds=cooldown_sec,
+                )
+            )
+        elif rule_type == 'BAG_UNPLANNED':
+            cooldown = getattr(rule_cfg, 'cooldown_seconds', None)
+            try:
+                cooldown_sec = int(cooldown) if cooldown is not None else 60
+            except Exception:
+                cooldown_sec = 60
+            require_plan = getattr(rule_cfg, 'require_active_dispatch_plan', True)
+            typed_rules.append(
+                BagUnplannedRule(
+                    id=rule_cfg.id,
+                    type=rule_cfg.type,
+                    camera_id=rule_cfg.camera_id,
+                    zone_id=rule_cfg.zone_id,
+                    require_active_dispatch_plan=bool(require_plan),
+                    cooldown_seconds=cooldown_sec,
+                )
+            )
+        elif rule_type == 'BAG_TALLY_MISMATCH':
+            cooldown = getattr(rule_cfg, 'cooldown_seconds', None)
+            try:
+                cooldown_sec = int(cooldown) if cooldown is not None else 120
+            except Exception:
+                cooldown_sec = 120
+            allowed = getattr(rule_cfg, 'allowed_overage_percent', None)
+            try:
+                allowed_pct = float(allowed) if allowed is not None else 0.0
+            except Exception:
+                allowed_pct = 0.0
+            typed_rules.append(
+                BagTallyMismatchRule(
+                    id=rule_cfg.id,
+                    type=rule_cfg.type,
+                    camera_id=rule_cfg.camera_id,
+                    zone_id=rule_cfg.zone_id,
+                    allowed_overage_percent=allowed_pct,
+                    cooldown_seconds=cooldown_sec,
                 )
             )
         elif rule_type == 'ANPR_MONITOR':

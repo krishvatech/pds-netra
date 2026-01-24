@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 import logging
 import uuid
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Callable, Any
 
@@ -357,10 +358,12 @@ class RulesEvaluator:
                         self._process_animal(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
                 continue
 
-            # Handle bag movement
+            # Handle bag movement (legacy rules optional)
             if cls in BAG_CLASSES:
-                # zone_id may be None when bag is outside defined zones
-                self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client, frame, snapshotter)
+                legacy_enabled = os.getenv("EDGE_LEGACY_BAG_RULES", "false").lower() in {"1", "true", "yes"}
+                if legacy_enabled:
+                    # zone_id may be None when bag is outside defined zones
+                    self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client, frame, snapshotter)
                 continue
 
             # Other classes are ignored

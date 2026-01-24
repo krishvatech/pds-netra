@@ -12,7 +12,7 @@ publishing.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Tuple, Optional
+from typing import Callable, List, Tuple, Optional, Any
 import logging
 import os
 import datetime
@@ -48,6 +48,8 @@ class Pipeline:
     callback : Callable[[List[DetectedObject]], None]
         User-supplied callback invoked on each frame with the list of
         detected objects.
+    frame_processors : Optional[List[Callable[[List[DetectedObject], datetime.datetime, Any], None]]]
+        Additional handlers invoked per frame before the main callback.
     """
 
     def __init__(
@@ -57,6 +59,7 @@ class Pipeline:
         detector: YoloDetector,
         callback: Callable[[List[DetectedObject]], None],
         stop_check: Optional[Callable[[], bool]] = None,
+        frame_processors: Optional[List[Callable[[List[DetectedObject], datetime.datetime, Any], None]]] = None,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.source = source
@@ -64,6 +67,7 @@ class Pipeline:
         self.detector = detector
         self.callback = callback
         self.stop_check = stop_check
+        self.frame_processors = frame_processors or []
 
     def run(self) -> None:
         """
@@ -92,7 +96,8 @@ class Pipeline:
                 # Perform tracking using the detector's built-in tracker.
                 tracked = self.detector.track(frame)
                 # Convert to DetectedObject instances
-                timestamp = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+                now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+                timestamp = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 objects: List[DetectedObject] = []
                 for track_id, (cls_name, conf, bbox) in tracked:
                     obj = DetectedObject(
@@ -104,6 +109,11 @@ class Pipeline:
                         timestamp_utc=timestamp,
                     )
                     objects.append(obj)
+                for processor in self.frame_processors:
+                    try:
+                        processor(objects, now_utc, frame)
+                    except Exception as exc:
+                        self.logger.exception("Frame processor error: %s", exc)
                 # Invoke callback; if callback accepts a frame argument, pass it
                 overlay_payload = None
                 try:

@@ -49,6 +49,12 @@ class RuleConfig:
     start: Optional[str] = None
     end: Optional[str] = None
     threshold_seconds: Optional[int] = None
+    start_local: Optional[str] = None
+    end_local: Optional[str] = None
+    cooldown_seconds: Optional[int] = None
+    require_active_dispatch_plan: Optional[bool] = None
+    allowed_overage_percent: Optional[float] = None
+    threshold_distance: Optional[int] = None
 
 
 @dataclass
@@ -99,6 +105,11 @@ class Settings:
     mqtt_password: Optional[str] = None
     face_recognition: Optional[FaceRecognitionConfig] = None
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
+    dispatch_plan_path: str = "data/dispatch_plan.json"
+    dispatch_plan_reload_sec: int = 10
+    bag_class_keywords: List[str] = field(default_factory=list)
+    bag_movement_px_threshold: int = 50
+    bag_movement_time_window_sec: int = 2
 
 # Health configuration for camera monitoring and tamper detection
 @dataclass
@@ -112,10 +123,22 @@ class HealthConfig:
         Whether health and tamper monitoring is enabled for this camera.
     no_frame_timeout_seconds: int
         Interval in seconds after which a camera without new frames is considered offline.
+    min_fps: float
+        Minimum expected FPS before health is considered degraded.
     low_light_threshold: float
         Mean brightness below which the scene is considered low light.
+    black_frame_threshold: float
+        Mean brightness threshold below which a frame is considered black.
     tamper_frame_diff_threshold: float
-        Threshold of difference between current frame and baseline for detecting camera movement.
+        Legacy threshold for difference between current frame and baseline for detecting camera movement.
+    uniform_std_threshold: float
+        Standard deviation threshold below which a frame is considered uniform/blocked.
+    blackout_drop_ratio: float
+        Sudden drop ratio vs baseline mean for blackout detection.
+    blackout_min_baseline: float
+        Minimum baseline mean required before using blackout drop ratio.
+    moved_diff_threshold: float
+        Normalized diff threshold (0..1) for camera moved detection.
     blur_threshold: float
         Laplacian variance threshold below which a frame is considered blurred.
     snapshot_on_tamper: bool
@@ -123,19 +146,29 @@ class HealthConfig:
     low_light_consecutive_frames: int
         Number of consecutive low-light frames required before emitting a low-light event.
     blocked_stddev_threshold: float
-        Standard deviation threshold below which a frame is considered uniform/blocked.
+        Legacy uniform frame stddev threshold retained for backward compatibility.
     blocked_consecutive_frames: int
         Number of consecutive uniform frames required before emitting a lens blocked event.
     blur_consecutive_frames: int
         Number of consecutive blurred frames required before emitting a blur event.
     moved_consecutive_frames: int
         Number of consecutive frames with high difference required before emitting a camera moved event.
+    cooldown_seconds: int
+        Per-reason cooldown window before emitting the same tamper event again.
+    clear_consecutive_frames: int
+        Number of normal frames required before clearing a tamper condition.
     """
 
     enabled: bool = True
     no_frame_timeout_seconds: int = 15
+    min_fps: float = 3.0
     low_light_threshold: float = 25.0
+    black_frame_threshold: float = 5.0
     tamper_frame_diff_threshold: float = 0.8
+    uniform_std_threshold: float = 6.0
+    blackout_drop_ratio: float = 0.55
+    blackout_min_baseline: float = 25.0
+    moved_diff_threshold: float = 0.35
     blur_threshold: float = 50.0
     snapshot_on_tamper: bool = True
     low_light_consecutive_frames: int = 30
@@ -143,6 +176,8 @@ class HealthConfig:
     blocked_consecutive_frames: int = 5
     blur_consecutive_frames: int = 5
     moved_consecutive_frames: int = 1
+    cooldown_seconds: int = 60
+    clear_consecutive_frames: int = 15
 
 
 def _load_yaml_file(config_path: Path) -> dict:
@@ -185,6 +220,28 @@ def load_settings(config_path: str) -> Settings:
     mqtt_broker_port = int(os.getenv('MQTT_BROKER_PORT', data.get('mqtt', {}).get('port', 1883)))
     mqtt_username = os.getenv('MQTT_USERNAME', data.get('mqtt', {}).get('username'))
     mqtt_password = os.getenv('MQTT_PASSWORD', data.get('mqtt', {}).get('password'))
+    dispatch_plan_path = os.getenv(
+        "EDGE_DISPATCH_PLAN_PATH",
+        str(Path(data.get("dispatch_plan_path", "data/dispatch_plan.json")).expanduser()),
+    )
+    try:
+        dispatch_plan_reload_sec = int(os.getenv("EDGE_DISPATCH_PLAN_RELOAD_SEC", data.get("dispatch_plan_reload_sec", 10)))
+    except Exception:
+        dispatch_plan_reload_sec = 10
+    bag_keywords_raw = os.getenv("EDGE_BAG_CLASS_KEYWORDS", "")
+    if not bag_keywords_raw:
+        bag_keywords_raw = ",".join(data.get("bag_class_keywords", []) or [])
+    bag_class_keywords = [kw.strip().lower() for kw in bag_keywords_raw.split(",") if kw.strip()]
+    if not bag_class_keywords:
+        bag_class_keywords = ["bag", "sack", "backpack", "grain_sack"]
+    try:
+        bag_movement_px_threshold = int(os.getenv("EDGE_BAG_MOVE_PX", data.get("bag_movement_px_threshold", 50)))
+    except Exception:
+        bag_movement_px_threshold = 50
+    try:
+        bag_movement_time_window_sec = int(os.getenv("EDGE_BAG_MOVE_TIME_SEC", data.get("bag_movement_time_window_sec", 2)))
+    except Exception:
+        bag_movement_time_window_sec = 2
 
     tracking_data = data.get("tracking") or {}
     try:
@@ -260,6 +317,11 @@ def load_settings(config_path: str) -> Settings:
         mqtt_password=mqtt_password,
         face_recognition=face_recognition_cfg,
         tracking=tracking_cfg,
+        dispatch_plan_path=dispatch_plan_path,
+        dispatch_plan_reload_sec=dispatch_plan_reload_sec,
+        bag_class_keywords=bag_class_keywords,
+        bag_movement_px_threshold=bag_movement_px_threshold,
+        bag_movement_time_window_sec=bag_movement_time_window_sec,
     )
 
 
