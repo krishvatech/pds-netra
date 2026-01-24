@@ -5,6 +5,7 @@ Annotated video writer for test runs.
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Optional, Sequence, Tuple
 import time
 
@@ -52,17 +53,19 @@ class AnnotatedVideoWriter:
     def write_frame(
         self,
         frame,
-        detections: Sequence[Tuple[str, float, Sequence[int]]],
+        detections: Sequence[Tuple[str, float, Sequence[int], int]],
     ) -> None:
         if cv2 is None:
             return
         if not self._ensure_writer(frame):
             return
         canvas = frame.copy()
-        for class_name, confidence, bbox in detections:
+        for class_name, confidence, bbox, track_id in detections:
             x1, y1, x2, y2 = bbox
             cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
             label = f"{class_name} {confidence:.2f}"
+            if track_id >= 0:
+                label = f"{label} id={track_id}"
             cv2.putText(
                 canvas,
                 label,
@@ -81,8 +84,11 @@ class AnnotatedVideoWriter:
                 self.latest_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     import os
+                    ok, encoded = cv2.imencode(".jpg", canvas)
+                    if not ok:
+                        return
                     tmp_path = self.latest_path.with_suffix(".tmp")
-                    cv2.imwrite(str(tmp_path), canvas)
+                    tmp_path.write_bytes(encoded.tobytes())
                     os.replace(str(tmp_path), str(self.latest_path))
                 except Exception:
                     pass
@@ -108,7 +114,7 @@ class LiveFrameWriter:
     def write_frame(
         self,
         frame,
-        detections: Sequence[Tuple[str, float, Sequence[int]]],
+        detections: Sequence[Tuple[str, float, Sequence[int], int]],
     ) -> None:
         if cv2 is None:
             return
@@ -116,10 +122,12 @@ class LiveFrameWriter:
         if now - self._last_latest_ts < self.latest_interval:
             return
         canvas = frame.copy()
-        for class_name, confidence, bbox in detections:
+        for class_name, confidence, bbox, track_id in detections:
             x1, y1, x2, y2 = bbox
             cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
             label = f"{class_name} {confidence:.2f}"
+            if track_id >= 0:
+                label = f"{label} id={track_id}"
             cv2.putText(
                 canvas,
                 label,
@@ -133,9 +141,17 @@ class LiveFrameWriter:
         self.latest_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             import os
+            ok, encoded = cv2.imencode(".jpg", canvas)
+            if not ok:
+                logging.getLogger("live_frame_writer").warning(
+                    "Failed to write live frame to %s", self.latest_path
+                )
+                return
             tmp_path = self.latest_path.with_suffix(".tmp")
-            cv2.imwrite(str(tmp_path), canvas)
+            tmp_path.write_bytes(encoded.tobytes())
             os.replace(str(tmp_path), str(self.latest_path))
         except Exception:
-            pass
+            logging.getLogger("live_frame_writer").exception(
+                "Failed to write live frame to %s", self.latest_path
+            )
         self._last_latest_ts = now

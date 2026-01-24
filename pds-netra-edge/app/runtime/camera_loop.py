@@ -430,7 +430,7 @@ def start_camera_loops(
                                     rule_id="CAM_TAMPER_HEURISTIC",
                                     confidence=cand.confidence,
                                     reason=cand.reason,
-                                    extra={k: f\"{v:.4f}\" for k, v in cand.metrics.items()},
+                                    extra={k: f"{v:.4f}" for k, v in cand.metrics.items()},
                                 ),
                             )
                             mqtt_client.publish_event(event)
@@ -492,7 +492,7 @@ def start_camera_loops(
                     current_state["mode"],
                 )
                 if frame is not None:
-                    dets = [(o.class_name, o.confidence, o.bbox) for o in objects]
+                    dets = [(o.class_name, o.confidence, o.bbox, o.track_id) for o in objects]
                     try:
                         import cv2  # type: ignore
                         for zone_id, polygon in zone_polygons.items():

@@ -178,7 +178,7 @@ def apply_rules(db: Session, event: Event) -> None:
 
 def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str]:
     """Map a raw event_type to a higher-level alert_type."""
-    if event_type in {"UNAUTH_PERSON", "LOITERING"}:
+    if event_type in {"UNAUTH_PERSON", "LOITERING", "FACE_UNKNOWN_ACCESS"}:
         movement = (meta or {}).get("movement_type")
         if movement:
             movement_norm = str(movement).strip().lower()

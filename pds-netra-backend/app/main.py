@@ -14,11 +14,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
 from pathlib import Path
+import threading
 
 from .core.db import engine, SessionLocal
 from .models import Base
+from .models.dispatch_issue import DispatchIssue
 from .services.seed import seed_godowns, seed_cameras_from_edge_config
 from .services.mqtt_consumer import MQTTConsumer
+from .services.dispatch_watchdog import run_dispatch_watchdog
 
 from .api import api_router
 from .core.config import settings
@@ -35,6 +38,8 @@ def create_app() -> FastAPI:
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
     app.mount("/media/live", StaticFiles(directory=live_root, check_dir=False), name="live")
     app.state.mqtt_consumer = None
+    app.state.dispatch_watchdog_stop = None
+    app.state.dispatch_watchdog_thread = None
     # Ensure tables exist for PoC/local use
     @app.on_event("startup")
     def _init_db() -> None:
@@ -69,11 +74,28 @@ def create_app() -> FastAPI:
             consumer = MQTTConsumer()
             consumer.start()
             app.state.mqtt_consumer = consumer
+        if os.getenv("ENABLE_DISPATCH_WATCHDOG", "true").lower() in {"1", "true", "yes"}:
+            stop_event = threading.Event()
+            thread = threading.Thread(
+                target=run_dispatch_watchdog,
+                args=(stop_event,),
+                daemon=True,
+                name="dispatch-watchdog",
+            )
+            thread.start()
+            app.state.dispatch_watchdog_stop = stop_event
+            app.state.dispatch_watchdog_thread = thread
     @app.on_event("shutdown")
     def _shutdown() -> None:
         consumer = getattr(app.state, "mqtt_consumer", None)
         if consumer:
             consumer.stop()
+        stop_event = getattr(app.state, "dispatch_watchdog_stop", None)
+        if stop_event:
+            stop_event.set()
+        thread = getattr(app.state, "dispatch_watchdog_thread", None)
+        if thread:
+            thread.join(timeout=5)
     return app
 
 

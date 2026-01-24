@@ -10,6 +10,7 @@ export function formatUtc(ts?: string | null): string {
 export function humanEventType(eventType: string): string {
   const map: Record<string, string> = {
     UNAUTH_PERSON: 'Unauthorized Person',
+    FACE_UNKNOWN_ACCESS: 'Unauthorized Person',
     LOITERING: 'Loitering',
     ANIMAL_INTRUSION: 'Animal Intrusion',
     BAG_MOVEMENT: 'Bag/Trolley Movement',

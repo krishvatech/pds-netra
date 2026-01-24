@@ -225,8 +225,9 @@ def list_alerts(
     if date_to:
         query = query.filter(Alert.start_time <= date_to)
     total = query.count()
+    sort_time = func.coalesce(Alert.end_time, Alert.start_time)
     rows = (
-        query.order_by(Alert.start_time.desc())
+        query.order_by(sort_time.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

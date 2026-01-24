@@ -48,11 +48,19 @@ function playBeep(sev: Severity) {
   }
 }
 
+function alertEpoch(alert: AlertItem): number | null {
+  const ts = alert.end_time ?? alert.start_time;
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getTime();
+}
+
 function useAlertFeed() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [hasNew, setHasNew] = useState(false);
   const [cues, setCues] = useState(() => getAlertCues());
-  const lastSeenRef = useRef<string | number | null>(null);
+  const lastSeenRef = useRef<number | null>(null);
   const inflightRef = useRef(false);
 
   useEffect(() => {
@@ -70,11 +78,17 @@ function useAlertFeed() {
         const items = Array.isArray(resp) ? resp : resp.items;
         if (items.length > 0) {
           const newest = items[0];
+          const newestEpoch = alertEpoch(newest);
           const qualifies =
             severityRank(newest.severity_final as Severity) >= severityRank(cues.minSeverity) &&
             (!cues.quietHoursEnabled ||
               !isQuietNow(cues.quietHoursStart, cues.quietHoursEnd));
-          if (lastSeenRef.current && newest.id !== lastSeenRef.current && qualifies) {
+          if (
+            newestEpoch &&
+            lastSeenRef.current &&
+            newestEpoch > lastSeenRef.current &&
+            qualifies
+          ) {
             if (cues.visual) {
               setHasNew(true);
               window.dispatchEvent(
@@ -84,7 +98,9 @@ function useAlertFeed() {
             }
             if (cues.sound) playBeep(newest.severity_final as Severity);
           }
-          lastSeenRef.current = newest.id;
+          if (newestEpoch) {
+            lastSeenRef.current = newestEpoch;
+          }
         }
         setAlerts(items);
       } catch {
@@ -159,7 +175,7 @@ export function LiveRail() {
               {humanAlertType(alert.alert_type)}
             </div>
             <div className="mt-1 text-xs text-slate-400">
-              {alert.godown_name ?? alert.godown_id} • {formatUtc(alert.start_time)}
+              {alert.godown_name ?? alert.godown_id} • {formatUtc(alert.end_time ?? alert.start_time)}
             </div>
           </div>
         ))}
@@ -196,7 +212,7 @@ export function MobileRail() {
           {humanAlertType(latest.alert_type)}
         </div>
         <div className="text-xs text-slate-400 truncate">
-          {latest.godown_name ?? latest.godown_id} • {formatUtc(latest.start_time)}
+          {latest.godown_name ?? latest.godown_id} • {formatUtc(latest.end_time ?? latest.start_time)}
         </div>
       </div>
     </div>
