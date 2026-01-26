@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
+from .notifications import notify_alert
 
 
 def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
@@ -174,6 +175,10 @@ def apply_rules(db: Session, event: Event) -> None:
         link = AlertEventLink(alert_id=alert.id, event_id=event.id)
         db.add(link)
         db.commit()
+        try:
+            notify_alert(alert, event)
+        except Exception:
+            pass
 
 
 def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str]:

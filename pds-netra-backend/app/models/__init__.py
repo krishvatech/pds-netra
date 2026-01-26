@@ -17,4 +17,6 @@ class Base(DeclarativeBase):
     pass
 
 
-__all__ = ["Base"]
+from .rule import Rule  # noqa: E402,F401
+
+__all__ = ["Base", "Rule"]

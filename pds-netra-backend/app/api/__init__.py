@@ -17,6 +17,7 @@ from .v1.test_runs import router as test_runs_router
 from .v1.live import router as live_router
 from .v1.cameras import router as cameras_router
 from .v1.dispatch_issues import router as dispatch_issues_router
+from .v1.rules import router as rules_router
 
 
 api_router = APIRouter()
@@ -30,3 +31,4 @@ api_router.include_router(test_runs_router)
 api_router.include_router(live_router)
 api_router.include_router(cameras_router)
 api_router.include_router(dispatch_issues_router)
+api_router.include_router(rules_router)

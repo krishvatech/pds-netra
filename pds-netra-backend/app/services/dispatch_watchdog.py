@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from ..core.db import SessionLocal
 from ..models.dispatch_issue import DispatchIssue
 from ..models.event import Event, Alert
+from .notifications import notify_alert
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -95,4 +96,8 @@ def _process_issues(db: Session, logger: logging.Logger) -> None:
         issue.alert_id = alert.id
         db.add(issue)
         logger.info("Dispatch alert created for issue_id=%s alert_id=%s", issue.id, alert.id)
+        try:
+            notify_alert(alert, None)
+        except Exception:
+            pass
     db.commit()

@@ -21,8 +21,10 @@ from .core.db import engine, SessionLocal
 from .models import Base
 from .models.dispatch_issue import DispatchIssue
 from .services.seed import seed_godowns, seed_cameras_from_edge_config
+from .services.rule_seed import seed_rules
 from .services.mqtt_consumer import MQTTConsumer
 from .services.dispatch_watchdog import run_dispatch_watchdog
+from .services.dispatch_plan_sync import run_dispatch_plan_sync
 
 from .api import api_router
 from .core.config import settings
@@ -41,6 +43,8 @@ def create_app() -> FastAPI:
     app.state.mqtt_consumer = None
     app.state.dispatch_watchdog_stop = None
     app.state.dispatch_watchdog_thread = None
+    app.state.dispatch_plan_sync_stop = None
+    app.state.dispatch_plan_sync_thread = None
     # Ensure tables exist for PoC/local use
     @app.on_event("startup")
     def _init_db() -> None:
@@ -82,6 +86,12 @@ def create_app() -> FastAPI:
                     seed_cameras_from_edge_config(db, path)
             except Exception:
                 pass
+        if os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
+            try:
+                with SessionLocal() as db:
+                    seed_rules(db)
+            except Exception:
+                pass
         if os.getenv("ENABLE_MQTT_CONSUMER", "true").lower() in {"1", "true", "yes"}:
             consumer = MQTTConsumer()
             consumer.start()
@@ -97,6 +107,17 @@ def create_app() -> FastAPI:
             thread.start()
             app.state.dispatch_watchdog_stop = stop_event
             app.state.dispatch_watchdog_thread = thread
+        if os.getenv("ENABLE_DISPATCH_PLAN_SYNC", "true").lower() in {"1", "true", "yes"}:
+            stop_event = threading.Event()
+            thread = threading.Thread(
+                target=run_dispatch_plan_sync,
+                args=(stop_event,),
+                daemon=True,
+                name="dispatch-plan-sync",
+            )
+            thread.start()
+            app.state.dispatch_plan_sync_stop = stop_event
+            app.state.dispatch_plan_sync_thread = thread
     @app.on_event("shutdown")
     def _shutdown() -> None:
         consumer = getattr(app.state, "mqtt_consumer", None)
@@ -106,6 +127,12 @@ def create_app() -> FastAPI:
         if stop_event:
             stop_event.set()
         thread = getattr(app.state, "dispatch_watchdog_thread", None)
+        if thread:
+            thread.join(timeout=5)
+        stop_event = getattr(app.state, "dispatch_plan_sync_stop", None)
+        if stop_event:
+            stop_event.set()
+        thread = getattr(app.state, "dispatch_plan_sync_thread", None)
         if thread:
             thread.join(timeout=5)
     return app

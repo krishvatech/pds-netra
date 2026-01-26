@@ -7,13 +7,15 @@ demonstration purposes, only a simple count by alert_type is provided.
 
 from __future__ import annotations
 
-from typing import List, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
-from ...models.event import Alert
+from ...models.event import Alert, Event
+from ...models.dispatch_issue import DispatchIssue
 
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -33,3 +35,215 @@ def alert_summary(
     for alert in query:
         counts[alert.alert_type] = counts.get(alert.alert_type, 0) + 1
     return counts
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _bucket_ts(ts: datetime, bucket: str) -> datetime:
+    ts = _ensure_utc(ts)
+    if bucket == "day":
+        return ts.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ts.replace(minute=0, second=0, microsecond=0)
+
+
+def _movement_query(
+    db: Session,
+    godown_id: Optional[str],
+    camera_id: Optional[str],
+    zone_id: Optional[str],
+    date_from: Optional[datetime],
+    date_to: Optional[datetime],
+):
+    query = db.query(Event).filter(Event.event_type == "BAG_MOVEMENT")
+    if godown_id:
+        query = query.filter(Event.godown_id == godown_id)
+    if camera_id:
+        query = query.filter(Event.camera_id == camera_id)
+    if date_from:
+        query = query.filter(Event.timestamp_utc >= _ensure_utc(date_from))
+    if date_to:
+        query = query.filter(Event.timestamp_utc <= _ensure_utc(date_to))
+    if zone_id:
+        # Fallback to python-level filter for JSON to avoid dialect issues
+        events = query.order_by(Event.timestamp_utc.asc()).all()
+        return [e for e in events if (e.meta or {}).get("zone_id") == zone_id]
+    return query.order_by(Event.timestamp_utc.asc()).all()
+
+
+@router.get("/movement/summary")
+def movement_summary(
+    godown_id: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    zone_id: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return summary counts for bag movement activity."""
+    now = datetime.now(timezone.utc)
+    if not date_from and not date_to:
+        date_from = now - timedelta(days=7)
+        date_to = now
+    events = _movement_query(db, godown_id, camera_id, zone_id, date_from, date_to)
+    counts_by_type: Dict[str, int] = {}
+    unique_plans: set[str] = set()
+    for ev in events:
+        meta = ev.meta or {}
+        movement_type = str(meta.get("movement_type") or "UNKNOWN")
+        counts_by_type[movement_type] = counts_by_type.get(movement_type, 0) + 1
+        extra = meta.get("extra") or {}
+        plan_id = extra.get("plan_id") if isinstance(extra, dict) else None
+        if plan_id:
+            unique_plans.add(str(plan_id))
+    return {
+        "range": {
+            "from": _ensure_utc(date_from).isoformat().replace("+00:00", "Z") if date_from else None,
+            "to": _ensure_utc(date_to).isoformat().replace("+00:00", "Z") if date_to else None,
+        },
+        "total_events": len(events),
+        "unique_plans": len(unique_plans),
+        "counts_by_type": counts_by_type,
+    }
+
+
+@router.get("/movement/timeline")
+def movement_timeline(
+    bucket: str = Query("hour"),
+    godown_id: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    zone_id: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return a time-bucketed series of bag movement events."""
+    bucket = "day" if bucket == "day" else "hour"
+    now = datetime.now(timezone.utc)
+    if not date_from and not date_to:
+        date_from = now - timedelta(days=7)
+        date_to = now
+    events = _movement_query(db, godown_id, camera_id, zone_id, date_from, date_to)
+    counts: Dict[Tuple[datetime, str], int] = {}
+    for ev in events:
+        meta = ev.meta or {}
+        movement_type = str(meta.get("movement_type") or "UNKNOWN")
+        ts = _bucket_ts(ev.timestamp_utc, bucket)
+        key = (ts, movement_type)
+        counts[key] = counts.get(key, 0) + 1
+    items = [
+        {
+            "t": ts.isoformat().replace("+00:00", "Z"),
+            "movement_type": movement_type,
+            "count": count,
+        }
+        for (ts, movement_type), count in sorted(counts.items(), key=lambda x: x[0][0])
+    ]
+    return {
+        "bucket": bucket,
+        "items": items,
+        "range": {
+            "from": _ensure_utc(date_from).isoformat().replace("+00:00", "Z") if date_from else None,
+            "to": _ensure_utc(date_to).isoformat().replace("+00:00", "Z") if date_to else None,
+        },
+    }
+
+
+def _find_first_movement(db: Session, issue: DispatchIssue) -> Optional[Event]:
+    query = db.query(Event).filter(
+        Event.godown_id == issue.godown_id,
+        Event.event_type == "BAG_MOVEMENT",
+        Event.timestamp_utc >= issue.issue_time_utc,
+    )
+    if issue.camera_id:
+        query = query.filter(Event.camera_id == issue.camera_id)
+    query = query.order_by(Event.timestamp_utc.asc())
+    if not issue.zone_id:
+        return query.first()
+    for event in query.yield_per(200):
+        meta = event.meta or {}
+        if meta.get("zone_id") == issue.zone_id:
+            return event
+    return None
+
+
+def _count_movement_24h(db: Session, issue: DispatchIssue) -> int:
+    issue_time = _ensure_utc(issue.issue_time_utc)
+    deadline = issue_time + timedelta(hours=24)
+    query = db.query(Event).filter(
+        Event.godown_id == issue.godown_id,
+        Event.event_type == "BAG_MOVEMENT",
+        Event.timestamp_utc >= issue_time,
+        Event.timestamp_utc <= deadline,
+    )
+    if issue.camera_id:
+        query = query.filter(Event.camera_id == issue.camera_id)
+    if not issue.zone_id:
+        return query.count()
+    count = 0
+    for event in query.yield_per(200):
+        meta = event.meta or {}
+        if meta.get("zone_id") == issue.zone_id:
+            count += 1
+    return count
+
+
+@router.get("/dispatch-trace")
+def dispatch_trace(
+    godown_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return dispatch trace details including first movement and SLA."""
+    query = db.query(DispatchIssue)
+    if godown_id:
+        query = query.filter(DispatchIssue.godown_id == godown_id)
+    if status:
+        query = query.filter(DispatchIssue.status == status)
+    if date_from:
+        query = query.filter(DispatchIssue.issue_time_utc >= _ensure_utc(date_from))
+    if date_to:
+        query = query.filter(DispatchIssue.issue_time_utc <= _ensure_utc(date_to))
+    issues = query.order_by(DispatchIssue.issue_time_utc.desc()).all()
+    items: list[dict] = []
+    for issue in issues:
+        issue_time = _ensure_utc(issue.issue_time_utc)
+        deadline = issue_time + timedelta(hours=24)
+        first_event = _find_first_movement(db, issue)
+        first_ts = _ensure_utc(first_event.timestamp_utc) if first_event else None
+        meta = first_event.meta if first_event else {}
+        movement_type = meta.get("movement_type") if isinstance(meta, dict) else None
+        extra = meta.get("extra") if isinstance(meta, dict) else None
+        plan_id = None
+        if isinstance(extra, dict):
+            plan_id = extra.get("plan_id")
+        sla_met = bool(first_ts and first_ts <= deadline)
+        delay_minutes = None
+        if first_ts:
+            delay_minutes = int((first_ts - issue_time).total_seconds() // 60)
+        items.append(
+            {
+                "issue_id": issue.id,
+                "godown_id": issue.godown_id,
+                "camera_id": issue.camera_id,
+                "zone_id": issue.zone_id,
+                "issue_time_utc": issue_time.isoformat().replace("+00:00", "Z"),
+                "deadline_utc": deadline.isoformat().replace("+00:00", "Z"),
+                "status": issue.status,
+                "alert_id": issue.alert_id,
+                "started_at_utc": issue.started_at_utc.isoformat().replace("+00:00", "Z") if issue.started_at_utc else None,
+                "alerted_at_utc": issue.alerted_at_utc.isoformat().replace("+00:00", "Z") if issue.alerted_at_utc else None,
+                "first_movement_utc": first_ts.isoformat().replace("+00:00", "Z") if first_ts else None,
+                "first_movement_type": movement_type,
+                "plan_id": plan_id,
+                "movement_count_24h": _count_movement_24h(db, issue),
+                "sla_met": sla_met,
+                "delay_minutes": delay_minutes,
+            }
+        )
+    return {"items": items, "total": len(items)}
