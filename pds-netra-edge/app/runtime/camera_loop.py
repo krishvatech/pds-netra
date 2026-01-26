@@ -30,9 +30,11 @@ from ..rules.loader import (
     BagOddHoursRule,
     BagUnplannedRule,
     BagTallyMismatchRule,
+    BaseRule,
 )
 from ..rules.evaluator import RulesEvaluator
 from ..cv.anpr import AnprProcessor, PlateDetector
+from ..rules.remote import fetch_rule_configs
 from ..cv.tamper import analyze_frame_for_tamper, CameraTamperState
 import datetime
 import uuid
@@ -102,6 +104,7 @@ def start_camera_loops(
     # Dictionary storing mutable health state per camera
     camera_states: Dict[str, CameraHealthState] = {}
     camera_lock = threading.Lock()
+    rules_lock = threading.Lock()
     started_cameras: set[str] = set()
     override_path = os.getenv("EDGE_OVERRIDE_PATH")
     override_manager = EdgeOverrideManager(override_path, refresh_interval=5)
@@ -109,6 +112,16 @@ def start_camera_loops(
         logger.info("Edge override path: %s", override_path)
     # Load all rules once and convert into typed objects
     all_rules = load_rules(settings)
+
+    @dataclass
+    class CameraProcessors:
+        evaluator: RulesEvaluator
+        bag_processor: Optional[BagMovementProcessor]
+        anpr_processor: Optional[AnprProcessor]
+        detector: YoloDetector
+        zone_polygons: dict[str, list[tuple[int, int]]]
+
+    processors: Dict[str, CameraProcessors] = {}
 
     def _start_camera(camera: CameraConfig) -> None:
         with camera_lock:
@@ -251,6 +264,14 @@ def start_camera_loops(
                     face_processor = None
     
         snapshot_writer = default_snapshot_writer()
+
+        processors[camera.id] = CameraProcessors(
+            evaluator=evaluator,
+            bag_processor=bag_processor,
+            anpr_processor=anpr_processor,
+            detector=detector,
+            zone_polygons=zone_polygons,
+        )
     
         def _is_file_source(source_val: str) -> bool:
             return not (
@@ -262,15 +283,13 @@ def start_camera_loops(
         def camera_runner(
             camera_obj,
             default_source_local: str,
-            evaluator_local: RulesEvaluator,
-            anpr_processor_local: Optional[AnprProcessor],
+            processors_local: CameraProcessors,
             face_processor_local: Optional[FaceRecognitionProcessor],
             health_cfg_local: HealthConfig,
             state_local: CameraHealthState,
             detector_local: YoloDetector,
             snapshot_writer_local,
             detect_classes_local: set[str],
-            bag_processor_local,
         ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
             live_writer: Optional[LiveFrameWriter] = None
@@ -345,10 +364,10 @@ def start_camera_loops(
                 )
     
             def bag_handler(objects: list[DetectedObject], now_utc: datetime.datetime, frame=None) -> None:
-                if bag_processor_local is None:
+                if processors_local.bag_processor is None:
                     return
                 try:
-                    bag_processor_local.process(
+                    processors_local.bag_processor.process(
                         objects,
                         now_utc,
                         mqtt_client,
@@ -459,7 +478,7 @@ def start_camera_loops(
                     meta_extra = None
                     if current_state["mode"] == "test" and current_state["run_id"]:
                         meta_extra = {"run_id": str(current_state["run_id"])}
-                    evaluator_local.process_detections(
+                    processors_local.evaluator.process_detections(
                         objects,
                         now,
                         mqtt_client,
@@ -474,9 +493,9 @@ def start_camera_loops(
                     )
                 # Process ANPR if applicable and a frame is provided
                 face_overlays: list[FaceOverlay] = []
-                if anpr_processor_local is not None and frame is not None:
+                if processors_local.anpr_processor is not None and frame is not None:
                     try:
-                        anpr_processor_local.process_frame(frame, now, mqtt_client)
+                        processors_local.anpr_processor.process_frame(frame, now, mqtt_client)
                     except Exception as exc:
                         logging.getLogger("camera_loop").exception(
                             "ANPR processing failed for camera %s: %s", camera_obj.id, exc
@@ -624,7 +643,7 @@ def start_camera_loops(
                     detector_local,
                     callback,
                     stop_check=should_stop,
-                    frame_processors=[bag_handler] if bag_processor_local is not None else None,
+                    frame_processors=[bag_handler],
                 )
                 pipeline.run()
                 if annotated_writer is not None:
@@ -686,15 +705,13 @@ def start_camera_loops(
             args=(
                 camera,
                 default_source,
-                evaluator,
-                anpr_processor,
+                processors[camera.id],
                 face_processor,
                 health_cfg,
                 state,
                 detector,
                 snapshot_writer,
                 detect_classes,
-                bag_processor,
             ),
             name=f"Pipeline-{camera.id}",
             daemon=True,
@@ -753,6 +770,87 @@ def start_camera_loops(
 
         t_discover = threading.Thread(target=_discover_loop, name="CameraDiscovery", daemon=True)
         t_discover.start()
+
+    rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
+    if rules_source == "backend":
+        def _apply_rules(updated_rules: list[BaseRule]) -> None:
+            for cam_id, bundle in processors.items():
+                cam_rules = [r for r in updated_rules if r.camera_id == cam_id]
+                bundle.evaluator.update_rules(cam_rules)
+                bag_rules = [
+                    r for r in cam_rules
+                    if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))
+                ]
+                if bag_rules:
+                    if bundle.bag_processor is None:
+                        bundle.bag_processor = BagMovementProcessor(
+                            camera_id=cam_id,
+                            godown_id=settings.godown_id,
+                            zone_polygons=bundle.zone_polygons,
+                            rules=bag_rules,
+                            timezone=settings.timezone,
+                            dispatch_plan_path=settings.dispatch_plan_path,
+                            dispatch_plan_reload_sec=settings.dispatch_plan_reload_sec,
+                            bag_class_keywords=settings.bag_class_keywords,
+                            movement_px_threshold=settings.bag_movement_px_threshold,
+                            movement_time_window_sec=settings.bag_movement_time_window_sec,
+                        )
+                    else:
+                        bundle.bag_processor.update_rules(bag_rules)
+                else:
+                    bundle.bag_processor = None
+
+                anpr_rules = [r for r in cam_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
+                if anpr_rules:
+                    if bundle.anpr_processor is None:
+                        try:
+                            plate_detector = PlateDetector(bundle.detector)
+                            bundle.anpr_processor = AnprProcessor(
+                                camera_id=cam_id,
+                                godown_id=settings.godown_id,
+                                rules=anpr_rules,
+                                zone_polygons=bundle.zone_polygons,
+                                timezone=settings.timezone,
+                                plate_detector=plate_detector,
+                                ocr_engine=None,
+                                dedup_interval_sec=30,
+                            )
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").error(
+                                "Failed to init ANPR processor for camera %s: %s", cam_id, exc
+                            )
+                            bundle.anpr_processor = None
+                    else:
+                        bundle.anpr_processor.update_rules(anpr_rules)
+                else:
+                    bundle.anpr_processor = None
+
+        def _rules_sync_loop() -> None:
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
+            try:
+                interval = float(os.getenv("EDGE_RULES_SYNC_INTERVAL_SEC", "20"))
+            except Exception:
+                interval = 20.0
+            last_signature = None
+            while True:
+                try:
+                    rule_cfgs = fetch_rule_configs(backend_url, settings.godown_id)
+                    if rule_cfgs is None:
+                        time.sleep(interval)
+                        continue
+                    signature = json.dumps([r.__dict__ for r in rule_cfgs], sort_keys=True)
+                    if signature != last_signature:
+                        with rules_lock:
+                            settings.rules = rule_cfgs
+                            updated_rules = load_rules(settings)
+                        _apply_rules(updated_rules)
+                        last_signature = signature
+                except Exception:
+                    pass
+                time.sleep(interval)
+
+        t_rules = threading.Thread(target=_rules_sync_loop, name="RulesSync", daemon=True)
+        t_rules.start()
 
     # Return threads and camera health state mapping
     return threads, camera_states

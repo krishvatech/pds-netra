@@ -18,7 +18,7 @@ tracking:
 cameras:
   - id: CAM_GATE_1
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
-    test_video: "./data/gate_1.mp4"
+    # test_video: "./data/gate_1.mp4"
     health:
       enabled: true
       no_frame_timeout_seconds: 15

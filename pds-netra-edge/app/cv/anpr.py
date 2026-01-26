@@ -205,6 +205,12 @@ class AnprProcessor:
         # Cache mapping (plate_text, zone_id) to last event time
         self.plate_cache: Dict[Tuple[str, str], datetime.datetime] = {}
 
+    def update_rules(self, rules: List[BaseRule]) -> None:
+        """Replace rules for dynamic updates."""
+        self.rules_by_zone = {}
+        for rule in rules:
+            self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
+
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         """Return the zone ID for a given bounding box center or None."""
         for zone_id, polygon in self.zone_polygons.items():

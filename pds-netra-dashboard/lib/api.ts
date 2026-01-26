@@ -7,8 +7,13 @@ import type {
   GodownListItem,
   HealthSummary,
   LoginResponse,
+  MovementSummary,
+  MovementTimelinePoint,
   OverviewData,
   Paginated,
+  RuleItem,
+  DispatchIssueItem,
+  DispatchTraceItem,
   Severity,
   TestRunDetail,
   TestRunItem
@@ -175,6 +180,93 @@ export async function getEvents(params?: {
 }): Promise<Paginated<EventItem> | EventItem[]> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/events${q}`);
+}
+
+export async function getMovementSummary(params?: {
+  godown_id?: string;
+  camera_id?: string;
+  zone_id?: string;
+  date_from?: string;
+  date_to?: string;
+}): Promise<MovementSummary> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/reports/movement/summary${q}`);
+}
+
+export async function getMovementTimeline(params?: {
+  bucket?: 'hour' | 'day';
+  godown_id?: string;
+  camera_id?: string;
+  zone_id?: string;
+  date_from?: string;
+  date_to?: string;
+}): Promise<{ bucket: string; items: MovementTimelinePoint[]; range?: { from?: string | null; to?: string | null } }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/reports/movement/timeline${q}`);
+}
+
+export async function getDispatchTrace(params?: {
+  godown_id?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}): Promise<{ items: DispatchTraceItem[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/reports/dispatch-trace${q}`);
+}
+
+export async function getDispatchIssues(params?: {
+  godown_id?: string;
+  status?: string;
+}): Promise<{ items: DispatchIssueItem[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/dispatch-issues${q}`);
+}
+
+export async function createDispatchIssue(payload: {
+  godown_id: string;
+  camera_id?: string | null;
+  zone_id?: string | null;
+  issue_time_utc: string;
+}): Promise<DispatchIssueItem> {
+  return apiFetch('/api/v1/dispatch-issues', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getRules(params?: {
+  godown_id?: string;
+  camera_id?: string;
+  zone_id?: string;
+  type?: string;
+  enabled?: boolean;
+}): Promise<{ items: RuleItem[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/rules${q}`);
+}
+
+export async function createRule(payload: Partial<RuleItem> & {
+  godown_id: string;
+  camera_id: string;
+  zone_id: string;
+  type: string;
+}): Promise<RuleItem> {
+  return apiFetch('/api/v1/rules', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateRule(ruleId: number, payload: Partial<RuleItem>): Promise<RuleItem> {
+  return apiFetch(`/api/v1/rules/${ruleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteRule(ruleId: number): Promise<{ status: string; id: number }> {
+  return apiFetch(`/api/v1/rules/${ruleId}`, { method: 'DELETE' });
 }
 
 export async function getHealthSummary(): Promise<HealthSummary> {

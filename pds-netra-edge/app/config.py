@@ -55,6 +55,8 @@ class RuleConfig:
     require_active_dispatch_plan: Optional[bool] = None
     allowed_overage_percent: Optional[float] = None
     threshold_distance: Optional[int] = None
+    allowed_plates: Optional[List[str]] = None
+    blocked_plates: Optional[List[str]] = None
 
 
 @dataclass
@@ -279,10 +281,12 @@ def load_settings(config_path: str) -> Settings:
             health=health_cfg,
         ))
 
-    # Load rules
+    # Load rules (YAML deprecated by default; use EDGE_RULES_SOURCE=yaml to enable)
     rules_cfg: List[RuleConfig] = []
-    for rule in data.get('rules', []):
-        rules_cfg.append(RuleConfig(**rule))
+    rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
+    if rules_source != "backend":
+        for rule in data.get('rules', []):
+            rules_cfg.append(RuleConfig(**rule))
 
     # Load face recognition config if present
     face_recognition_cfg: Optional[FaceRecognitionConfig] = None

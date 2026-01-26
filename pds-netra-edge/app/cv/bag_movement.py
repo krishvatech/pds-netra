@@ -162,6 +162,13 @@ class BagMovementProcessor:
         self.rules_unplanned = [r for r in rules if isinstance(r, BagUnplannedRule)]
         self.rules_tally = [r for r in rules if isinstance(r, BagTallyMismatchRule)]
 
+    def update_rules(self, rules: List[object]) -> None:
+        """Replace rule lists in-place for dynamic updates."""
+        self.rules_monitor = [r for r in rules if isinstance(r, BagMonitorRule)]
+        self.rules_odd = [r for r in rules if isinstance(r, BagOddHoursRule)]
+        self.rules_unplanned = [r for r in rules if isinstance(r, BagUnplannedRule)]
+        self.rules_tally = [r for r in rules if isinstance(r, BagTallyMismatchRule)]
+
     def _is_bag_class(self, class_name: str) -> bool:
         name = class_name.lower()
         return any(keyword in name for keyword in self.bag_class_keywords)

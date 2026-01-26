@@ -63,7 +63,7 @@ export interface EventMeta {
   zone_id?: string | null;
   rule_id?: string | null;
   confidence?: number | null;
-  movement_type?: 'AFTER_HOURS' | 'GENERIC' | 'UNPLANNED' | string | null;
+  movement_type?: 'AFTER_HOURS' | 'GENERIC' | 'UNPLANNED' | 'ODD_HOURS' | 'TALLY_MISMATCH' | 'NORMAL' | string | null;
   plate_text?: string | null;
   match_status?: 'WHITELIST' | 'BLACKLIST' | 'UNKNOWN' | string | null;
   reason?: string | null;
@@ -184,3 +184,71 @@ export interface TestRunItem {
 }
 
 export interface TestRunDetail extends TestRunItem {}
+
+export interface MovementSummary {
+  range?: { from?: string | null; to?: string | null };
+  total_events: number;
+  unique_plans: number;
+  counts_by_type: Record<string, number>;
+}
+
+export interface MovementTimelinePoint {
+  t: string;
+  movement_type: string;
+  count: number;
+}
+
+export interface DispatchIssueItem {
+  id: number;
+  godown_id: string;
+  camera_id?: string | null;
+  zone_id?: string | null;
+  issue_time_utc: string;
+  status: string;
+  started_at_utc?: string | null;
+  alerted_at_utc?: string | null;
+  alert_id?: number | null;
+}
+
+export interface DispatchTraceItem {
+  issue_id: number;
+  godown_id: string;
+  camera_id?: string | null;
+  zone_id?: string | null;
+  issue_time_utc: string;
+  deadline_utc: string;
+  status: string;
+  alert_id?: number | null;
+  started_at_utc?: string | null;
+  alerted_at_utc?: string | null;
+  first_movement_utc?: string | null;
+  first_movement_type?: string | null;
+  plan_id?: string | null;
+  movement_count_24h: number;
+  sla_met: boolean;
+  delay_minutes?: number | null;
+}
+
+export interface RuleItem {
+  id: number;
+  godown_id: string;
+  camera_id: string;
+  zone_id: string;
+  type: string;
+  enabled: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  start?: string | null;
+  end?: string | null;
+  threshold_seconds?: number | null;
+  start_local?: string | null;
+  end_local?: string | null;
+  cooldown_seconds?: number | null;
+  require_active_dispatch_plan?: boolean | null;
+  allowed_overage_percent?: number | null;
+  threshold_distance?: number | null;
+  allowed_plates?: string[] | null;
+  blocked_plates?: string[] | null;
+}

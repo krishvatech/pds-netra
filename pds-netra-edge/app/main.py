@@ -27,6 +27,7 @@ from .events.mqtt_client import MQTTClient
 from .runtime.camera_loop import start_camera_loops
 from .runtime.scheduler import Scheduler
 from .preflight import main as preflight_main
+from .rules.remote import fetch_rule_configs
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -89,6 +90,13 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("Failed to load configuration: %s", exc)
         return 1
     logger.info("Loaded settings for godown %s", settings.godown_id)
+    rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
+    if rules_source == "backend":
+        backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
+        fetched = fetch_rule_configs(backend_url, settings.godown_id)
+        if fetched is not None:
+            settings.rules = fetched
+            logger.info("Loaded %s rules from backend", len(fetched))
     # Initialize MQTT client
     mqtt_client = MQTTClient(settings)
     mqtt_client.connect()

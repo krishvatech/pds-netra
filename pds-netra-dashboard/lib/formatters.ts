@@ -29,7 +29,8 @@ export function humanAlertType(alertType: string): string {
     OPERATION_BAG_MOVEMENT_ANOMALY: 'Operations: Bag Movement Anomaly',
     CAMERA_HEALTH_ISSUE: 'Camera Health Issue',
     ANPR_MISMATCH_VEHICLE: 'ANPR Vehicle Mismatch',
-    ANIMAL_INTRUSION: 'Animal Intrusion'
+    ANIMAL_INTRUSION: 'Animal Intrusion',
+    DISPATCH_NOT_STARTED_24H: 'Dispatch: Not Started in 24h'
   };
   return map[alertType] ?? alertType.replaceAll('_', ' ');
 }

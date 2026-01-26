@@ -158,6 +158,14 @@ class RulesEvaluator:
         self.zone_enforce = zone_enforce
         self.person_alerts: Dict[Tuple[str, object, Optional[str]], datetime.datetime] = {}
 
+    def update_rules(self, rules: List[BaseRule]) -> None:
+        """Replace the rule set for this evaluator."""
+        self.rules_by_zone = {}
+        self.rule_zone_by_id = {}
+        for rule in rules:
+            self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
+            self.rule_zone_by_id[rule.id] = rule.zone_id
+
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         """
         Determine which zone a bounding box is in by testing its center

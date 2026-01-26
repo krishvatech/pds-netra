@@ -10,6 +10,8 @@ const nav = [
   { href: '/dashboard/godowns', label: 'Godowns', icon: WarehouseIcon },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertIcon },
   { href: '/dashboard/health', label: 'Health', icon: HeartbeatIcon },
+  { href: '/dashboard/rules', label: 'Rules', icon: RulesIcon },
+  { href: '/dashboard/dispatch', label: 'Dispatch', icon: DispatchIcon },
   { href: '/dashboard/live', label: 'Live Cameras', icon: LiveIcon },
   { href: '/dashboard/test-runs', label: 'Test Runs', icon: TestRunIcon }
 ];
@@ -90,6 +92,52 @@ function HeartbeatIcon({ active }: { active: boolean }) {
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.8"
         strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DispatchIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6H15V16H3V6Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15 9H19L21 12V16H15V9Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="7" cy="18" r="1.6" fill={active ? '#f59e0b' : '#64748b'} />
+      <circle cx="17" cy="18" r="1.6" fill={active ? '#f59e0b' : '#64748b'} />
+    </svg>
+  );
+}
+
+function RulesIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M5 4H19V8H5V4Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 10H19V14H5V10Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 16H19V20H5V16Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
         strokeLinejoin="round"
       />
     </svg>
