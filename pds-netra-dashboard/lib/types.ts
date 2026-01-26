@@ -107,6 +107,7 @@ export interface AlertItem {
     zone_id?: string | null;
     plate_text?: string | null;
     movement_type?: string | null;
+    reason?: string | null;
     run_id?: string | null;
   };
 }
