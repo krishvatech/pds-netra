@@ -38,7 +38,7 @@ import datetime
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple
-from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig
+from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig, CameraConfig, ZoneConfig
 from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces
 from ..overrides import EdgeOverrideManager
 from ..snapshots import default_snapshot_writer
@@ -101,13 +101,20 @@ def start_camera_loops(
     threads: list[threading.Thread] = []
     # Dictionary storing mutable health state per camera
     camera_states: Dict[str, CameraHealthState] = {}
+    camera_lock = threading.Lock()
+    started_cameras: set[str] = set()
     override_path = os.getenv("EDGE_OVERRIDE_PATH")
     override_manager = EdgeOverrideManager(override_path, refresh_interval=5)
     if override_path:
         logger.info("Edge override path: %s", override_path)
     # Load all rules once and convert into typed objects
     all_rules = load_rules(settings)
-    for camera in settings.cameras:
+
+    def _start_camera(camera: CameraConfig) -> None:
+        with camera_lock:
+            if camera.id in started_cameras:
+                return
+            started_cameras.add(camera.id)
         default_source = camera.rtsp_url
         if camera.test_video:
             test_path = Path(camera.test_video).expanduser()
@@ -136,7 +143,7 @@ def start_camera_loops(
             )
         except Exception as exc:
             logger.error("Error loading YOLO detector: %s", exc)
-            continue
+            return
         # Prepare rules and zone polygons for this camera
         camera_rules = [r for r in all_rules if r.camera_id == camera.id]
         zone_polygons: dict[str, list[tuple[int, int]]] = {}
@@ -207,7 +214,7 @@ def start_camera_loops(
             except Exception as exc:
                 logger.error("Failed to initialize ANPR processor for camera %s: %s", camera.id, exc)
                 anpr_processor = None
-
+    
         # Initialise health state for this camera
         # Use provided health configuration or a default instance
         health_cfg: HealthConfig
@@ -218,7 +225,7 @@ def start_camera_loops(
             health_cfg = HealthConfig()
         state = CameraHealthState()
         camera_states[camera.id] = state
-
+    
         face_processor: Optional[FaceRecognitionProcessor] = None
         fr_cfg = settings.face_recognition
         if fr_cfg is not None and fr_cfg.enabled:
@@ -242,16 +249,16 @@ def start_camera_loops(
                 except Exception as exc:
                     logger.error("Failed to initialize face recognition for camera %s: %s", camera.id, exc)
                     face_processor = None
-
+    
         snapshot_writer = default_snapshot_writer()
-
+    
         def _is_file_source(source_val: str) -> bool:
             return not (
                 source_val.startswith("rtsp://")
                 or source_val.startswith("http://")
                 or source_val.startswith("https://")
             )
-
+    
         def camera_runner(
             camera_obj,
             default_source_local: str,
@@ -279,7 +286,7 @@ def start_camera_loops(
             )
             live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
             live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
-
+    
             def _sync_zones() -> None:
                 nonlocal last_zone_sync
                 now_ts = time.monotonic()
@@ -304,7 +311,7 @@ def start_camera_loops(
                                 continue
                 except Exception:
                     pass
-
+    
             def snapshotter(img, event_id: str, event_time: datetime.datetime, bbox=None, label=None):
                 if snapshot_writer_local is None:
                     return None
@@ -336,7 +343,7 @@ def start_camera_loops(
                     event_id=event_id,
                     timestamp_utc=timestamp_utc,
                 )
-
+    
             def bag_handler(objects: list[DetectedObject], now_utc: datetime.datetime, frame=None) -> None:
                 if bag_processor_local is None:
                     return
@@ -352,19 +359,19 @@ def start_camera_loops(
                     logging.getLogger("camera_loop").exception(
                         "Bag movement processing failed for camera %s: %s", camera_obj.id, exc
                     )
-
+    
             def callback(
                 objects: list[DetectedObject],
                 frame=None,
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-
+    
                 _sync_zones()
-
+    
                 if detect_classes_local:
                     objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
-
+    
                 # Log per-frame counts for people and face recognition results.
                 person_count = sum(1 for obj in objects if obj.class_name == "person")
                 known_faces = 0
@@ -555,10 +562,10 @@ def start_camera_loops(
                         except Exception:
                             pass
                         current_state["last_snapshot_ts"] = now_ts
-
+    
             def _resolve_source_local() -> tuple[str, str, Optional[str]]:
                 return override_manager.get_camera_source(camera_obj.id, default_source_local)
-
+    
             current_source, current_mode, current_run_id = _resolve_source_local()
             while True:
                 state_local.suppress_offline_events = False
@@ -601,7 +608,7 @@ def start_camera_loops(
                 next_source: dict[str, Optional[str]] = {"value": None}
                 next_mode: dict[str, Optional[str]] = {"value": None}
                 next_run_id: dict[str, Optional[str]] = {"value": None}
-
+    
                 def should_stop() -> bool:
                     desired_source, desired_mode, desired_run_id = _resolve_source_local()
                     if desired_source != current_source:
@@ -610,7 +617,7 @@ def start_camera_loops(
                         next_run_id["value"] = desired_run_id
                         return True
                     return False
-
+    
                 pipeline = Pipeline(
                     current_source,
                     camera_obj.id,
@@ -628,7 +635,7 @@ def start_camera_loops(
                             camera_obj.id,
                             current_run_id,
                         )
-
+    
                 if next_source["value"]:
                     current_source = next_source["value"]
                     current_mode = next_mode["value"] or "live"
@@ -641,7 +648,7 @@ def start_camera_loops(
                     current_mode = desired_mode
                     current_run_id = desired_run_id
                     continue
-
+    
                 if current_mode == "test":
                     state_local.suppress_offline_events = True
                     logger.info(
@@ -673,7 +680,7 @@ def start_camera_loops(
                         except Exception:
                             pass
                 break
-
+    
         t = threading.Thread(
             target=camera_runner,
             args=(
@@ -694,6 +701,59 @@ def start_camera_loops(
         )
         t.start()
         threads.append(t)
+    for camera in settings.cameras:
+        _start_camera(camera)
+
+    enable_discovery = os.getenv("EDGE_DYNAMIC_CAMERAS", "true").lower() in {"1", "true", "yes"}
+    if enable_discovery:
+        def _discover_loop() -> None:
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
+            try:
+                interval = float(os.getenv("EDGE_CAMERA_DISCOVERY_INTERVAL_SEC", "20"))
+            except Exception:
+                interval = 20.0
+            while True:
+                try:
+                    url = f"{backend_url}/api/v1/godowns/{settings.godown_id}"
+                    with urllib.request.urlopen(url, timeout=3) as resp:
+                        payload = json.loads(resp.read().decode("utf-8"))
+                    cameras = payload.get("cameras", []) if isinstance(payload, dict) else []
+                    for cam in cameras or []:
+                        cam_id = cam.get("camera_id")
+                        if not cam_id:
+                            continue
+                        rtsp_url = cam.get("rtsp_url") or cam.get("rtsp")
+                        if not rtsp_url:
+                            continue
+                        zones = []
+                        zones_raw = cam.get("zones_json")
+                        if zones_raw:
+                            try:
+                                if isinstance(zones_raw, str):
+                                    zones_data = json.loads(zones_raw)
+                                else:
+                                    zones_data = zones_raw
+                                if isinstance(zones_data, list):
+                                    for zone in zones_data:
+                                        zone_id = zone.get("id") if isinstance(zone, dict) else None
+                                        polygon = zone.get("polygon") if isinstance(zone, dict) else None
+                                        if zone_id and isinstance(polygon, list):
+                                            zones.append(ZoneConfig(id=zone_id, polygon=polygon))
+                            except Exception:
+                                pass
+                        with camera_lock:
+                            if cam_id in started_cameras:
+                                continue
+                        new_camera = CameraConfig(id=cam_id, rtsp_url=rtsp_url, zones=zones)
+                        settings.cameras.append(new_camera)
+                        _start_camera(new_camera)
+                except Exception:
+                    pass
+                time.sleep(interval)
+
+        t_discover = threading.Thread(target=_discover_loop, name="CameraDiscovery", daemon=True)
+        t_discover.start()
+
     # Return threads and camera health state mapping
     return threads, camera_states
 

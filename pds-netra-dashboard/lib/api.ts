@@ -109,6 +109,35 @@ export async function updateCameraZones(
   });
 }
 
+export async function createCamera(payload: {
+  camera_id: string;
+  godown_id: string;
+  label?: string;
+  role?: string;
+  rtsp_url: string;
+  is_active?: boolean;
+}): Promise<{ camera_id: string; godown_id: string; label?: string | null; role?: string | null; rtsp_url?: string | null; is_active?: boolean | null }> {
+  return apiFetch('/api/v1/cameras', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateCamera(
+  cameraId: string,
+  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean }
+): Promise<{ camera_id: string; godown_id: string; label?: string | null; role?: string | null; rtsp_url?: string | null; is_active?: boolean | null }> {
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteCamera(cameraId: string): Promise<{ status: string; camera_id: string }> {
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, { method: 'DELETE' });
+}
+
+
 export async function getLiveCameras(godownId: string): Promise<{ godown_id: string; cameras: string[] }> {
   return apiFetch(`/api/v1/live/${encodeURIComponent(godownId)}`);
 }

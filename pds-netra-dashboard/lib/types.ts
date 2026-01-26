@@ -36,6 +36,8 @@ export interface CameraInfo {
   camera_id: string;
   label?: string | null;
   role?: 'GATE' | 'AISLE' | 'PERIMETER' | string | null;
+  rtsp_url?: string | null;
+  is_active?: boolean | null;
   zones_json?: string | null;
 
   // Health hints (if backend provides)

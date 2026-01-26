@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 from pathlib import Path
 import threading
+from sqlalchemy import inspect, text
 
 from .core.db import engine, SessionLocal
 from .models import Base
@@ -48,6 +49,17 @@ def create_app() -> FastAPI:
         live_root.mkdir(parents=True, exist_ok=True)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
             Base.metadata.create_all(bind=engine)
+        try:
+            inspector = inspect(engine)
+            if "cameras" in inspector.get_table_names():
+                cols = {col["name"] for col in inspector.get_columns("cameras")}
+                with engine.begin() as conn:
+                    if "rtsp_url" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN rtsp_url VARCHAR(512)"))
+                    if "is_active" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+        except Exception:
+            pass
         if os.getenv("AUTO_SEED_GODOWNS", "true").lower() in {"1", "true", "yes"}:
             seed_path = os.getenv("SEED_GODOWNS_PATH", "")
             if seed_path:

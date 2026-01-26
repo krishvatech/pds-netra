@@ -2,7 +2,8 @@
 
 import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { getCameraZones, getEvents, getGodownDetail, getGodowns, getLiveCameras, updateCameraZones } from '@/lib/api';
+import { createPortal } from 'react-dom';
+import { createCamera, deleteCamera, getCameraZones, getEvents, getGodownDetail, getGodowns, getLiveCameras, updateCamera, updateCameraZones } from '@/lib/api';
 import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,19 @@ export default function LiveCamerasPage() {
   const [cameraErrors, setCameraErrors] = useState<Record<string, boolean>>({});
   const [liveCameraIds, setLiveCameraIds] = useState<string[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
+  const [newCameraId, setNewCameraId] = useState('');
+  const [newCameraLabel, setNewCameraLabel] = useState('');
+  const [newCameraRole, setNewCameraRole] = useState('');
+  const [newCameraRtsp, setNewCameraRtsp] = useState('');
+  const [addCameraError, setAddCameraError] = useState<string | null>(null);
+  const [addCameraLoading, setAddCameraLoading] = useState(false);
+  const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editRtsp, setEditRtsp] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [fullscreenCameraId, setFullscreenCameraId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -70,6 +84,17 @@ export default function LiveCamerasPage() {
       mounted = false;
     };
   }, [selectedGodown]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (fullscreenCameraId) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [fullscreenCameraId]);
 
   useEffect(() => {
     let mounted = true;
@@ -250,6 +275,118 @@ export default function LiveCamerasPage() {
     }
   };
 
+  const handleAddCamera = async () => {
+    const cameraId = newCameraId.trim();
+    const rtspUrl = newCameraRtsp.trim();
+    if (!selectedGodown) {
+      setAddCameraError('Select a godown first.');
+      return;
+    }
+    if (!cameraId || !rtspUrl) {
+      setAddCameraError('Camera ID and RTSP URL are required.');
+      return;
+    }
+    setAddCameraLoading(true);
+    setAddCameraError(null);
+    try {
+      await createCamera({
+        camera_id: cameraId,
+        godown_id: selectedGodown,
+        label: newCameraLabel.trim() || undefined,
+        role: newCameraRole.trim() || undefined,
+        rtsp_url: rtspUrl,
+        is_active: true
+      });
+      const detail = await getGodownDetail(selectedGodown);
+      setGodownDetail(detail);
+      setSelectedCamera(cameraId);
+      setZoneCameraId(cameraId);
+      setNewCameraId('');
+      setNewCameraLabel('');
+      setNewCameraRole('');
+      setNewCameraRtsp('');
+    } catch (e) {
+      setAddCameraError(e instanceof Error ? e.message : 'Failed to add camera');
+    } finally {
+      setAddCameraLoading(false);
+    }
+  };
+
+  const handleStartEdit = (cameraId: string) => {
+    const cam = cameras.find((c) => c.camera_id === cameraId);
+    if (!cam) return;
+    setEditingCameraId(cameraId);
+    setEditLabel(cam.label ?? '');
+    setEditRole(cam.role ?? '');
+    setEditRtsp(cam.rtsp_url ?? '');
+    setEditError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCameraId(null);
+    setEditLabel('');
+    setEditRole('');
+    setEditRtsp('');
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCameraId) return;
+    if (!editRtsp.trim()) {
+      setEditError('RTSP URL is required.');
+      return;
+    }
+    setEditLoading(true);
+    setEditError(null);
+    try {
+      await updateCamera(editingCameraId, {
+        label: editLabel.trim() || undefined,
+        role: editRole.trim() || undefined,
+        rtsp_url: editRtsp.trim()
+      });
+      if (selectedGodown) {
+        const detail = await getGodownDetail(selectedGodown);
+        setGodownDetail(detail);
+      }
+      setEditingCameraId(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Failed to update camera');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteCamera = async (cameraId: string) => {
+    if (!selectedGodown) return;
+    const ok = window.confirm(`Delete camera ${cameraId}? This cannot be undone.`);
+    if (!ok) return;
+    setEditLoading(true);
+    setEditError(null);
+    try {
+      await deleteCamera(cameraId);
+      const detail = await getGodownDetail(selectedGodown);
+      setGodownDetail(detail);
+      if (selectedCamera === cameraId) {
+        setSelectedCamera(detail.cameras[0]?.camera_id ?? '');
+      }
+      if (zoneCameraId === cameraId) {
+        setZoneCameraId(detail.cameras[0]?.camera_id ?? '');
+      }
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Failed to delete camera');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleOpenFullscreen = (cameraId: string) => {
+    setFullscreenCameraId(cameraId);
+  };
+
+  const handleCloseFullscreen = () => {
+    setFullscreenCameraId(null);
+  };
+
   return (
     <div className="space-y-5">
       <Card className="animate-fade-up">
@@ -259,6 +396,8 @@ export default function LiveCamerasPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+          {addCameraError && <ErrorBanner message={addCameraError} onRetry={() => setAddCameraError(null)} />}
+          {editError && <ErrorBanner message={editError} onRetry={() => setEditError(null)} />}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm text-slate-600">
               Godown
@@ -280,6 +419,49 @@ export default function LiveCamerasPage() {
               </Button>
             </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <label className="text-sm text-slate-600">
+              Camera ID
+              <input
+                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                value={newCameraId}
+                onChange={(e) => setNewCameraId(e.target.value)}
+                placeholder="CAM_GATE_2"
+              />
+            </label>
+            <label className="text-sm text-slate-600">
+              Label
+              <input
+                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                value={newCameraLabel}
+                onChange={(e) => setNewCameraLabel(e.target.value)}
+                placeholder="Gate 2"
+              />
+            </label>
+            <label className="text-sm text-slate-600">
+              Role
+              <input
+                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                value={newCameraRole}
+                onChange={(e) => setNewCameraRole(e.target.value)}
+                placeholder="GATE"
+              />
+            </label>
+            <label className="text-sm text-slate-600">
+              RTSP URL
+              <input
+                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                value={newCameraRtsp}
+                onChange={(e) => setNewCameraRtsp(e.target.value)}
+                placeholder="rtsp://user:pass@ip/stream"
+              />
+            </label>
+          </div>
+          <div className="flex items-center">
+            <Button onClick={handleAddCamera} disabled={addCameraLoading}>
+              {addCameraLoading ? 'Adding…' : 'Add camera'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -292,31 +474,126 @@ export default function LiveCamerasPage() {
         </CardHeader>
         <CardContent>
           {cameras.length > 0 ? (
-            <div className="grid grid-cols-1 gap-8">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-2">
               {cameras.map((camera) => {
                 const camUrl = `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(
                   camera.camera_id
                 )}?ts=${streamNonce}`;
-                if (cameraErrors[camera.camera_id] || (liveCameraIds.length > 0 && !liveCameraIds.includes(camera.camera_id))) {
-                  return null;
-                }
+                const isLive = liveCameraIds.length === 0 || liveCameraIds.includes(camera.camera_id);
+                const hasError = cameraErrors[camera.camera_id];
+                const isEditing = editingCameraId === camera.camera_id;
                 return (
-                  <div key={camera.camera_id} className="space-y-3">
-                    <div className="text-base font-semibold text-slate-800">
-                      {camera.label ?? camera.camera_id}
+                  <div
+                    key={camera.camera_id}
+                    className="relative rounded-3xl border border-white/50 bg-white/70 p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-base font-semibold text-slate-900">
+                          {camera.label ?? camera.camera_id}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {camera.camera_id} {camera.role ? `• ${camera.role}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            isLive && !hasError ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {isLive && !hasError ? 'LIVE' : 'OFFLINE'}
+                        </span>
+                        {!isEditing && (
+                          <>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleStartEdit(camera.camera_id)}
+                              aria-label={`Edit ${camera.camera_id}`}
+                              title="Edit"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                              </svg>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleDeleteCamera(camera.camera_id)}
+                              aria-label={`Delete ${camera.camera_id}`}
+                              title="Delete"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                                <path d="M6 6l1 14h10l1-14" />
+                              </svg>
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="aspect-video w-full overflow-hidden rounded-3xl border border-white/40 bg-black/80 shadow-inner">
-                      <img
-                        src={camUrl}
-                        alt={`Live ${camera.camera_id}`}
-                        className="h-full w-full object-contain"
-                        onError={() =>
-                          setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: true }))
-                        }
-                        onLoad={() =>
-                          setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: false }))
-                        }
-                      />
+                    {isEditing ? (
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                        <input
+                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          placeholder="Label"
+                        />
+                        <input
+                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          value={editRole}
+                          onChange={(e) => setEditRole(e.target.value)}
+                          placeholder="Role"
+                        />
+                        <input
+                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          value={editRtsp}
+                          onChange={(e) => setEditRtsp(e.target.value)}
+                          placeholder="RTSP URL"
+                        />
+                        <div className="flex items-center gap-2 md:col-span-3">
+                          <Button onClick={handleSaveEdit} disabled={editLoading}>
+                            {editLoading ? 'Saving…' : 'Save'}
+                          </Button>
+                          <Button variant="outline" onClick={handleCancelEdit} disabled={editLoading}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="relative mt-3 aspect-video w-full overflow-hidden rounded-2xl border border-white/40 bg-black/85 shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFullscreen(camera.camera_id)}
+                        className="absolute right-3 top-3 rounded-full border border-white/60 bg-black/50 p-2 text-white/90 shadow-sm transition hover:bg-black/70"
+                        aria-label={`Open full screen for ${camera.camera_id}`}
+                        title="Full screen"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+                        </svg>
+                      </button>
+                      {isLive && !hasError ? (
+                        <img
+                          src={camUrl}
+                          alt={`Live ${camera.camera_id}`}
+                          className="h-full w-full object-contain"
+                          onError={() =>
+                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: true }))
+                          }
+                          onLoad={() =>
+                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: false }))
+                          }
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-slate-300">
+                          Live feed not available yet.
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -474,6 +751,29 @@ export default function LiveCamerasPage() {
           </div>
         </CardContent>
       </Card>
+
+      {fullscreenCameraId
+        ? createPortal(
+            <div className="fixed inset-0 z-[9999] h-screen w-screen bg-black/95 overflow-hidden">
+              <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 py-4">
+                <div className="text-sm font-semibold text-white">{fullscreenCameraId}</div>
+                <Button variant="outline" onClick={handleCloseFullscreen}>
+                  Close
+                </Button>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
+                <img
+                  src={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
+                  alt={`Live ${fullscreenCameraId}`}
+                  className="max-h-full w-auto max-w-full object-contain"
+                />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+
     </div>
   );
 }

@@ -133,7 +133,15 @@ def get_godown_detail(godown_id: str, db: Session = Depends(get_db)) -> dict:
         "district": godown.district,
         "capacity": None,
         "cameras": [
-            {"camera_id": c.id, "label": c.label, "role": c.role, "zones_json": c.zones_json} for c in cameras
+            {
+                "camera_id": c.id,
+                "label": c.label,
+                "role": c.role,
+                "rtsp_url": c.rtsp_url,
+                "is_active": c.is_active,
+                "zones_json": c.zones_json,
+            }
+            for c in cameras
         ],
         "summary": {
             "alerts_last_24h": alerts_last_24h,

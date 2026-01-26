@@ -33,6 +33,8 @@ class Camera(Base):
     godown_id: Mapped[str] = mapped_column(String(64), ForeignKey("godowns.id"), index=True)
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)  # e.g. GATE, AISLE, PERIMETER
+    rtsp_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
     zones_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
     godown: Mapped[Godown] = relationship("Godown", back_populates="cameras")

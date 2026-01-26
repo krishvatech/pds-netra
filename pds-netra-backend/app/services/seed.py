@@ -104,6 +104,9 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
             if zones_json is not None and existing.zones_json != zones_json:
                 existing.zones_json = zones_json
                 updated = True
+            if cam.get("rtsp_url") and existing.rtsp_url != cam.get("rtsp_url"):
+                existing.rtsp_url = cam.get("rtsp_url")
+                updated = True
             if cam.get("label") and existing.label != cam.get("label"):
                 existing.label = cam.get("label")
                 updated = True
@@ -118,6 +121,7 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
             godown_id=godown_id,
             label=cam.get("label") or cam_id,
             role=cam.get("role"),
+            rtsp_url=cam.get("rtsp_url"),
             zones_json=zones_json,
         )
         db.add(camera)
