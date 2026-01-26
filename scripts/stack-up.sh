@@ -21,8 +21,19 @@ if [[ -f "$PID_FILE" ]]; then
   exit 1
 fi
 
+AUTO_BOOTSTRAP="${AUTO_BOOTSTRAP:-true}"
+if [[ "$AUTO_BOOTSTRAP" != "false" ]]; then
+  echo "Running bootstrap..."
+  bash "$ROOT_DIR/scripts/bootstrap.sh"
+fi
+
 echo "Starting Mosquitto (docker compose)..."
 (cd "$ROOT_DIR/pds-netra-edge" && docker compose up -d mosquitto)
+
+AUTO_DB_MIGRATE="${AUTO_DB_MIGRATE:-true}"
+if [[ "$AUTO_DB_MIGRATE" != "false" ]]; then
+  bash "$ROOT_DIR/scripts/db-migrate.sh"
+fi
 
 start_cmd "backend" "cd \"$ROOT_DIR/pds-netra-backend\" && uvicorn app.main:app --reload --host 0.0.0.0 --port 8001"
 
