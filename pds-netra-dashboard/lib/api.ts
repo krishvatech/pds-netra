@@ -142,6 +142,10 @@ export async function deleteCamera(cameraId: string): Promise<{ status: string; 
   return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, { method: 'DELETE' });
 }
 
+export async function acknowledgeAlert(alertId: string | number): Promise<{ status: string; alert_id: number }> {
+  return apiFetch(`/api/v1/alerts/${encodeURIComponent(String(alertId))}/ack`, { method: 'POST' });
+}
+
 
 export async function getLiveCameras(godownId: string): Promise<{ godown_id: string; cameras: string[] }> {
   return apiFetch(`/api/v1/live/${encodeURIComponent(godownId)}`);

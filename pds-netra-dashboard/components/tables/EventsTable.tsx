@@ -34,6 +34,9 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
                 {e.event_type === 'UNAUTH_PERSON' && e.meta?.movement_type
                   ? `Detected: ${e.meta.movement_type}`
                   : humanEventType(e.event_type)}
+                {e.meta?.reason ? (
+                  <div className="text-xs text-slate-500 mt-1">Reason: {e.meta.reason}</div>
+                ) : null}
               </TD>
               <TD>
                 <Badge className={severityBadgeClass(e.severity)}>{e.severity.toUpperCase()}</Badge>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getAlerts } from '@/lib/api';
+import { acknowledgeAlert, getAlerts } from '@/lib/api';
 import type { AlertItem, Severity } from '@/lib/types';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
 import { getAlertCues, onAlertCuesChange } from '@/lib/alertCues';
@@ -54,6 +54,19 @@ function alertEpoch(alert: AlertItem): number | null {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
   return d.getTime();
+}
+
+function timeAgo(alert: AlertItem): string {
+  const ts = alertEpoch(alert);
+  if (!ts) return '-';
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
 }
 
 function useAlertFeed() {
@@ -126,6 +139,10 @@ export function LiveRail() {
   const { alerts, hasNew, cues, quietActive } = useAlertFeed();
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [mounted, setMounted] = useState(false);
+  const [scope, setScope] = useState<'ALL' | 'GODOWN' | 'CAMERA'>('ALL');
+  const [scopeGodown, setScopeGodown] = useState('');
+  const [scopeCamera, setScopeCamera] = useState('');
+  const [dismissedIds, setDismissedIds] = useState<Array<string | number>>([]);
 
   useEffect(() => {
     setUiPrefsState(getUiPrefs());
@@ -133,7 +150,53 @@ export function LiveRail() {
     return onUiPrefsChange(setUiPrefsState);
   }, []);
 
-  const timeline = useMemo(() => alerts.slice(0, 8), [alerts]);
+  const sortedAlerts = useMemo(() => {
+    const copy = [...alerts];
+    copy.sort((a, b) => {
+      const sevDiff = severityRank(b.severity_final as Severity) - severityRank(a.severity_final as Severity);
+      if (sevDiff !== 0) return sevDiff;
+      return (alertEpoch(b) ?? 0) - (alertEpoch(a) ?? 0);
+    });
+    return copy;
+  }, [alerts]);
+
+  const godownOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const alert of sortedAlerts) {
+      if (alert.godown_id) set.add(alert.godown_id);
+    }
+    return Array.from(set).sort();
+  }, [sortedAlerts]);
+
+  const cameraOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const alert of sortedAlerts) {
+      if (alert.camera_id) set.add(alert.camera_id);
+    }
+    return Array.from(set).sort();
+  }, [sortedAlerts]);
+
+  useEffect(() => {
+    if (scope === 'GODOWN' && !scopeGodown && godownOptions.length > 0) {
+      setScopeGodown(godownOptions[0]);
+    }
+    if (scope === 'CAMERA' && !scopeCamera && cameraOptions.length > 0) {
+      setScopeCamera(cameraOptions[0]);
+    }
+  }, [scope, scopeGodown, scopeCamera, godownOptions, cameraOptions]);
+
+  const filteredAlerts = useMemo(() => {
+    let list = sortedAlerts.filter((a) => !dismissedIds.includes(a.id));
+    if (scope === 'GODOWN' && scopeGodown) {
+      list = list.filter((a) => a.godown_id === scopeGodown);
+    }
+    if (scope === 'CAMERA' && scopeCamera) {
+      list = list.filter((a) => a.camera_id === scopeCamera);
+    }
+    return list;
+  }, [sortedAlerts, dismissedIds, scope, scopeGodown, scopeCamera]);
+
+  const timeline = useMemo(() => filteredAlerts.slice(0, 8), [filteredAlerts]);
 
   if (!mounted || !uiPrefs.railOpen) {
     return null;
@@ -152,6 +215,46 @@ export function LiveRail() {
         <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
           <span className="badge-soft px-2 py-1 rounded-full">Threshold: {cues.minSeverity}</span>
           {quietActive && <span className="badge-soft px-2 py-1 rounded-full">Quiet hours</span>}
+        </div>
+        <div className="mt-3 space-y-2 text-[11px] text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500">Scope</span>
+            <select
+              className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-300"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as 'ALL' | 'GODOWN' | 'CAMERA')}
+            >
+              <option value="ALL">All</option>
+              <option value="GODOWN">Godown</option>
+              <option value="CAMERA">Camera</option>
+            </select>
+          </div>
+          {scope === 'GODOWN' ? (
+            <select
+              className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-slate-200"
+              value={scopeGodown}
+              onChange={(e) => setScopeGodown(e.target.value)}
+            >
+              {godownOptions.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {scope === 'CAMERA' ? (
+            <select
+              className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-slate-200"
+              value={scopeCamera}
+              onChange={(e) => setScopeCamera(e.target.value)}
+            >
+              {cameraOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
         <button
           className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-500"
@@ -174,9 +277,26 @@ export function LiveRail() {
             <div className="mt-1 text-sm font-semibold text-white">
               {humanAlertType(alert.alert_type)}
             </div>
+            {alert.key_meta?.reason ? (
+              <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
+            ) : null}
             <div className="mt-1 text-xs text-slate-400">
-              {alert.godown_name ?? alert.godown_id} • {formatUtc(alert.end_time ?? alert.start_time)}
+              {(alert.camera_id ?? '-') + ' • ' + (alert.godown_name ?? alert.godown_id)} • {timeAgo(alert)}
             </div>
+            <div className="mt-1 text-xs text-slate-500">Events: {alert.count_events ?? '-'}</div>
+            <button
+              className="mt-2 text-[10px] uppercase tracking-[0.3em] text-slate-400"
+              onClick={async () => {
+                setDismissedIds((prev) => [...prev, alert.id]);
+                try {
+                  await acknowledgeAlert(alert.id);
+                } catch {
+                  // Ignore ack failures; the next poll will rehydrate if still open.
+                }
+              }}
+            >
+              Acknowledge
+            </button>
           </div>
         ))}
       </div>
@@ -211,8 +331,11 @@ export function MobileRail() {
         <div className="text-sm font-semibold text-white truncate">
           {humanAlertType(latest.alert_type)}
         </div>
+        {latest.key_meta?.reason ? (
+          <div className="text-xs text-slate-300 truncate">Reason: {latest.key_meta.reason}</div>
+        ) : null}
         <div className="text-xs text-slate-400 truncate">
-          {latest.godown_name ?? latest.godown_id} • {formatUtc(latest.end_time ?? latest.start_time)}
+          {(latest.camera_id ?? '-') + ' • ' + (latest.godown_name ?? latest.godown_id)} • {formatUtc(latest.end_time ?? latest.start_time)}
         </div>
       </div>
     </div>

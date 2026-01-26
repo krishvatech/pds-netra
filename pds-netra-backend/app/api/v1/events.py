@@ -246,6 +246,7 @@ def list_alerts(
                     "zone_id": meta.get("zone_id"),
                     "plate_text": meta.get("plate_text"),
                     "movement_type": meta.get("movement_type"),
+                    "reason": meta.get("reason"),
                     "run_id": extra.get("run_id"),
                 }
             except Exception:
@@ -289,6 +290,7 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
             "zone_id": meta.get("zone_id"),
             "plate_text": meta.get("plate_text"),
             "movement_type": meta.get("movement_type"),
+            "reason": meta.get("reason"),
             "run_id": extra.get("run_id"),
         }
     return {
@@ -308,3 +310,17 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
         "key_meta": key_meta or None,
         "events": [_event_to_item(e) for e in events],
     }
+
+
+@router.post("/alerts/{alert_id}/ack")
+def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
+    alert = db.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if alert.status != "CLOSED":
+        alert.status = "CLOSED"
+        alert.end_time = datetime.utcnow()
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+    return {"status": alert.status, "alert_id": alert.id}
