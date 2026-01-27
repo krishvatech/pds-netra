@@ -20,6 +20,8 @@ from sqlalchemy import func
 from ...core.db import get_db
 from ...models.event import Event, Alert, AlertEventLink
 from ...models.godown import Godown, Camera
+from ...models.alert_action import AlertAction
+from ...schemas.alert_action import AlertActionCreate, AlertActionOut
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
@@ -317,10 +319,47 @@ def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    if alert.status != "CLOSED":
+    action = AlertAction(alert_id=alert_id, action_type="ACK", actor=None, note=None)
+    db.add(action)
+    db.commit()
+    return {"status": alert.status, "alert_id": alert.id}
+
+
+@router.get("/alerts/{alert_id}/actions", response_model=dict)
+def list_alert_actions(alert_id: int, db: Session = Depends(get_db)) -> dict:
+    actions = (
+        db.query(AlertAction)
+        .filter(AlertAction.alert_id == alert_id)
+        .order_by(AlertAction.created_at.asc())
+        .all()
+    )
+    return {"items": [AlertActionOut.model_validate(a).model_dump() for a in actions], "total": len(actions)}
+
+
+@router.post("/alerts/{alert_id}/actions", response_model=AlertActionOut)
+def create_alert_action(
+    alert_id: int,
+    payload: AlertActionCreate,
+    db: Session = Depends(get_db),
+) -> AlertActionOut:
+    alert = db.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    action_type = payload.action_type.strip().upper()
+    action = AlertAction(
+        alert_id=alert_id,
+        action_type=action_type,
+        actor=payload.actor,
+        note=payload.note,
+    )
+    if action_type in {"RESOLVE", "CLOSE", "CLOSED"}:
         alert.status = "CLOSED"
         alert.end_time = datetime.utcnow()
-        db.add(alert)
-        db.commit()
-        db.refresh(alert)
-    return {"status": alert.status, "alert_id": alert.id}
+    elif action_type in {"REOPEN"}:
+        alert.status = "OPEN"
+        alert.end_time = None
+    db.add(action)
+    db.add(alert)
+    db.commit()
+    db.refresh(action)
+    return AlertActionOut.model_validate(action)

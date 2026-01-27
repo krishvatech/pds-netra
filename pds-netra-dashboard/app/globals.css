@@ -64,6 +64,103 @@ a {
     mask-image: radial-gradient(circle at center, black 0%, transparent 72%);
   }
 
+  .app-scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.25;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(226, 232, 240, 0.04) 0px,
+        rgba(226, 232, 240, 0.04) 1px,
+        rgba(15, 23, 42, 0) 3px,
+        rgba(15, 23, 42, 0) 6px
+      );
+    mix-blend-mode: screen;
+  }
+
+  .hud-card {
+    position: relative;
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.75), rgba(30, 41, 59, 0.45));
+    box-shadow:
+      0 30px 60px -50px rgba(2, 6, 23, 0.9),
+      inset 0 0 24px rgba(14, 165, 233, 0.1);
+    backdrop-filter: blur(16px);
+    color: #e2e8f0;
+  }
+
+  .hud-card::after {
+    content: '';
+    position: absolute;
+    inset: 10px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .hud-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.35em;
+    color: rgba(148, 163, 184, 0.9);
+  }
+
+  .hud-value {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #f8fafc;
+  }
+
+  .hud-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: #e2e8f0;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .intel-banner {
+    border-radius: 18px;
+    padding: 12px 16px;
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(14, 165, 233, 0.12));
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #e2e8f0;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-size: 11px;
+  }
+
+  .incident-card {
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.65);
+    box-shadow: 0 24px 50px -40px rgba(0, 0, 0, 0.8);
+  }
+
+  .report-tile {
+    border-radius: 18px;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.5);
+  }
+
   .glass-panel {
     background: var(--surface);
     border: 1px solid var(--stroke);
@@ -119,6 +216,23 @@ a {
     border: 1px solid var(--stroke);
     box-shadow: 0 30px 60px -50px rgba(15, 23, 42, 0.75);
     backdrop-filter: blur(16px);
+  }
+
+  .surface-card.hud-card {
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.75), rgba(30, 41, 59, 0.45));
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow:
+      0 30px 60px -50px rgba(2, 6, 23, 0.9),
+      inset 0 0 24px rgba(14, 165, 233, 0.1);
+    color: #e2e8f0;
+  }
+
+  .hud-card .text-slate-600 {
+    color: rgba(148, 163, 184, 0.95);
+  }
+
+  .hud-card .text-slate-500 {
+    color: rgba(148, 163, 184, 0.8);
   }
 
   .surface-header {

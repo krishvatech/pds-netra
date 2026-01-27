@@ -115,6 +115,7 @@ export interface AlertItem {
 export interface AlertDetail extends AlertItem {
   linked_event_ids?: Array<string | number>;
   events?: EventItem[];
+  actions?: AlertActionItem[];
 }
 
 export interface HealthSummary {
@@ -252,4 +253,13 @@ export interface RuleItem {
   threshold_distance?: number | null;
   allowed_plates?: string[] | null;
   blocked_plates?: string[] | null;
+}
+
+export interface AlertActionItem {
+  id: number;
+  alert_id: number;
+  action_type: string;
+  actor?: string | null;
+  note?: string | null;
+  created_at?: string | null;
 }

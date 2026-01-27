@@ -6,9 +6,12 @@ import { useEffect, useState } from 'react';
 import { getAlertProfile, onAlertCuesChange } from '@/lib/alertCues';
 
 const nav = [
+  { href: '/dashboard/command-center', label: 'Command Center', icon: CommandIcon },
   { href: '/dashboard/overview', label: 'Overview', icon: OverviewIcon },
   { href: '/dashboard/godowns', label: 'Godowns', icon: WarehouseIcon },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertIcon },
+  { href: '/dashboard/incidents', label: 'Incidents', icon: IncidentIcon },
+  { href: '/dashboard/reports', label: 'Reports', icon: ReportIcon },
   { href: '/dashboard/health', label: 'Health', icon: HeartbeatIcon },
   { href: '/dashboard/rules', label: 'Rules', icon: RulesIcon },
   { href: '/dashboard/dispatch', label: 'Dispatch', icon: DispatchIcon },
@@ -32,6 +35,22 @@ function OverviewIcon({ active }: { active: boolean }) {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function CommandIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 7H20M4 12H20M4 17H20"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="7" r="1.5" fill={active ? '#f59e0b' : '#64748b'} />
+      <circle cx="14" cy="12" r="1.5" fill={active ? '#f59e0b' : '#64748b'} />
+      <circle cx="10" cy="17" r="1.5" fill={active ? '#f59e0b' : '#64748b'} />
     </svg>
   );
 }
@@ -79,6 +98,57 @@ function AlertIcon({ active }: { active: boolean }) {
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.6"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IncidentIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3L21 19H3L12 3Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 9V13"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="16.5" r="1.1" fill={active ? '#f59e0b' : '#64748b'} />
+    </svg>
+  );
+}
+
+function ReportIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 4H14L18 8V20H6V4Z"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 4V8H18"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 12H16"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 16H14"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
       />
     </svg>
   );

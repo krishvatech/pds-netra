@@ -389,10 +389,22 @@ export default function LiveCamerasPage() {
 
   return (
     <div className="space-y-5">
-      <Card className="animate-fade-up">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-info" />
+            Live stream
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">Live Cameras</div>
+          <div className="text-sm text-slate-300">Annotated live frames from edge.</div>
+        </div>
+        <div className="intel-banner">Streaming {selectedGodown || 'selected godown'}</div>
+      </div>
+
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
-          <div className="text-xl font-semibold font-display">Live Cameras</div>
-          <div className="text-sm text-slate-600">Annotated live frames from edge.</div>
+          <div className="text-lg font-semibold font-display">Stream controls</div>
+          <div className="text-sm text-slate-600">Select godown, refresh streams, and add cameras.</div>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
@@ -465,7 +477,7 @@ export default function LiveCamerasPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Live annotated feeds</div>
           <div className="text-sm text-slate-600">
@@ -485,23 +497,19 @@ export default function LiveCamerasPage() {
                 return (
                   <div
                     key={camera.camera_id}
-                    className="relative rounded-3xl border border-white/50 bg-white/70 p-4 shadow-sm"
+                    className="incident-card relative p-4"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="text-base font-semibold text-slate-900">
+                        <div className="text-base font-semibold text-slate-100">
                           {camera.label ?? camera.camera_id}
                         </div>
-                        <div className="text-xs text-slate-500">
+                        <div className="text-xs text-slate-400">
                           {camera.camera_id} {camera.role ? `• ${camera.role}` : ''}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                            isLive && !hasError ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                          }`}
-                        >
+                        <span className={`hud-pill ${isLive && !hasError ? 'text-emerald-200 border-emerald-400/40' : ''}`}>
                           {isLive && !hasError ? 'LIVE' : 'OFFLINE'}
                         </span>
                         {!isEditing && (
@@ -605,7 +613,7 @@ export default function LiveCamerasPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Recent events</div>
           <div className="text-sm text-slate-600">Latest events for the selected godown.</div>

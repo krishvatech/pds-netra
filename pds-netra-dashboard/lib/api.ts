@@ -14,6 +14,7 @@ import type {
   RuleItem,
   DispatchIssueItem,
   DispatchTraceItem,
+  AlertActionItem,
   Severity,
   TestRunDetail,
   TestRunItem
@@ -170,6 +171,17 @@ export async function getAlertDetail(alertId: string): Promise<AlertDetail> {
   return apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}`);
 }
 
+export async function getAlertActions(alertId: string): Promise<{ items: AlertActionItem[]; total: number }> {
+  return apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}/actions`);
+}
+
+export async function createAlertAction(alertId: string, payload: { action_type: string; actor?: string; note?: string }): Promise<AlertActionItem> {
+  return apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}/actions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function getEvents(params?: {
   godown_id?: string;
   camera_id?: string;
@@ -207,6 +219,27 @@ export async function getMovementTimeline(params?: {
 }): Promise<{ bucket: string; items: MovementTimelinePoint[]; range?: { from?: string | null; to?: string | null } }> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/reports/movement/timeline${q}`);
+}
+
+export function exportAlertsCsvUrl(params?: {
+  godown_id?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+}): string {
+  const q = buildQuery(params);
+  return `/api/v1/reports/alerts/export${q}`;
+}
+
+export function exportMovementCsvUrl(params?: {
+  godown_id?: string;
+  camera_id?: string;
+  zone_id?: string;
+  date_from?: string;
+  date_to?: string;
+}): string {
+  const q = buildQuery(params);
+  return `/api/v1/reports/movement/export${q}`;
 }
 
 export async function getDispatchTrace(params?: {

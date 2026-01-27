@@ -204,23 +204,23 @@ export function LiveRail() {
 
   return (
     <aside className="hidden xl:flex xl:flex-col xl:w-80 px-6 py-6 gap-4">
-      <div className="glass-panel rounded-2xl p-4 sticky top-24">
+      <div className="hud-card p-4 sticky top-24">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Live Timeline</div>
-            <div className="text-lg font-semibold font-display">Active Alerts</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
+            <div className="text-lg font-semibold font-display text-slate-100">Active Alerts</div>
           </div>
           <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
         </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
-          <span className="badge-soft px-2 py-1 rounded-full">Threshold: {cues.minSeverity}</span>
-          {quietActive && <span className="badge-soft px-2 py-1 rounded-full">Quiet hours</span>}
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+          <span className="hud-pill">Threshold: {cues.minSeverity}</span>
+          {quietActive && <span className="hud-pill">Quiet hours</span>}
         </div>
         <div className="mt-3 space-y-2 text-[11px] text-slate-400">
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">Scope</span>
+            <span className="text-slate-400">Scope</span>
             <select
-              className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-300"
+              className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-200"
               value={scope}
               onChange={(e) => setScope(e.target.value as 'ALL' | 'GODOWN' | 'CAMERA')}
             >
@@ -257,16 +257,16 @@ export function LiveRail() {
           ) : null}
         </div>
         <button
-          className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-500"
+          className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-400"
           onClick={() => setUiPrefs({ railOpen: false })}
         >
           Hide rail
         </button>
       </div>
 
-      <div className="glass-panel rounded-2xl p-4 space-y-3">
+      <div className="hud-card p-4 space-y-3">
         {timeline.length === 0 && (
-          <div className="text-sm text-slate-500">No open alerts right now.</div>
+          <div className="text-sm text-slate-400">No open alerts right now.</div>
         )}
         {timeline.map((alert) => (
           <div key={alert.id} className="alert-toast p-3">

@@ -202,122 +202,115 @@ export default function DispatchPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="text-3xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-info" />
+            Dispatch intelligence
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
             Dispatch Movement Tracker
           </div>
           <div className="text-sm text-slate-300">
             Track foodgrain movement readiness, dispatch SLAs, and operational delays.
           </div>
         </div>
+        <div className="intel-banner">SLA watch</div>
       </div>
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Filters</div>
-          <div className="text-sm text-slate-600">Scope the movement timeline and dispatch trace.</div>
+          <div className="text-sm text-slate-300">Scope the movement timeline and dispatch trace.</div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <div className="text-xs text-slate-600 mb-1">Range</div>
+              <div className="text-xs text-slate-400 mb-1">Range</div>
               <Select value={rangeDays} onChange={(e) => setRangeDays(e.target.value)} options={rangeOptions} />
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Godown</div>
+              <div className="text-xs text-slate-400 mb-1">Godown</div>
               <Select value={godownId} onChange={(e) => setGodownId(e.target.value)} options={godownOptions} />
             </div>
             <div className="flex items-end">
-              <div className="text-xs text-slate-500">Timeline bucket: {bucket.toUpperCase()}</div>
+              <div className="text-xs text-slate-400">Timeline bucket: {bucket.toUpperCase()}</div>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {error && (
-        <Card>
+        <Card className="hud-card">
           <CardContent>
             <ErrorBanner message={error} onRetry={() => window.location.reload()} />
           </CardContent>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Movement events</div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold font-display">{formatCount(summary?.total_events)}</div>
-          </CardContent>
-        </Card>
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Unplanned</div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold font-display">{formatCount(movementCounts.UNPLANNED)}</div>
-          </CardContent>
-        </Card>
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500">SLA met</div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold font-display">{slaStats.met}/{slaStats.total}</div>
-          </CardContent>
-        </Card>
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Avg delay (min)</div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold font-display">{slaStats.avgDelay ?? '-'}</div>
-          </CardContent>
-        </Card>
+      <div className="metric-grid">
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Movement events</div>
+          <div className="hud-value mt-2">{formatCount(summary?.total_events)}</div>
+          <div className="text-xs text-slate-400 mt-2">All tagged movement detections</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Unplanned</div>
+          <div className="hud-value mt-2">{formatCount(movementCounts.UNPLANNED)}</div>
+          <div className="text-xs text-slate-400 mt-2">Movement without allocation</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">SLA met</div>
+          <div className="hud-value mt-2">{slaStats.met}/{slaStats.total}</div>
+          <div className="text-xs text-slate-400 mt-2">Within 24h dispatch window</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Avg delay (min)</div>
+          <div className="hud-value mt-2">{slaStats.avgDelay ?? '-'}</div>
+          <div className="text-xs text-slate-400 mt-2">Time to first movement</div>
+        </div>
       </div>
 
       <MovementTimelineChart data={timelineSeries} series={timelineTypes} />
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Dispatch SLA tracker</div>
-          <div className="text-sm text-slate-600">Issue → first movement trace, SLA compliance, and delays.</div>
+          <div className="text-sm text-slate-300">Issue → first movement trace, SLA compliance, and delays.</div>
         </CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-slate-600">Loading…</div> : <DispatchTraceTable items={trace} />}
+          {loading ? <div className="text-sm text-slate-400">Loading…</div> : <DispatchTraceTable items={trace} />}
         </CardContent>
       </Card>
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Movement activity log</div>
-          <div className="text-sm text-slate-600">Operational movement events captured from edge.</div>
+          <div className="text-sm text-slate-300">Operational movement events captured from edge.</div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <div>
-              <div className="text-xs text-slate-600 mb-1">Movement type</div>
+              <div className="text-xs text-slate-400 mb-1">Movement type</div>
               <Select value={movementType} onChange={(e) => setMovementType(e.target.value)} options={movementTypeOptions} />
             </div>
             <div className="flex items-end">
-              <div className="text-xs text-slate-500">Showing {filteredEvents.length} of {events.length} events.</div>
+              <div className="text-xs text-slate-400">Showing {filteredEvents.length} of {events.length} events.</div>
             </div>
           </div>
-          {loading ? <div className="text-sm text-slate-600">Loading…</div> : <MovementEventsTable events={filteredEvents} />}
+          {loading ? <div className="text-sm text-slate-400">Loading…</div> : <MovementEventsTable events={filteredEvents} />}
         </CardContent>
       </Card>
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Create dispatch issue</div>
-          <div className="text-sm text-slate-600">Record a dispatch order to track 24h start compliance.</div>
+          <div className="text-sm text-slate-300">Record a dispatch order to track 24h start compliance.</div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <div className="text-xs text-slate-600 mb-1">Godown</div>
+              <div className="text-xs text-slate-400 mb-1">Godown</div>
               <Select
                 value={issueGodown}
                 onChange={(e) => setIssueGodown(e.target.value)}
@@ -325,21 +318,21 @@ export default function DispatchPage() {
               />
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Camera (optional)</div>
+              <div className="text-xs text-slate-400 mb-1">Camera (optional)</div>
               <Input value={issueCamera} onChange={(e) => setIssueCamera(e.target.value)} placeholder="CAM_AISLE_3" />
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Zone (optional)</div>
+              <div className="text-xs text-slate-400 mb-1">Zone (optional)</div>
               <Input value={issueZone} onChange={(e) => setIssueZone(e.target.value)} placeholder="aisle_zone3" />
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Issue time</div>
+              <div className="text-xs text-slate-400 mb-1">Issue time</div>
               <Input type="datetime-local" value={issueTime} onChange={(e) => setIssueTime(e.target.value)} />
             </div>
           </div>
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={handleCreateIssue}>Create issue</Button>
-            {createStatus && <div className="text-sm text-slate-600">{createStatus}</div>}
+            {createStatus && <div className="text-sm text-slate-300">{createStatus}</div>}
           </div>
         </CardContent>
       </Card>

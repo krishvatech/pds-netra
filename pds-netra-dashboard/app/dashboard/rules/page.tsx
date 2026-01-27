@@ -361,12 +361,21 @@ export default function RulesPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <div className="text-3xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">Rule Control Center</div>
-        <div className="text-sm text-slate-300">Create, edit, and deploy detection rules without touching YAML.</div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-warning" />
+            Rules live
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            Rule Control Center
+          </div>
+          <div className="text-sm text-slate-300">Create, edit, and deploy detection rules without touching YAML.</div>
+        </div>
+        <div className="intel-banner">Edge sync enabled</div>
       </div>
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Filters</div>
           <div className="text-sm text-slate-600">Scope rules by godown or rule type.</div>
@@ -397,7 +406,7 @@ export default function RulesPage() {
         </CardContent>
       </Card>
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">{form.id ? 'Edit rule' : 'Create new rule'}</div>
           <div className="text-sm text-slate-600">Rules are pushed to edge automatically within seconds.</div>
@@ -499,7 +508,7 @@ export default function RulesPage() {
         </Card>
       )}
 
-      <Card className="animate-fade-up">
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Active rules</div>
           <div className="text-sm text-slate-600">Rules are synced to edge nodes automatically.</div>

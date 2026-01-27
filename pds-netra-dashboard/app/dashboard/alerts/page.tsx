@@ -69,6 +69,13 @@ export default function AlertsPage() {
     return p;
   }, [godownId, district, severity, status, dateFrom, dateTo]);
 
+  const stats = useMemo(() => {
+    const total = alerts.length;
+    const critical = alerts.filter((a) => a.severity_final === 'critical').length;
+    const warning = alerts.filter((a) => a.severity_final === 'warning').length;
+    return { total, critical, warning };
+  }, [alerts]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -86,12 +93,45 @@ export default function AlertsPage() {
   }, [params]);
 
   return (
-    <Card className="animate-fade-up">
-      <CardHeader>
-        <div className="text-xl font-semibold font-display">Alert Command Feed</div>
-        <div className="text-sm text-slate-600">Filter and review alerts across godowns.</div>
-      </CardHeader>
-      <CardContent>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-warning" />
+            Alert feed
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            Alert Command Feed
+          </div>
+          <div className="text-sm text-slate-300">Filter and review alerts across godowns.</div>
+        </div>
+        <div className="intel-banner">Live visibility</div>
+      </div>
+
+      <div className="metric-grid">
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Open alerts</div>
+          <div className="hud-value mt-2">{stats.total}</div>
+          <div className="text-xs text-slate-400 mt-2">All statuses in current filter</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Critical</div>
+          <div className="hud-value mt-2">{stats.critical}</div>
+          <div className="text-xs text-slate-400 mt-2">Immediate escalation required</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Warning</div>
+          <div className="hud-value mt-2">{stats.warning}</div>
+          <div className="text-xs text-slate-400 mt-2">Requires supervision</div>
+        </div>
+      </div>
+
+      <Card className="animate-fade-up hud-card">
+        <CardHeader>
+          <div className="text-lg font-semibold font-display">Filters</div>
+          <div className="text-sm text-slate-300">Refine by godown, district, severity, and time window.</div>
+        </CardHeader>
+        <CardContent>
         {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
 
         {tickerItems.length > 0 && (
@@ -138,7 +178,7 @@ export default function AlertsPage() {
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
             {activeFilters.map((chip) => (
-              <span key={chip} className="badge-soft rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-600">
+              <span key={chip} className="hud-pill">
                 {chip}
               </span>
             ))}
@@ -148,7 +188,7 @@ export default function AlertsPage() {
         {alerts.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5 stagger">
             {alerts.slice(0, 6).map((alert) => (
-              <div key={alert.id} className="alert-toast p-4">
+              <div key={alert.id} className="incident-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live alert</div>
@@ -168,7 +208,8 @@ export default function AlertsPage() {
         )}
 
         <AlertsTable alerts={alerts} />
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -15,12 +15,12 @@ export function MovementTimelineChart({
   series: string[];
 }) {
   return (
-    <Card className="animate-fade-up">
+    <Card className="animate-fade-up hud-card">
       <CardHeader>
-        <div className="text-sm text-slate-600">Movement activity timeline</div>
+        <div className="text-sm text-slate-300">Movement activity timeline</div>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-3">
+        <div className="flex flex-wrap gap-2 text-xs text-slate-300 mb-3">
           {series.map((name, idx) => (
             <span key={name} className="inline-flex items-center gap-2">
               <span className="h-2 w-2 rounded-full" style={{ background: COLORS[idx % COLORS.length] }} />
@@ -30,12 +30,12 @@ export function MovementTimelineChart({
         </div>
         <div className="h-64 w-full">
           {data.length === 0 ? (
-            <div className="text-sm text-slate-500">No movement events for this range.</div>
+            <div className="text-sm text-slate-400">No movement events for this range.</div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <XAxis dataKey="t" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <XAxis dataKey="t" tick={{ fontSize: 12, fill: '#cbd5f5' }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#cbd5f5' }} />
                 <Tooltip />
                 {series.map((key, idx) => (
                   <Area

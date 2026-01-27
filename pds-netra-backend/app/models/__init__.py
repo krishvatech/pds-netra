@@ -18,5 +18,6 @@ class Base(DeclarativeBase):
 
 
 from .rule import Rule  # noqa: E402,F401
+from .alert_action import AlertAction  # noqa: E402,F401
 
-__all__ = ["Base", "Rule"]
+__all__ = ["Base", "Rule", "AlertAction"]

@@ -98,6 +98,13 @@ export default function TestRunsPage() {
   }, [cameras]);
 
   const submitDisabled = loading || !godownId || !cameraId || !file;
+  const stats = useMemo(() => {
+    const total = runs.length;
+    const active = runs.filter((r) => r.status === 'ACTIVE').length;
+    const completed = runs.filter((r) => r.status === 'COMPLETED').length;
+    const queued = runs.filter((r) => r.status === 'UPLOADED').length;
+    return { total, active, completed, queued };
+  }, [runs]);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -154,10 +161,47 @@ export default function TestRunsPage() {
 
   return (
     <div className="space-y-5">
-      <Card className="animate-fade-up">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-info" />
+            Test harness
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            Edge Test Runs
+          </div>
+          <div className="text-sm text-slate-300">Upload MP4s and validate detection pipelines on the edge.</div>
+        </div>
+        <div className="intel-banner">Controlled replay</div>
+      </div>
+
+      <div className="metric-grid">
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Total runs</div>
+          <div className="hud-value mt-2">{stats.total}</div>
+          <div className="text-xs text-slate-400 mt-2">Uploaded MP4 replays</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Active</div>
+          <div className="hud-value mt-2">{stats.active}</div>
+          <div className="text-xs text-slate-400 mt-2">Live annotated streaming</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Queued</div>
+          <div className="hud-value mt-2">{stats.queued}</div>
+          <div className="text-xs text-slate-400 mt-2">Uploaded, not activated</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Completed</div>
+          <div className="hud-value mt-2">{stats.completed}</div>
+          <div className="text-xs text-slate-400 mt-2">Processing finished</div>
+        </div>
+      </div>
+
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-xl font-semibold font-display">Test via Upload</div>
-          <div className="text-sm text-slate-600">Upload an MP4 file and activate it on the edge.</div>
+          <div className="text-sm text-slate-300">Upload an MP4 file and activate it on the edge.</div>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
@@ -194,17 +238,17 @@ export default function TestRunsPage() {
             )}
           </div>
           {lastRun && (
-            <div className="rounded-xl border border-white/60 bg-white/70 p-3 text-sm text-slate-700">
+            <div className="report-tile p-3 text-sm text-slate-200">
               Latest run: <span className="font-semibold">{lastRun.run_id}</span> • Status: {lastRun.status}
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Recent test runs</div>
-          <div className="text-sm text-slate-600">Track uploaded runs and activate them on edge.</div>
+          <div className="text-sm text-slate-300">Track uploaded runs and activate them on edge.</div>
         </CardHeader>
         <CardContent>
           <div className="table-shell overflow-auto">

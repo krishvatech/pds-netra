@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
@@ -247,3 +248,77 @@ def dispatch_trace(
             }
         )
     return {"items": items, "total": len(items)}
+
+
+@router.get("/alerts/export")
+def export_alerts_csv(
+    godown_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    query = db.query(Alert)
+    if godown_id:
+        query = query.filter(Alert.godown_id == godown_id)
+    if status:
+        query = query.filter(Alert.status == status)
+    if date_from:
+        query = query.filter(Alert.start_time >= _ensure_utc(date_from))
+    if date_to:
+        query = query.filter(Alert.start_time <= _ensure_utc(date_to))
+    alerts = query.order_by(Alert.start_time.desc()).all()
+
+    def _iter():
+        yield "alert_id,godown_id,camera_id,alert_type,severity,status,start_time,end_time,zone_id,summary\n"
+        for a in alerts:
+            row = [
+                a.id,
+                a.godown_id,
+                a.camera_id or "",
+                a.alert_type,
+                a.severity_final,
+                a.status,
+                a.start_time.isoformat() if a.start_time else "",
+                a.end_time.isoformat() if a.end_time else "",
+                a.zone_id or "",
+                (a.summary or "").replace("\n", " ").replace(",", " "),
+            ]
+            yield ",".join([str(x) for x in row]) + "\n"
+
+    return StreamingResponse(_iter(), media_type="text/csv")
+
+
+@router.get("/movement/export")
+def export_movement_csv(
+    godown_id: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    zone_id: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    events = _movement_query(db, godown_id, camera_id, zone_id, date_from, date_to)
+
+    def _iter():
+        yield "event_id,godown_id,camera_id,timestamp_utc,zone_id,movement_type,plan_id,expected_bag_count,observed_bag_count,severity\n"
+        for ev in events:
+            meta = ev.meta or {}
+            extra = meta.get("extra") if isinstance(meta, dict) else {}
+            if not isinstance(extra, dict):
+                extra = {}
+            row = [
+                ev.event_id_edge,
+                ev.godown_id,
+                ev.camera_id,
+                ev.timestamp_utc.isoformat() if ev.timestamp_utc else "",
+                meta.get("zone_id") or "",
+                meta.get("movement_type") or "",
+                extra.get("plan_id") or "",
+                extra.get("expected_bag_count") or "",
+                extra.get("observed_bag_count") or "",
+                ev.severity_raw,
+            ]
+            yield ",".join([str(x) for x in row]) + "\n"
+
+    return StreamingResponse(_iter(), media_type="text/csv")

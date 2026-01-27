@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
   activateTestRun,
@@ -33,6 +33,14 @@ export default function TestRunDetailPage() {
   const [snapshotTotal, setSnapshotTotal] = useState(0);
   const snapshotPageSize = 6;
   const [streamNonce, setStreamNonce] = useState(0);
+  const summaryStats = useMemo(() => {
+    const snapshotsCount = snapshotTotal || snapshots.length;
+    return {
+      events: events.length,
+      alerts: alerts.length,
+      snapshots: snapshotsCount
+    };
+  }, [alerts.length, events.length, snapshotTotal, snapshots.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -161,7 +169,7 @@ export default function TestRunDetailPage() {
   };
 
   if (!runId) {
-    return <div className="text-sm text-slate-600">Missing run id.</div>;
+    return <div className="text-sm text-slate-400">Missing run id.</div>;
   }
 
   const snapshotEvents = events.filter((e) => e.image_url && e.bbox && e.bbox.length === 4).slice(0, 6);
@@ -181,16 +189,53 @@ export default function TestRunDetailPage() {
 
   return (
     <div className="space-y-5">
-      <Card className="animate-fade-up">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-info" />
+            Test run detail
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            Test Run Detail
+          </div>
+          <div className="text-sm text-slate-300">Inspect stream output, snapshots, and linked alerts.</div>
+        </div>
+        <div className="intel-banner">Run ID {runId}</div>
+      </div>
+
+      <div className="metric-grid">
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Run status</div>
+          <div className="hud-value mt-2">{run?.status ?? '-'}</div>
+          <div className="text-xs text-slate-400 mt-2">Godown {run?.godown_id ?? '-'}</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Events captured</div>
+          <div className="hud-value mt-2">{summaryStats.events}</div>
+          <div className="text-xs text-slate-400 mt-2">Latest 50 events sampled</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Open alerts</div>
+          <div className="hud-value mt-2">{summaryStats.alerts}</div>
+          <div className="text-xs text-slate-400 mt-2">Godown alert feed</div>
+        </div>
+        <div className="hud-card p-5 animate-fade-up">
+          <div className="hud-label">Snapshots</div>
+          <div className="hud-value mt-2">{summaryStats.snapshots}</div>
+          <div className="text-xs text-slate-400 mt-2">Frame captures</div>
+        </div>
+      </div>
+
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
-          <div className="text-xl font-semibold font-display">Test Run Detail</div>
-          <div className="text-sm text-slate-600">Run ID: {runId}</div>
+          <div className="text-xl font-semibold font-display">Run metadata</div>
+          <div className="text-sm text-slate-300">Activation, status, and routing context.</div>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
           {run ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-200">
                 <div>Godown: {run.godown_id}</div>
                 <div>Camera: {run.camera_id}</div>
                 <div>Zone: {run.zone_id ?? '-'}</div>
@@ -208,38 +253,38 @@ export default function TestRunDetailPage() {
               </div>
             </>
           ) : (
-            <div className="text-sm text-slate-600">Loading run detail…</div>
+            <div className="text-sm text-slate-400">Loading run detail…</div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Live annotated feed</div>
-          <div className="text-sm text-slate-600">Real-time overlay while the test run is processing.</div>
+          <div className="text-sm text-slate-300">Real-time overlay while the test run is processing.</div>
         </CardHeader>
         <CardContent>
           {run ? (
             <img
               src={streamUrl}
               alt="Live annotated feed"
-              className="w-full rounded-2xl border border-white/40 bg-black/80"
+              className="w-full rounded-2xl border border-white/20 bg-black/80"
             />
           ) : (
-            <div className="text-sm text-slate-600">Loading live feed…</div>
+            <div className="text-sm text-slate-400">Loading live feed…</div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Annotated video</div>
-          <div className="text-sm text-slate-600">Playback of the test run with bounding boxes.</div>
+          <div className="text-sm text-slate-300">Playback of the test run with bounding boxes.</div>
         </CardHeader>
         <CardContent>
           {run ? (
             videoError ? (
-              <div className="flex items-center justify-between text-sm text-slate-600">
+              <div className="flex items-center justify-between text-sm text-slate-400">
                 <span>Annotated video not available yet.</span>
                 <Button variant="outline" onClick={() => setVideoError(false)}>
                   Retry
@@ -248,37 +293,37 @@ export default function TestRunDetailPage() {
             ) : (
               <video
                 controls
-                className="w-full rounded-2xl border border-white/40 bg-black/80"
+                className="w-full rounded-2xl border border-white/20 bg-black/80"
                 src={annotatedUrl}
                 onError={() => setVideoError(true)}
               />
             )
           ) : (
-            <div className="text-sm text-slate-600">Loading video…</div>
+            <div className="text-sm text-slate-400">Loading video…</div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Detection snapshots</div>
-          <div className="text-sm text-slate-600">Recent frames with bounding boxes.</div>
+          <div className="text-sm text-slate-300">Recent frames with bounding boxes.</div>
         </CardHeader>
         <CardContent>
           {snapshots.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {snapshots.map((url) => (
-                  <div key={url} className="rounded-2xl border border-white/40 bg-white/70 p-3">
+                  <div key={url} className="incident-card p-3">
                     <img
                       src={url.startsWith('/media/') ? `${apiBase}${url}` : url}
                       alt="Detection snapshot"
-                      className="w-full rounded-xl border border-white/60"
+                      className="w-full rounded-xl border border-white/20"
                     />
                   </div>
                 ))}
               </div>
-              <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
+              <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
                 <div>
                   Page {snapshotPage} of {Math.max(1, Math.ceil(snapshotTotal / snapshotPageSize))}
                 </div>
@@ -313,10 +358,10 @@ export default function TestRunDetailPage() {
                     ? `Detected: ${event.meta.movement_type}`
                     : event.event_type;
                 return (
-                  <div key={key} className="rounded-2xl border border-white/40 bg-white/70 p-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Event</div>
-                    <div className="text-sm font-semibold text-slate-800">{eventLabel}</div>
-                    <div className="mt-3 relative overflow-hidden rounded-xl border border-white/60 bg-slate-100">
+                  <div key={key} className="incident-card p-3">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Event</div>
+                    <div className="text-sm font-semibold text-slate-100">{eventLabel}</div>
+                    <div className="mt-3 relative overflow-hidden rounded-xl border border-white/20 bg-slate-900">
                       <img
                         src={resolveMediaUrl(event.image_url)}
                         alt={eventLabel}
@@ -346,28 +391,28 @@ export default function TestRunDetailPage() {
               })}
             </div>
           ) : (
-            <div className="text-sm text-slate-600">No snapshots yet.</div>
+            <div className="text-sm text-slate-400">No snapshots yet.</div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Recent events</div>
-          <div className="text-sm text-slate-600">Last 50 events for this camera.</div>
+          <div className="text-sm text-slate-300">Last 50 events for this camera.</div>
         </CardHeader>
         <CardContent>
-          {events.length > 0 ? <EventsTable events={events} /> : <div className="text-sm text-slate-600">No events yet.</div>}
+          {events.length > 0 ? <EventsTable events={events} /> : <div className="text-sm text-slate-400">No events yet.</div>}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">Open alerts</div>
-          <div className="text-sm text-slate-600">Alerts for this godown during the test run window.</div>
+          <div className="text-sm text-slate-300">Alerts for this godown during the test run window.</div>
         </CardHeader>
         <CardContent>
-          {alerts.length > 0 ? <AlertsTable alerts={alerts} /> : <div className="text-sm text-slate-600">No alerts yet.</div>}
+          {alerts.length > 0 ? <AlertsTable alerts={alerts} /> : <div className="text-sm text-slate-400">No alerts yet.</div>}
         </CardContent>
       </Card>
     </div>

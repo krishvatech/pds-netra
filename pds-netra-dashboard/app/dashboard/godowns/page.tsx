@@ -58,11 +58,25 @@ export default function GodownsPage() {
   }, [districts]);
 
   return (
-    <div className="space-y-4">
-      <Card className="animate-fade-up">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">
+            <span className="pulse-dot pulse-info" />
+            Network view
+          </div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            Godown Network
+          </div>
+          <div className="text-sm text-slate-300">Browse and filter monitored godowns.</div>
+        </div>
+        <div className="intel-banner">Coverage map</div>
+      </div>
+
+      <Card className="animate-fade-up hud-card">
         <CardHeader>
-          <div className="text-xl font-semibold font-display">Godown Network</div>
-          <div className="text-sm text-slate-600">Browse and filter monitored godowns</div>
+          <div className="text-lg font-semibold font-display">Filters</div>
+          <div className="text-sm text-slate-300">Slice by district and status.</div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -82,7 +96,7 @@ export default function GodownsPage() {
           {activeFilters.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4">
               {activeFilters.map((chip) => (
-                <span key={chip} className="badge-soft rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-600">
+                <span key={chip} className="hud-pill">
                   {chip}
                 </span>
               ))}
