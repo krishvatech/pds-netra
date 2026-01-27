@@ -545,7 +545,7 @@ def start_camera_loops(
                                 text = getattr(res, "text", getattr(res, "plate_text", None))
                                 conf = getattr(res, "confidence", 1.0)
                                 if bbox and text:
-                                    dets.append((f"Plate: {text}", float(conf), bbox, None))
+                                    dets.append((f"Plate: {text}", float(conf), bbox, -1))                   
                     except Exception:
                         pass
 
@@ -553,7 +553,7 @@ def start_camera_loops(
                     for face in face_overlays:
                         if face.bbox:
                             label = face.name if face.status == "KNOWN" else "Face"
-                            dets.append((label, face.confidence or 1.0, face.bbox, None))
+                            dets.append((label, float(face.confidence or 1.0), face.bbox, -1))
 
                     # Draw zones
                     try:
