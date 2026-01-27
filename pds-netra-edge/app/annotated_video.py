@@ -1,5 +1,11 @@
 """
 Annotated video writer for test runs.
+
+Windows note:
+- The Dashboard/Backend may read *_latest.jpg while the Edge writes it.
+- On Windows this can throw PermissionError / WinError 5 (file locking).
+- We fix it by writing to a temp file and using os.replace() with retries.
+- Also: DO NOT block _latest.jpg updates if MP4 VideoWriter fails to open.
 """
 
 from __future__ import annotations
@@ -15,8 +21,58 @@ except ImportError:
     cv2 = None  # type: ignore
 
 
+_LOG = logging.getLogger("annotated_video")
+
+
+def _atomic_write_jpg(latest_path: Path, image_bgr, retries: int = 6, delay: float = 0.02) -> bool:
+    """
+    Encode image to JPG and atomically replace latest_path.
+    Retries handle Windows sharing violations (WinError 5) when backend reads the file.
+    """
+    if cv2 is None:
+        return False
+
+    try:
+        ok, encoded = cv2.imencode(".jpg", image_bgr)
+        if not ok:
+            return False
+        data = encoded.tobytes()
+    except Exception:
+        return False
+
+    latest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use a deterministic tmp name per target to avoid creating many temp files.
+    tmp_path = latest_path.with_suffix(latest_path.suffix + ".tmp")
+
+    import os
+
+    for _ in range(max(1, retries)):
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(data)
+            os.replace(str(tmp_path), str(latest_path))  # atomic on same filesystem
+            return True
+        except PermissionError:
+            # Backend/Dashboard may be reading the file right now (Windows lock)
+            time.sleep(delay)
+        except OSError:
+            # Other transient errors (e.g., sharing violation)
+            time.sleep(delay)
+        except Exception:
+            # Don't crash pipeline because jpg write failed
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)  # py3.8+; safe on py3.12
+            except Exception:
+                pass
+            return False
+
+    return False
+
+
 class AnnotatedVideoWriter:
-    """Writes an annotated MP4 with bounding boxes and labels."""
+    """Writes an annotated MP4 with bounding boxes and labels + periodically updated latest JPG."""
 
     def __init__(
         self,
@@ -35,19 +91,32 @@ class AnnotatedVideoWriter:
         self._frames_written = 0
 
     def _ensure_writer(self, frame) -> bool:
+        """
+        Best-effort MP4 writer. On Windows, MP4 codecs can fail depending on OpenCV build.
+        We keep it optional; stream uses *_latest.jpg.
+        """
         if cv2 is None:
             return False
         if self._writer is not None:
             return True
+
         height, width = frame.shape[:2]
         self._size = (width, height)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Try a couple codecs; whichever opens successfully is used.
         for codec in ("avc1", "mp4v"):
-            fourcc = cv2.VideoWriter_fourcc(*codec)
-            writer = cv2.VideoWriter(str(self.output_path), fourcc, self.fps, self._size)
-            if writer.isOpened():
-                self._writer = writer
-                return True
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                writer = cv2.VideoWriter(str(self.output_path), fourcc, self.fps, self._size)
+                if writer.isOpened():
+                    self._writer = writer
+                    _LOG.info("AnnotatedVideoWriter: opened video writer codec=%s path=%s", codec, self.output_path)
+                    return True
+            except Exception:
+                continue
+
+        _LOG.warning("AnnotatedVideoWriter: could not open MP4 writer for %s (will still write latest JPG)", self.output_path)
         return False
 
     def write_frame(
@@ -57,9 +126,10 @@ class AnnotatedVideoWriter:
     ) -> None:
         if cv2 is None:
             return
-        if not self._ensure_writer(frame):
-            return
+
         canvas = frame.copy()
+
+        # draw detections
         for class_name, confidence, bbox, track_id in detections:
             x1, y1, x2, y2 = bbox
             cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
@@ -76,27 +146,38 @@ class AnnotatedVideoWriter:
                 1,
                 cv2.LINE_AA,
             )
-        self._writer.write(canvas)
-        self._frames_written += 1
+
+        # ✅ ALWAYS update latest jpg (dashboard stream depends on this)
         if self.latest_path is not None:
             now = time.monotonic()
             if now - self._last_latest_ts >= self.latest_interval:
-                self.latest_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    import os
-                    ok, encoded = cv2.imencode(".jpg", canvas)
-                    if not ok:
-                        return
-                    tmp_path = self.latest_path.with_suffix(".tmp")
-                    tmp_path.write_bytes(encoded.tobytes())
-                    os.replace(str(tmp_path), str(self.latest_path))
+                    _atomic_write_jpg(self.latest_path, canvas, retries=6, delay=0.02)
                 except Exception:
+                    # never crash pipeline due to jpg write
                     pass
                 self._last_latest_ts = now
 
+        # MP4 writing is optional; only if writer can open
+        if self._ensure_writer(frame) and self._writer is not None:
+            try:
+                self._writer.write(canvas)
+                self._frames_written += 1
+            except Exception:
+                # if writer starts failing mid-run, release it and keep going with JPG
+                _LOG.exception("AnnotatedVideoWriter: video write failed; disabling MP4 writer for this run")
+                try:
+                    self._writer.release()
+                except Exception:
+                    pass
+                self._writer = None
+
     def close(self) -> None:
         if self._writer is not None:
-            self._writer.release()
+            try:
+                self._writer.release()
+            except Exception:
+                pass
             self._writer = None
 
     def frames_written(self) -> int:
@@ -110,6 +191,7 @@ class LiveFrameWriter:
         self.latest_path = Path(latest_path)
         self.latest_interval = latest_interval
         self._last_latest_ts = 0.0
+        self._log = logging.getLogger("live_frame_writer")
 
     def write_frame(
         self,
@@ -118,9 +200,11 @@ class LiveFrameWriter:
     ) -> None:
         if cv2 is None:
             return
+
         now = time.monotonic()
         if now - self._last_latest_ts < self.latest_interval:
             return
+
         canvas = frame.copy()
         for class_name, confidence, bbox, track_id in detections:
             x1, y1, x2, y2 = bbox
@@ -138,20 +222,12 @@ class LiveFrameWriter:
                 1,
                 cv2.LINE_AA,
             )
-        self.latest_path.parent.mkdir(parents=True, exist_ok=True)
+
         try:
-            import os
-            ok, encoded = cv2.imencode(".jpg", canvas)
+            ok = _atomic_write_jpg(self.latest_path, canvas, retries=6, delay=0.02)
             if not ok:
-                logging.getLogger("live_frame_writer").warning(
-                    "Failed to write live frame to %s", self.latest_path
-                )
-                return
-            tmp_path = self.latest_path.with_suffix(".tmp")
-            tmp_path.write_bytes(encoded.tobytes())
-            os.replace(str(tmp_path), str(self.latest_path))
+                self._log.warning("Failed to write live frame to %s", self.latest_path)
         except Exception:
-            logging.getLogger("live_frame_writer").exception(
-                "Failed to write live frame to %s", self.latest_path
-            )
+            self._log.exception("Failed to write live frame to %s", self.latest_path)
+
         self._last_latest_ts = now
