@@ -27,6 +27,7 @@ export function humanAlertType(alertType: string): string {
   const map: Record<string, string> = {
     SECURITY_UNAUTH_ACCESS: 'Security: Unauthorized Access',
     OPERATION_BAG_MOVEMENT_ANOMALY: 'Operations: Bag Movement Anomaly',
+    OPERATION_UNPLANNED_MOVEMENT: 'Operations: Unplanned Movement',
     CAMERA_HEALTH_ISSUE: 'Camera Health Issue',
     ANPR_MISMATCH_VEHICLE: 'ANPR Vehicle Mismatch',
     ANIMAL_INTRUSION: 'Animal Intrusion',

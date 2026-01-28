@@ -211,6 +211,8 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
         movement_type = meta.get("movement_type") if meta else None
         if movement_type == "AFTER_HOURS":
             return "OPERATION_BAG_MOVEMENT_ANOMALY"
+        if movement_type == "UNPLANNED":
+            return "OPERATION_UNPLANNED_MOVEMENT"
         # For GENERIC bag movements we may not create alerts yet
         return None
     if event_type in {"CAMERA_TAMPERED", "CAMERA_OFFLINE", "LOW_LIGHT"}:
@@ -243,6 +245,19 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         return f"Animal intrusion detected in zone {event.meta.get('zone_id')}"
     if alert_type == "OPERATION_BAG_MOVEMENT_ANOMALY":
         return f"After-hours bag movement detected in zone {event.meta.get('zone_id')}"
+    if alert_type == "OPERATION_UNPLANNED_MOVEMENT":
+        zone = event.meta.get("zone_id") if event.meta else None
+        plan_id = None
+        extra = event.meta.get("extra") if event.meta else None
+        if isinstance(extra, dict):
+            plan_id = extra.get("plan_id")
+        if plan_id:
+            return f"Unplanned bag movement detected in zone {zone} (plan {plan_id})"
+        return (
+            f"Unplanned bag movement detected in zone {zone}"
+            if zone
+            else "Unplanned bag movement detected"
+        )
     if alert_type == "CAMERA_HEALTH_ISSUE":
         reason = event.meta.get("reason") if event.meta else None
         return f"Camera health issue: {reason}"
