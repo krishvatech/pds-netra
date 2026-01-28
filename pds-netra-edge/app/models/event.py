@@ -67,6 +67,7 @@ class HealthModel(BaseModel):
     # Detailed camera status list. Each entry describes one camera's health.
     camera_status: Optional[List[CameraStatusModel]] = None
 
+HealthModel.update_forward_refs()
 
 __all__ = [
     'MetaModel',

@@ -1,13 +1,35 @@
 godown_id: GDN_001
 timezone: Asia/Kolkata
 
-# MQTT connection details. These values can be overridden via environment
-# variables (MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USERNAME, MQTT_PASSWORD).
+# MQTT connection details.
 mqtt:
   host: 127.0.0.1
   port: 1883
   username: null
   password: null
+
+# ANPR Configuration Section
+anpr:
+  enabled: true
+  model_path: "./ML_Model/anpr.pt"
+  device: "cpu"
+  conf: 0.0
+  iou: 0.45
+  imgsz: 960
+  max_det: 300
+  classes: [0]
+  plate_class_names: null
+  ocr_lang: ["en"]
+  ocr_every_n: 2
+  ocr_min_conf: 0.2
+  ocr_debug: true
+  validate_india: true
+  show_invalid: false
+  registered_file: null
+  dedup_interval_sec: 60
+  save_csv: "./anpr_debug.csv"
+  # save_crops_dir: "./././anpr_crops"
+  # save_crops_max: 15
 
 tracking:
   tracker_name: "bytetrack.yaml"
@@ -18,7 +40,21 @@ tracking:
 cameras:
   - id: CAM_GATE_1
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
-    #test_video: "./data/gate_1.mp4"
+    #test_video: "./data/truck_road.mp4"
+    # Zones required for ANPR
+    zones:
+      - id: gate_outer
+        polygon:
+          - [0, 0]
+          - [1920, 0]
+          - [1920, 1080]
+          - [0, 1080]
+      - id: gate_inner
+        polygon:
+          - [0, 0]
+          - [640, 0]
+          - [640, 384]
+          - [0, 384]
     health:
       enabled: true
       no_frame_timeout_seconds: 15
@@ -38,7 +74,7 @@ cameras:
 
   - id: CAM_AISLE_3
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
-    #test_video: "./data/aisle_3.mp4"
+    # test_video: "./data/truck_road.mp4"
     zones:
       - id: aisle_zone3
         polygon:
@@ -63,6 +99,12 @@ cameras:
       snapshot_on_tamper: false
 
 rules:
+  # ANPR Rule
+  - id: RULE_ANPR_GATE_MONITOR
+    type: ANPR_MONITOR
+    camera_id: CAM_GATE_1
+    zone_id: gate_outer
+
   - id: RULE_NO_PERSON_ALWAYS_GATE
     type: NO_PERSON_DURING
     camera_id: CAM_GATE_1
@@ -114,7 +156,7 @@ rules:
     zone_id: all
     threshold_seconds: 120
 
-# Face recognition configuration (optional)
+# Face recognition configuration
 face_recognition:
   enabled: true
   known_faces_file: "config/known_faces.json"

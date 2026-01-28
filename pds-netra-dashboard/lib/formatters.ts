@@ -31,7 +31,9 @@ export function humanAlertType(alertType: string): string {
     CAMERA_HEALTH_ISSUE: 'Camera Health Issue',
     ANPR_MISMATCH_VEHICLE: 'ANPR Vehicle Mismatch',
     ANIMAL_INTRUSION: 'Animal Intrusion',
-    DISPATCH_NOT_STARTED_24H: 'Dispatch: Not Started in 24h'
+    DISPATCH_NOT_STARTED_24H: 'Dispatch: Not Started in 24h',
+    ANPR_PLATE_DETECTED: 'ANPR Plate Detected',
+    
   };
   return map[alertType] ?? alertType.replaceAll('_', ' ');
 }

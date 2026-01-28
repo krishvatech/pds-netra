@@ -5,14 +5,16 @@ Test run upload and activation endpoints.
 from __future__ import annotations
 
 import shutil
-from typing import Optional
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pathlib import Path
-import time
 
+from ...core.db import SessionLocal
+from ...models.event import Alert
 from ...services.test_runs import (
     create_test_run,
     delete_test_run,
@@ -21,9 +23,6 @@ from ...services.test_runs import (
     update_test_run,
     write_edge_override,
 )
-from ...core.db import SessionLocal
-from ...models.event import Alert
-
 
 router = APIRouter(prefix="/api/v1/test-runs", tags=["test-runs"])
 
@@ -78,6 +77,8 @@ async def upload_test_run(
         write_video=_write_video,
     )
     _cleanup_media(godown_id, camera_id, keep_run_id=meta.get("run_id"))
+
+    # Close open alerts for this camera (best-effort)
     try:
         with SessionLocal() as db:
             (
@@ -92,6 +93,7 @@ async def upload_test_run(
             db.commit()
     except Exception:
         pass
+
     return meta
 
 
@@ -114,6 +116,7 @@ def activate_run(run_id: str) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+
     override_path = write_edge_override(run, mode="test")
     activated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     updated = update_test_run(
@@ -124,6 +127,8 @@ def activate_run(run_id: str) -> dict:
             "activated_at": activated_at,
         },
     )
+
+    # Close camera health alerts for this camera (best-effort)
     try:
         with SessionLocal() as db:
             (
@@ -139,6 +144,7 @@ def activate_run(run_id: str) -> dict:
             db.commit()
     except Exception:
         pass
+
     return {"run": updated, "override_path": str(override_path.resolve()), "status": "ACTIVE"}
 
 
@@ -147,6 +153,7 @@ def deactivate_run(run_id: str) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+
     override_path = write_edge_override(run, mode="live")
     deactivated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     updated = update_test_run(
@@ -171,29 +178,72 @@ def delete_run(run_id: str) -> dict:
     return {"status": "DELETED", "run_id": run_id}
 
 
+def _read_bytes_with_retry(path: Path, retries: int = 5, delay: float = 0.02) -> Optional[bytes]:
+    """
+    Windows fix: the Edge process may be replacing/writing the file while the Backend reads it.
+    That can raise PermissionError / WinError 5. Retry a few times.
+    """
+    for _ in range(max(1, retries)):
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            time.sleep(delay)
+        except PermissionError:
+            time.sleep(delay)
+        except OSError:
+            # e.g., transient sharing violation, partial write, etc.
+            time.sleep(delay)
+        except Exception:
+            time.sleep(delay)
+    return None
+
+
 @router.get("/{run_id}/stream/{camera_id}")
 def stream_annotated(run_id: str, camera_id: str) -> StreamingResponse:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+
     godown_id = run["godown_id"]
     annotated_root = Path(__file__).resolve().parents[3] / "data" / "annotated"
     latest_path = annotated_root / godown_id / run_id / f"{camera_id}_latest.jpg"
 
     def _frame_iter():
+        boundary = b"--frame\r\n"
+        last_good: Optional[bytes] = None
+        last_mtime: Optional[float] = None
+
+        # If multiple tabs open the stream, it increases read/write contention on Windows.
+        # The retry + last_good logic below makes the stream stable anyway.
         while True:
-            if latest_path.exists():
-                try:
-                    data = latest_path.read_bytes()
+            try:
+                if latest_path.exists():
+                    try:
+                        mtime = latest_path.stat().st_mtime
+                    except Exception:
+                        mtime = None
+
+                    # Only attempt to read if changed, or if we have no cached frame yet
+                    if (mtime is not None and mtime != last_mtime) or last_good is None:
+                        data = _read_bytes_with_retry(latest_path, retries=6, delay=0.02)
+                        if data:
+                            last_good = data
+                            last_mtime = mtime
+
+                if last_good:
                     yield (
-                        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(data)).encode()
+                        boundary
+                        + b"Content-Type: image/jpeg\r\nContent-Length: "
+                        + str(len(last_good)).encode()
                         + b"\r\n\r\n"
-                        + data
+                        + last_good
                         + b"\r\n"
                     )
-                except Exception:
-                    pass
+            except Exception:
+                # Never kill the stream generator
+                pass
+
+            # 5 FPS stream
             time.sleep(0.2)
 
     return StreamingResponse(
@@ -208,18 +258,18 @@ def list_snapshots(run_id: str, camera_id: str, page: int = 1, page_size: int = 
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+
     godown_id = run["godown_id"]
     snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
     snapshot_dir = snapshots_root / godown_id / run_id / camera_id
     if not snapshot_dir.exists():
         return {"items": [], "page": page, "page_size": page_size, "total": 0}
+
     files = sorted(snapshot_dir.glob("*.jpg"), key=lambda p: p.stat().st_mtime, reverse=True)
     total = len(files)
     start = max((page - 1) * page_size, 0)
     end = start + page_size
     files = files[start:end]
-    items = [
-        f"/media/snapshots/{godown_id}/{run_id}/{camera_id}/{f.name}"
-        for f in files
-    ]
+
+    items = [f"/media/snapshots/{godown_id}/{run_id}/{camera_id}/{f.name}" for f in files]
     return {"items": items, "page": page, "page_size": page_size, "total": total}
