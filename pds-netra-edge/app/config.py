@@ -86,31 +86,6 @@ class TrackingConfig:
     conf: Optional[float] = None
     iou: Optional[float] = None
 
-@dataclass
-class AnprConfig:
-    """Configuration for ANPR/plate recognition."""
-
-    enabled: bool = False
-    model_path: str = "models/plate.pt"
-    device: str = "cpu"
-    conf: float = 0.25
-    iou: float = 0.45
-    imgsz: int = 640
-    max_det: int = 300
-    classes: Optional[List[int]] = None
-    plate_class_names: Optional[List[str]] = None
-    ocr_lang: List[str] = field(default_factory=lambda: ["en"])
-    ocr_every_n: int = 1
-    ocr_min_conf: float = 0.3
-    ocr_debug: bool = False
-    validate_india: bool = False
-    show_invalid: bool = False
-    registered_file: Optional[str] = None
-    dedup_interval_sec: int = 30
-    save_csv: Optional[str] = None
-    save_crops_dir: Optional[str] = None
-    save_crops_max: Optional[int] = None
-
 
 @dataclass
 class Settings:
@@ -137,7 +112,6 @@ class Settings:
     bag_class_keywords: List[str] = field(default_factory=list)
     bag_movement_px_threshold: int = 50
     bag_movement_time_window_sec: int = 2
-    anpr: Optional[AnprConfig] = None
 
 # Health configuration for camera monitoring and tamper detection
 @dataclass
@@ -211,6 +185,9 @@ class HealthConfig:
 def _load_yaml_file(config_path: Path) -> dict:
     """Load a YAML configuration file and return a dictionary."""
     if not config_path.exists():
+        allow_missing = os.getenv("EDGE_ALLOW_MISSING_CONFIG", "false").lower() in {"1", "true", "yes"}
+        if allow_missing:
+            return {}
         raise FileNotFoundError(f"Configuration file {config_path!s} not found")
     with config_path.open('r', encoding='utf-8') as f:
         return yaml.safe_load(f) or {}
@@ -242,10 +219,19 @@ def load_settings(config_path: str) -> Settings:
     data = _load_yaml_file(path)
 
     # Apply environment variable overrides
-    godown_id = os.getenv('GODOWN_ID', data.get('godown_id'))
-    timezone = data.get('timezone', 'UTC')
-    mqtt_broker_host = os.getenv('MQTT_BROKER_HOST', data.get('mqtt', {}).get('host', 'localhost'))
-    mqtt_broker_port = int(os.getenv('MQTT_BROKER_PORT', data.get('mqtt', {}).get('port', 1883)))
+    godown_id = os.getenv("GODOWN_ID", data.get("godown_id"))
+    timezone = os.getenv("EDGE_TIMEZONE", data.get("timezone", "UTC"))
+
+    if not godown_id:
+        raise ValueError("Missing GODOWN_ID. Set GODOWN_ID in .env or set godown_id in YAML.")
+
+    mqtt_broker_host = os.getenv(
+        "MQTT_BROKER_HOST",
+        os.getenv("MQTT_HOST", data.get("mqtt", {}).get("host", "localhost")),
+    )
+    mqtt_broker_port = int(
+        os.getenv("MQTT_BROKER_PORT", os.getenv("MQTT_PORT", data.get("mqtt", {}).get("port", 1883)))
+    )
     mqtt_username = os.getenv('MQTT_USERNAME', data.get('mqtt', {}).get('username'))
     mqtt_password = os.getenv('MQTT_PASSWORD', data.get('mqtt', {}).get('password'))
     dispatch_plan_path = os.getenv(
@@ -336,45 +322,6 @@ def load_settings(config_path: str) -> Settings:
         except Exception:
             face_recognition_cfg = None
 
-    # Load ANPR config if present
-    anpr_cfg: Optional[AnprConfig] = None
-    anpr_data = data.get("anpr")
-    if isinstance(anpr_data, dict):
-        try:
-            classes = anpr_data.get("classes")
-            if classes is not None:
-                classes = [int(x) for x in classes]
-            plate_class_names = anpr_data.get("plate_class_names")
-            if plate_class_names is not None:
-                plate_class_names = [str(x) for x in plate_class_names]
-            ocr_lang = anpr_data.get("ocr_lang")
-            if ocr_lang is not None:
-                ocr_lang = [str(x) for x in ocr_lang]
-            anpr_cfg = AnprConfig(
-                enabled=bool(anpr_data.get("enabled", False)),
-                model_path=str(anpr_data.get("model_path", "./ML_MOdel/anpr.pt")),
-                device=str(anpr_data.get("device", "cpu")),
-                conf=float(anpr_data.get("conf", 0.25)),
-                iou=float(anpr_data.get("iou", 0.45)),
-                imgsz=int(anpr_data.get("imgsz", 640)),
-                max_det=int(anpr_data.get("max_det", 300)),
-                classes=classes,
-                plate_class_names=plate_class_names,
-                ocr_lang=ocr_lang or ["en"],
-                ocr_every_n=int(anpr_data.get("ocr_every_n", 1)),
-                ocr_min_conf=float(anpr_data.get("ocr_min_conf", 0.3)),
-                ocr_debug=bool(anpr_data.get("ocr_debug", False)),
-                validate_india=bool(anpr_data.get("validate_india", False)),
-                show_invalid=bool(anpr_data.get("show_invalid", False)),
-                registered_file=anpr_data.get("registered_file"),
-                dedup_interval_sec=int(anpr_data.get("dedup_interval_sec", 30)),
-                save_csv=anpr_data.get("save_csv"),
-                save_crops_dir=anpr_data.get("save_crops_dir"),
-                save_crops_max=anpr_data.get("save_crops_max"),
-            )
-        except Exception:
-            anpr_cfg = None
-
     return Settings(
         godown_id=godown_id,
         timezone=timezone,
@@ -391,7 +338,6 @@ def load_settings(config_path: str) -> Settings:
         bag_class_keywords=bag_class_keywords,
         bag_movement_px_threshold=bag_movement_px_threshold,
         bag_movement_time_window_sec=bag_movement_time_window_sec,
-        anpr=anpr_cfg,
     )
 
 
@@ -404,6 +350,5 @@ __all__ = [
     'FaceRecognitionCameraConfig',
     'FaceRecognitionConfig',
     'TrackingConfig',
-    'AnprConfig',
     'load_settings',
 ]

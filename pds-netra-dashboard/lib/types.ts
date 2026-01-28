@@ -16,6 +16,19 @@ export interface LoginResponse {
   };
 }
 
+export interface CreateGodownPayload {
+  godown_id: string;
+  name?: string | null;
+  district?: string | null;
+  code?: string | null;
+}
+
+export interface UpdateGodownPayload {
+  name?: string | null;
+  district?: string | null;
+  code?: string | null;
+}
+
 export interface GodownListItem {
   godown_id: string;
   name?: string | null;
@@ -30,6 +43,7 @@ export interface GodownListItem {
   open_alerts_warning?: number | null;
   open_alerts_critical?: number | null;
   last_event_time_utc?: string | null;
+  status?: 'OK' | 'ISSUES' | 'CRITICAL' | string | null;
 }
 
 export interface CameraInfo {
@@ -185,7 +199,7 @@ export interface TestRunItem {
   events_count?: number | null;
 }
 
-export interface TestRunDetail extends TestRunItem {}
+export interface TestRunDetail extends TestRunItem { }
 
 export interface MovementSummary {
   range?: { from?: string | null; to?: string | null };
@@ -262,4 +276,29 @@ export interface AlertActionItem {
   actor?: string | null;
   note?: string | null;
   created_at?: string | null;
+}
+
+export interface AuthorizedUserItem {
+  person_id: string;
+  name: string;
+  role?: string | null;
+  godown_id?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAuthorizedUserPayload {
+  person_id: string;
+  name: string;
+  role?: string | null;
+  godown_id?: string | null;
+  is_active?: boolean;
+}
+
+export interface UpdateAuthorizedUserPayload {
+  name?: string | null;
+  role?: string | null;
+  godown_id?: string | null;
+  is_active?: boolean;
 }

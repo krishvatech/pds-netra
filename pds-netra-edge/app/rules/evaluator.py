@@ -171,6 +171,9 @@ class RulesEvaluator:
         Determine which zone a bounding box is in by testing its center
         against configured polygons. Returns the first matching zone_id or None.
         """
+        if not self.zone_polygons:
+            # If no zones are configured, treat the whole frame as a single "all" zone.
+            return "all"
         for zone_id, polygon in self.zone_polygons.items():
             if is_bbox_in_zone(bbox, polygon):
                 return zone_id

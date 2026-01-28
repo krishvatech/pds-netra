@@ -19,5 +19,6 @@ class Base(DeclarativeBase):
 
 from .rule import Rule  # noqa: E402,F401
 from .alert_action import AlertAction  # noqa: E402,F401
+from .authorized_user import AuthorizedUser  # noqa: E402,F401
 
-__all__ = ["Base", "Rule", "AlertAction"]
+__all__ = ["Base", "Rule", "AlertAction", "AuthorizedUser"]

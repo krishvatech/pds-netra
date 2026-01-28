@@ -82,7 +82,10 @@ export default function AlertsPage() {
       setError(null);
       try {
         const resp = await getAlerts(params);
-        if (mounted) setAlerts(resp.items);
+        if (mounted) {
+          const list = 'items' in resp ? resp.items : resp;
+          setAlerts(list);
+        }
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load alerts');
       }
@@ -132,82 +135,82 @@ export default function AlertsPage() {
           <div className="text-sm text-slate-300">Refine by godown, district, severity, and time window.</div>
         </CardHeader>
         <CardContent>
-        {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+          {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
 
-        {tickerItems.length > 0 && (
-          <div className="ticker mb-4">
-            <div className="ticker-track">
-              {[...tickerItems, ...tickerItems].map((alert, idx) => (
-                <div key={`${alert.id}-${idx}`} className="ticker-chip">
-                  <span className={pulseClass(alert.severity_final as Severity)} />
-                  {alert.godown_name ?? alert.godown_id} • {alert.alert_type.replaceAll('_', ' ')}
+          {tickerItems.length > 0 && (
+            <div className="ticker mb-4">
+              <div className="ticker-track">
+                {[...tickerItems, ...tickerItems].map((alert, idx) => (
+                  <div key={`${alert.id}-${idx}`} className="ticker-chip">
+                    <span className={pulseClass(alert.severity_final as Severity)} />
+                    {alert.godown_name ?? alert.godown_id} • {alert.alert_type.replaceAll('_', ' ')}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
+            <div className="md:col-span-2">
+              <Label>Godown ID</Label>
+              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
+            </div>
+            <div className="md:col-span-2">
+              <Label>District</Label>
+              <Input value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="Surat" />
+            </div>
+            <div>
+              <Label>Severity</Label>
+              <Select value={severity} onChange={(e) => setSeverity(e.target.value)} options={severityOptions} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} options={statusOptions} />
+            </div>
+
+            <div className="md:col-span-3">
+              <Label>Date from</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="md:col-span-3">
+              <Label>Date to</Label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          {activeFilters.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {activeFilters.map((chip) => (
+                <span key={chip} className="hud-pill">
+                  {chip}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {alerts.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5 stagger">
+              {alerts.slice(0, 6).map((alert) => (
+                <div key={alert.id} className="incident-card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live alert</div>
+                      <div className="mt-1 text-sm font-semibold text-white">
+                        {alert.alert_type.replaceAll('_', ' ')}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">{alert.godown_name ?? alert.godown_id}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={pulseClass(alert.severity_final as Severity)} />
+                      <span className="text-xs uppercase tracking-[0.2em] text-slate-300">{alert.severity_final}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
-          <div className="md:col-span-2">
-            <Label>Godown ID</Label>
-            <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
-          </div>
-          <div className="md:col-span-2">
-            <Label>District</Label>
-            <Input value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="Surat" />
-          </div>
-          <div>
-            <Label>Severity</Label>
-            <Select value={severity} onChange={(e) => setSeverity(e.target.value)} options={severityOptions} />
-          </div>
-          <div>
-            <Label>Status</Label>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} options={statusOptions} />
-          </div>
-
-          <div className="md:col-span-3">
-            <Label>Date from</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="md:col-span-3">
-            <Label>Date to</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </div>
-        </div>
-
-        {activeFilters.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {activeFilters.map((chip) => (
-              <span key={chip} className="hud-pill">
-                {chip}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {alerts.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5 stagger">
-            {alerts.slice(0, 6).map((alert) => (
-              <div key={alert.id} className="incident-card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live alert</div>
-                    <div className="mt-1 text-sm font-semibold text-white">
-                      {alert.alert_type.replaceAll('_', ' ')}
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">{alert.godown_name ?? alert.godown_id}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={pulseClass(alert.severity_final as Severity)} />
-                    <span className="text-xs uppercase tracking-[0.2em] text-slate-300">{alert.severity_final}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <AlertsTable alerts={alerts} />
+          <AlertsTable alerts={alerts} />
         </CardContent>
       </Card>
     </div>

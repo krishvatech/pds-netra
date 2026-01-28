@@ -18,12 +18,6 @@ import os
 import sys
 import time
 from typing import List
-from pathlib import Path
-
-# Force safer Paddle CPU execution before any Paddle imports happen.
-os.environ.setdefault("FLAGS_use_mkldnn", "0")
-os.environ.setdefault("FLAGS_enable_pir_api", "0")
-os.environ.setdefault("FLAGS_enable_new_ir", "0")
 
 from dotenv import load_dotenv
 
@@ -34,6 +28,7 @@ from .runtime.camera_loop import start_camera_loops
 from .runtime.scheduler import Scheduler
 from .preflight import main as preflight_main
 from .rules.remote import fetch_rule_configs
+from .cameras.remote import fetch_camera_configs
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -41,7 +36,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=str,
-        default="config/pds_netra_config.yaml",
+        default=os.getenv("EDGE_CONFIG_PATH", "config/pds_netra_config.yaml"),
         help="Path to YAML configuration file",
     )
     parser.add_argument(
@@ -84,12 +79,6 @@ def main(argv: List[str] | None = None) -> int:
         os.getenv("EDGE_ALERT_SEVERITY", "warning"),
         os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10"),
     )
-    override_path = os.getenv("EDGE_OVERRIDE_PATH")
-    if override_path:
-        override_exists = Path(override_path).expanduser().exists()
-        logger.info("Edge override path: %s (exists=%s)", override_path, override_exists)
-    else:
-        logger.info("Edge override path: not set")
     if args.preflight:
         return preflight_main(["--config", args.config])
     if args.preflight_on_start:
@@ -104,29 +93,21 @@ def main(argv: List[str] | None = None) -> int:
     logger.info("Loaded settings for godown %s", settings.godown_id)
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
-        backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
+        backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))
         fetched = fetch_rule_configs(backend_url, settings.godown_id)
         if fetched is not None:
             settings.rules = fetched
             logger.info("Loaded %s rules from backend", len(fetched))
-    if not os.getenv("EDGE_OVERRIDE_PATH"):
-        repo_root = Path(__file__).resolve().parents[2]
-        default_override = (
-            repo_root
-            / "pds-netra-backend"
-            / "data"
-            / "edge_overrides"
-            / f"{settings.godown_id}.json"
-        )
-        if default_override.exists():
-            os.environ["EDGE_OVERRIDE_PATH"] = str(default_override)
-            logger.info("Edge override path auto-set to %s", default_override)
-        else:
-            logger.info("Edge override path auto-lookup not found at %s", default_override)
-    override_path = os.getenv("EDGE_OVERRIDE_PATH")
-    if override_path:
-        override_exists = Path(override_path).expanduser().exists()
-        logger.info("Edge override path: %s (exists=%s)", override_path, override_exists)
+    cameras_source = os.getenv("EDGE_CAMERAS_SOURCE", "backend").lower()
+    if cameras_source == "backend":
+        backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))
+        cams = fetch_camera_configs(backend_url, settings.godown_id)
+
+        # SAFETY: if backend fails, keep YAML cameras so current system never breaks
+        if cams is not None:
+            settings.cameras = cams
+            logger.info("Loaded %s cameras from backend", len(cams))
+
     # Initialize MQTT client
     mqtt_client = MQTTClient(settings)
     mqtt_client.connect()
