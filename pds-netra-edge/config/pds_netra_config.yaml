@@ -43,7 +43,7 @@ tracking:
 cameras:
   - id: CAM_GATE_1
     role: GATE_ANPR
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
+    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
     # test_video: "./data/truck_road.mp4"
     # test_video: "./data/gate_1.mp4"
     modules:
@@ -93,7 +93,7 @@ cameras:
 
   - id: CAM_AISLE_3
     role: SECURITY
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
+    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
     # test_video: "./data/truck_road.mp4"
     # test_video: "./data/aisle_3.mp4"
     modules:

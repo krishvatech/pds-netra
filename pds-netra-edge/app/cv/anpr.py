@@ -119,7 +119,7 @@ class OcrEngine:
         else:
             lang_value = "en"
         # Initialize PaddleOCR; disable angle classifier for faster inference
-        self.ocr = PaddleOCR(use_angle_cls=False, lang=lang_value, use_gpu=use_gpu)
+        self.ocr = PaddleOCR(use_angle_cls=False, lang=lang_value)
 
     def recognize(self, image: Any) -> Tuple[str, float]:
         """

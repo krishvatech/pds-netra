@@ -156,7 +156,7 @@ export default function LiveCamerasPage() {
   }, [zoneCameraId]);
   const streamUrl = useMemo(() => {
     if (!selectedGodown || !selectedCamera) return '';
-    return `/media/live/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(selectedCamera)}_latest.jpg?ts=${streamNonce}`;
+    return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(selectedCamera)}?ts=${streamNonce}`;
   }, [selectedGodown, selectedCamera, streamNonce]);
   const zoneImageUrl = useMemo(() => {
     if (!selectedGodown || !zoneCameraId) return '';
