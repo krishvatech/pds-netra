@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -48,48 +48,55 @@ def _as_naive_utc(value: datetime) -> datetime:
 
 
 @router.get("/summary")
-def health_summary(request: Request, db: Session = Depends(get_db)) -> dict:
+def health_summary(request: Request, db: Session = Depends(get_db),godown_id: str | None = Query(None),) -> dict:
     # Recent health-related events (last 24h)
     since = datetime.utcnow() - timedelta(hours=24)
-    recent_events = (
+    q_recent = (
         db.query(Event)
         .filter(Event.event_type.in_(HEALTH_EVENT_TYPES), Event.timestamp_utc >= since)
         .order_by(Event.timestamp_utc.desc())
         .limit(20)
-        .all()
     )
+    if godown_id:
+        q_recent = q_recent.filter(Event.godown_id == godown_id)
+    recent_events = q_recent.all()
 
     # Count cameras offline in last 30 minutes
     offline_since = datetime.utcnow() - timedelta(minutes=30)
-    offline_events = (
+    q_offline = (
         db.query(Event.camera_id)
         .filter(
             Event.event_type == "CAMERA_OFFLINE",
             Event.timestamp_utc >= offline_since,
         )
         .distinct()
-        .all()
     )
+    if godown_id:
+        q_offline = q_offline.filter(Event.godown_id == godown_id)
+    offline_events = q_offline.all()
     offline_cameras = len(offline_events)
 
     # Godowns with issues = any offline camera or recent health event
-    godowns_with_issues = (
+    q_issues = (
         db.query(func.count(func.distinct(Event.godown_id)))
         .filter(Event.event_type.in_(HEALTH_EVENT_TYPES), Event.timestamp_utc >= since)
-        .scalar()
-        or 0
     )
+    if godown_id:
+        q_issues = q_issues.filter(Event.godown_id == godown_id)
+    godowns_with_issues = q_issues.scalar() or 0
 
     # Recent camera status list
     recent_status: List[dict] = []
     # Latest health event per camera (best-effort)
-    latest_events = (
+    q_latest = (
         db.query(Event)
         .filter(Event.event_type.in_(HEALTH_EVENT_TYPES))
         .order_by(Event.timestamp_utc.desc())
         .limit(50)
-        .all()
     )
+    if godown_id:
+        q_latest = q_latest.filter(Event.godown_id == godown_id)
+    latest_events = q_latest.all()
     seen = set()
     for ev in latest_events:
         key = (ev.godown_id, ev.camera_id)

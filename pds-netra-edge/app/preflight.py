@@ -79,6 +79,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Override path
     override_path = os.getenv("EDGE_OVERRIDE_PATH")
+    if not override_path:
+     override_dir = os.getenv(
+        "EDGE_OVERRIDE_DIR",
+        str(Path(__file__).resolve().parents[2] / "pds-netra-backend" / "data" / "edge_overrides"),
+    )
+    candidate = Path(override_dir) / f"{settings.godown_id}.json"
+    if candidate.exists():
+        override_path = str(candidate)
     if override_path:
         errors.extend(_check_override(override_path))
 

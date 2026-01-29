@@ -174,6 +174,8 @@ class BagMovementProcessor:
         return any(keyword in name for keyword in self.bag_class_keywords)
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
+        if not self.zone_polygons:
+            return "all"
         for zone_id, polygon in self.zone_polygons.items():
             if is_bbox_in_zone(bbox, polygon):
                 return zone_id

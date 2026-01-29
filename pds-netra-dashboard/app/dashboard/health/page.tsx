@@ -63,11 +63,11 @@ export default function HealthPage() {
               </div>
               <div className="p-4 rounded-xl glass-panel">
                 <div className="text-xs text-slate-600">Offline cameras</div>
-                <div className="text-2xl font-semibold mt-1">{summary.offline_cameras}</div>
+                <div className="text-2xl font-semibold mt-1">{summary.cameras_offline}</div>
               </div>
               <div className="p-4 rounded-xl glass-panel">
                 <div className="text-xs text-slate-600">Recent health events</div>
-                <div className="text-2xl font-semibold mt-1">{summary.recent_health_events}</div>
+                <div className="text-2xl font-semibold mt-1">{(summary.recent_health_events ?? []).length}</div>
               </div>
             </div>
 

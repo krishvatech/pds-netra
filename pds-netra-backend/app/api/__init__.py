@@ -23,7 +23,7 @@ from .v1.edge_events import router as edge_events_router
 from .v1.after_hours import router as after_hours_router
 from .v1.vehicle_gate_sessions import router as vehicle_gate_sessions_router
 from .v1.notifications import router as notifications_router
-
+from .v1.authorized_users import router as authorized_users_router
 
 api_router = APIRouter()
 api_router.include_router(events_router)
@@ -42,3 +42,4 @@ api_router.include_router(edge_events_router)
 api_router.include_router(after_hours_router)
 api_router.include_router(vehicle_gate_sessions_router)
 api_router.include_router(notifications_router)
+api_router.include_router(authorized_users_router)

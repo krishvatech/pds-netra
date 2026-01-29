@@ -28,6 +28,7 @@ from .notification_endpoint import NotificationEndpoint  # noqa: E402,F401
 from .notification_outbox import NotificationOutbox  # noqa: E402,F401
 from .alert_report import AlertReport  # noqa: E402,F401
 from .vehicle_gate_session import VehicleGateSession  # noqa: E402,F401
+from .authorized_user import AuthorizedUser  # noqa: E402,F401
 
 __all__ = [
     "Base",
@@ -44,4 +45,5 @@ __all__ = [
     "NotificationOutbox",
     "AlertReport",
     "VehicleGateSession",
+    "AuthorizedUser",
 ]

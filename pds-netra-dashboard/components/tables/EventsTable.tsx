@@ -3,7 +3,6 @@ import { Table, THead, TBody, TR, TH, TD } from '../ui/table';
 import { Badge } from '../ui/badge';
 import type { EventItem } from '@/lib/types';
 import { formatUtc, humanEventType, severityBadgeClass } from '@/lib/formatters';
-
 export function EventsTable({ events, showGodown = false }: { events: EventItem[]; showGodown?: boolean }) {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001';
   const resolveMediaUrl = (url?: string | null) => {
@@ -34,6 +33,11 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
                 {e.event_type === 'UNAUTH_PERSON' && e.meta?.movement_type
                   ? `Detected: ${e.meta.movement_type}`
                   : humanEventType(e.event_type)}
+                {e.event_type === 'FACE_IDENTIFIED' && (e.meta?.person_id || e.meta?.person_name) ? (
+                  <div className="text-xs text-slate-500 mt-1">
+                    Authorized: {e.meta.person_name ?? 'Unknown'}{e.meta.person_id ? ` (${e.meta.person_id})` : ''}
+                  </div>
+                ) : null}
                 {e.meta?.reason ? (
                   <div className="text-xs text-slate-500 mt-1">Reason: {e.meta.reason}</div>
                 ) : null}

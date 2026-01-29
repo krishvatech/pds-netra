@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
+import os
 from ...models.godown import Camera, Godown
+from ...services.rule_seed import seed_rules_for_camera
 
 
 router = APIRouter(prefix="/api/v1/cameras", tags=["cameras"])
@@ -162,6 +164,8 @@ def create_camera(payload: CameraCreate, db: Session = Depends(get_db)) -> dict:
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    if os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
+        seed_rules_for_camera(db, camera)
     return _camera_payload(camera)
 
 

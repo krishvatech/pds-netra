@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from '../ui/card';
 
 const COLORS = ['#38bdf8', '#f59e0b', '#22c55e', '#f43f5e', '#0ea5e9', '#14b8a6'];
 
-type SeriesPoint = { t: string; [key: string]: string | number };
+export type SeriesPoint = { t: string;[key: string]: string | number };
 
 export function MovementTimelineChart({
   data,

@@ -166,7 +166,10 @@ export default function RulesPage() {
     (async () => {
       try {
         const data = await getGodowns();
-        if (mounted) setGodowns(data);
+        if (mounted) {
+          const list = Array.isArray(data) ? data : data.items;
+          setGodowns(list);
+        }
       } catch {
         // ignore
       }

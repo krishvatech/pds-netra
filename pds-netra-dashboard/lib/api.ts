@@ -28,7 +28,12 @@ import type {
   NotificationEndpoint,
   AlertReport,
   CameraInfo,
-  CameraModules
+  CameraModules,
+  CreateGodownPayload,
+  UpdateGodownPayload,
+  AuthorizedUserItem,
+  CreateAuthorizedUserPayload,
+  UpdateAuthorizedUserPayload
 } from './types';
 import { getToken, getUser } from './auth';
 
@@ -110,6 +115,7 @@ export async function login(username: string, password: string): Promise<LoginRe
 
 export async function getGodowns(params?: {
   district?: string;
+  status?: string;
   has_open_alerts?: boolean;
   page?: number;
   page_size?: number;
@@ -129,6 +135,35 @@ export async function getCameras(params?: {
 }): Promise<CameraInfo[]> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/cameras${q}`);
+}
+
+export async function createGodown(payload: CreateGodownPayload): Promise<GodownDetail> {
+  return apiFetch('/api/v1/godowns', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateGodown(godownId: string, payload: UpdateGodownPayload): Promise<GodownDetail> {
+  return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteGodown(godownId: string): Promise<{
+  status: string;
+  message: string;
+  deleted?: {
+    events: number;
+    alerts: number;
+    test_runs: number;
+    media_directories: string[];
+  };
+}> {
+  return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`, {
+    method: 'DELETE'
+  });
 }
 
 export async function getCameraZones(cameraId: string): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
@@ -517,4 +552,55 @@ export async function getWatchlistMatches(
 ): Promise<Paginated<WatchlistMatchEvent>> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}/matches${q}`);
+}
+
+// Authorized Users API
+export async function getAuthorizedUsers(params?: {
+  godown_id?: string;
+  role?: string;
+  is_active?: boolean;
+}): Promise<AuthorizedUserItem[]> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/authorized-users${q}`);
+}
+
+export async function getAuthorizedUser(personId: string): Promise<AuthorizedUserItem> {
+  return apiFetch(`/api/v1/authorized-users/${encodeURIComponent(personId)}`);
+}
+
+export async function createAuthorizedUser(payload: CreateAuthorizedUserPayload): Promise<AuthorizedUserItem> {
+  return apiFetch('/api/v1/authorized-users', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createAuthorizedUserWithFace(formData: FormData): Promise<AuthorizedUserItem> {
+  return apiFetchForm<AuthorizedUserItem>('/api/v1/authorized-users/register-with-face', formData);
+}
+
+export async function updateAuthorizedUser(
+  personId: string,
+  payload: UpdateAuthorizedUserPayload
+): Promise<AuthorizedUserItem> {
+  return apiFetch(`/api/v1/authorized-users/${encodeURIComponent(personId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteAuthorizedUser(personId: string): Promise<{ status: string; message: string }> {
+  return apiFetch(`/api/v1/authorized-users/${encodeURIComponent(personId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function syncAuthorizedUsersFromEdge(godownId: string): Promise<{
+  status: string;
+  message: string;
+  created: number;
+  updated: number;
+  total: number;
+}> {
+  return apiFetch(`/api/v1/authorized-users/sync/from-edge/${encodeURIComponent(godownId)}`);
 }

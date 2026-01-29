@@ -1,7 +1,9 @@
 godown_id: GDN_001
+# godown_id: DUMMY
 timezone: Asia/Kolkata
 
-# MQTT connection details.
+# MQTT connection details. These values can be overridden via environment
+# variables (MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USERNAME, MQTT_PASSWORD).
 mqtt:
   host: 127.0.0.1
   port: 1883
@@ -42,7 +44,8 @@ cameras:
   - id: CAM_GATE_1
     role: GATE_ANPR
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
-    #test_video: "./data/truck_road.mp4"
+    # test_video: "./data/truck_road.mp4"
+    # test_video: "./data/gate_1.mp4"
     modules:
       anpr_enabled: true
       gate_entry_exit_enabled: true
@@ -92,6 +95,7 @@ cameras:
     role: SECURITY
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     # test_video: "./data/truck_road.mp4"
+    # test_video: "./data/aisle_3.mp4"
     modules:
       anpr_enabled: false
       gate_entry_exit_enabled: false
@@ -123,12 +127,6 @@ cameras:
       snapshot_on_tamper: false
 
 rules:
-  # ANPR Rule
-  - id: RULE_ANPR_GATE_MONITOR
-    type: ANPR_MONITOR
-    camera_id: CAM_GATE_1
-    zone_id: gate_outer
-
   - id: RULE_NO_PERSON_ALWAYS_GATE
     type: NO_PERSON_DURING
     camera_id: CAM_GATE_1
@@ -180,7 +178,7 @@ rules:
     zone_id: all
     threshold_seconds: 120
 
-# Face recognition configuration
+# Face recognition configuration (optional)
 face_recognition:
   enabled: true
   known_faces_file: "config/known_faces.json"
@@ -188,7 +186,7 @@ face_recognition:
   unknown_event_enabled: true
   dedup_interval_seconds: 60
   cameras:
-    - camera_id: CAM_GATE_1
+    - camera_id: "*"
       zone_id: all
       allow_unknown: false
       log_known_only: false

@@ -12,7 +12,7 @@ import {
 import type { AlertItem, MovementSummary, MovementTimelinePoint, OverviewData, DispatchTraceItem, HealthSummary } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MovementTimelineChart } from '@/components/charts/MovementTimelineChart';
+import { MovementTimelineChart, SeriesPoint } from '@/components/charts/MovementTimelineChart';
 import { AlertsOverTimeChart } from '@/components/charts/AlertsOverTimeChart';
 import { formatUtc, humanAlertType, severityBadgeClass } from '@/lib/formatters';
 import { ErrorBanner } from '@/components/ui/error-banner';
@@ -24,7 +24,7 @@ function buildRange(days: number) {
 }
 
 function toSeries(items: MovementTimelinePoint[]) {
-  const buckets = new Map<string, Record<string, string | number>>();
+  const buckets = new Map<string, SeriesPoint>();
   const types = new Set<string>();
   for (const item of items) {
     const entry = buckets.get(item.t) ?? { t: item.t };

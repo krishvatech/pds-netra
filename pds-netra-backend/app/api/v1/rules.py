@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
+import os
 from ...models.rule import Rule
+from ...services.rule_seed import seed_rules_for_godown
 from ...schemas.rule import RuleCreate, RuleOut, RuleUpdate
 
 
@@ -118,6 +120,9 @@ def list_active_rules(
     if camera_id:
         query = query.filter(Rule.camera_id == camera_id)
     rules = query.order_by(Rule.id.asc()).all()
+    if not rules and godown_id and os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
+        seed_rules_for_godown(db, godown_id)
+        rules = query.order_by(Rule.id.asc()).all()
     return {"items": [_to_active_payload(r) for r in rules], "total": len(rules)}
 
 

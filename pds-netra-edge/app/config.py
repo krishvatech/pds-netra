@@ -286,6 +286,9 @@ class HealthConfig:
 def _load_yaml_file(config_path: Path) -> dict:
     """Load a YAML configuration file and return a dictionary."""
     if not config_path.exists():
+        allow_missing = os.getenv("EDGE_ALLOW_MISSING_CONFIG", "false").lower() in {"1", "true", "yes"}
+        if allow_missing:
+            return {}
         raise FileNotFoundError(f"Configuration file {config_path!s} not found")
     with config_path.open('r', encoding='utf-8') as f:
         return yaml.safe_load(f) or {}
@@ -402,10 +405,19 @@ def load_settings(config_path: str) -> Settings:
     data = _load_yaml_file(path)
 
     # Apply environment variable overrides
-    godown_id = os.getenv('GODOWN_ID', data.get('godown_id'))
-    timezone = data.get('timezone', 'UTC')
-    mqtt_broker_host = os.getenv('MQTT_BROKER_HOST', data.get('mqtt', {}).get('host', 'localhost'))
-    mqtt_broker_port = int(os.getenv('MQTT_BROKER_PORT', data.get('mqtt', {}).get('port', 1883)))
+    godown_id = os.getenv("GODOWN_ID", data.get("godown_id"))
+    timezone = os.getenv("EDGE_TIMEZONE", data.get("timezone", "UTC"))
+
+    if not godown_id:
+        raise ValueError("Missing GODOWN_ID. Set GODOWN_ID in .env or set godown_id in YAML.")
+
+    mqtt_broker_host = os.getenv(
+        "MQTT_BROKER_HOST",
+        os.getenv("MQTT_HOST", data.get("mqtt", {}).get("host", "localhost")),
+    )
+    mqtt_broker_port = int(
+        os.getenv("MQTT_BROKER_PORT", os.getenv("MQTT_PORT", data.get("mqtt", {}).get("port", 1883)))
+    )
     mqtt_username = os.getenv('MQTT_USERNAME', data.get('mqtt', {}).get('username'))
     mqtt_password = os.getenv('MQTT_PASSWORD', data.get('mqtt', {}).get('password'))
     dispatch_plan_path = os.getenv(

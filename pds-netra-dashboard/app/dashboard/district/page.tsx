@@ -30,7 +30,8 @@ export default function DistrictPage() {
       try {
         const godownResp = await getGodowns({ district: district || undefined });
         if (!mounted) return;
-        setGodowns(godownResp);
+        const list = Array.isArray(godownResp) ? godownResp : godownResp.items;
+        setGodowns(list);
         const alertResp = await getAlerts({ district: district || undefined, status: 'OPEN', page: 1, page_size: 20 });
         const items = Array.isArray(alertResp) ? alertResp : alertResp.items;
         setAlerts(items);

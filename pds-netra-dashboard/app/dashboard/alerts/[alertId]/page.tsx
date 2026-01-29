@@ -109,51 +109,51 @@ export default function AlertDetailPage() {
           <div className="text-lg font-semibold font-display">Incident summary</div>
         </CardHeader>
         <CardContent>
-        {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
-        {!detail && !error && <div className="text-sm text-slate-600">Loading…</div>}
+          {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+          {!detail && !error && <div className="text-sm text-slate-600">Loading…</div>}
 
-        {detail && (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-              <div className="incident-card p-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Type</div>
-                <div className="mt-1 font-semibold font-display text-slate-100">{humanAlertType(detail.alert_type)}</div>
-              </div>
-              <div className="incident-card p-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Severity</div>
-                <div className="mt-2">
-                  <Badge className={severityBadgeClass(detail.severity_final)}>{detail.severity_final.toUpperCase()}</Badge>
+          {detail && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div className="incident-card p-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Type</div>
+                  <div className="mt-1 font-semibold font-display text-slate-100">{humanAlertType(detail.alert_type)}</div>
+                </div>
+                <div className="incident-card p-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Severity</div>
+                  <div className="mt-2">
+                    <Badge className={severityBadgeClass(detail.severity_final)}>{detail.severity_final.toUpperCase()}</Badge>
+                  </div>
+                </div>
+                <div className="incident-card p-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Status</div>
+                  <div className="mt-1 font-semibold text-slate-100">{detail.status}</div>
                 </div>
               </div>
-              <div className="incident-card p-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Status</div>
-                <div className="mt-1 font-semibold text-slate-100">{detail.status}</div>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              <div className="incident-card p-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Godown</div>
-                <div className="font-semibold text-slate-100">{detail.godown_id}</div>
-                {detail.district && <div className="text-sm text-slate-400">{detail.district}</div>}
-              </div>
-              <div className="incident-card p-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Time window</div>
-                <div className="text-sm text-slate-200">
-                  <span className="font-medium">Start:</span> {formatUtc(detail.start_time)}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <div className="incident-card p-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Godown</div>
+                  <div className="font-semibold text-slate-100">{detail.godown_id}</div>
+                  {detail.district && <div className="text-sm text-slate-400">{detail.district}</div>}
                 </div>
-                <div className="text-sm text-slate-200">
-                  <span className="font-medium">End:</span> {formatUtc(detail.end_time)}
+                <div className="incident-card p-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Time window</div>
+                  <div className="text-sm text-slate-200">
+                    <span className="font-medium">Start:</span> {formatUtc(detail.start_time)}
+                  </div>
+                  <div className="text-sm text-slate-200">
+                    <span className="font-medium">End:</span> {formatUtc(detail.end_time)}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {detail.summary && (
-              <div className="incident-card p-4 mb-4">
-                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Summary</div>
-                <div className="mt-1 text-slate-100">{detail.summary}</div>
-              </div>
-            )}
+              {detail.summary && (
+                <div className="incident-card p-4 mb-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Summary</div>
+                  <div className="mt-1 text-slate-100">{detail.summary}</div>
+                </div>
+              )}
 
             {detail.key_meta?.snapshot_url && (
               <div className="incident-card p-4 mb-4">
@@ -252,20 +252,66 @@ export default function AlertDetailPage() {
               <div className="incident-card p-4 mb-4">
                 <div className="text-xs text-slate-400 mb-2">Key details</div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {keyMetaEntries.map(([k, v]) => (
-                    <div key={k} className="text-sm">
-                      <span className="text-slate-400">{k}:</span>{' '}
-                      <span className="font-medium text-slate-100">{String(v)}</span>
-                    </div>
-                  ))}
+                  <div>
+                    <div className="text-xs text-slate-400 mb-1">Action</div>
+                    <Select
+                      value={actionType}
+                      onChange={(e) => setActionType(e.target.value)}
+                      options={[
+                        { label: 'Acknowledge', value: 'ACK' },
+                        { label: 'Assign', value: 'ASSIGN' },
+                        { label: 'Resolve', value: 'RESOLVE' },
+                        { label: 'Reopen', value: 'REOPEN' },
+                        { label: 'Note', value: 'NOTE' }
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400 mb-1">Note / Assignee</div>
+                    <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note" />
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={submitAction}>Log action</Button>
+                  </div>
                 </div>
               </div>
-            )}
 
-            <div className="mb-2 text-sm font-semibold text-slate-200">Linked events ({detail.events.length})</div>
-            <EventsTable events={detail.events} showGodown={false} />
-          </>
-        )}
+              {timeline.length > 0 && (
+                <div className="incident-card p-4 mb-4">
+                  <div className="text-xs text-slate-400 uppercase tracking-[0.3em] mb-2">Investigation timeline</div>
+                  <div className="space-y-2">
+                    {timeline.map((item, idx) => (
+                      <div key={`${item.type}-${idx}`} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.type}</span>
+                          <span className="font-medium text-slate-100">{item.label}</span>
+                          {item.meta && <span className="text-xs text-slate-400">{item.meta}</span>}
+                        </div>
+                        <div className="text-xs text-slate-400">{formatUtc(item.ts)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {keyMetaEntries.length > 0 && (
+                <div className="incident-card p-4 mb-4">
+                  <div className="text-xs text-slate-400 mb-2">Key details</div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {keyMetaEntries.map(([k, v]) => (
+                      <div key={k} className="text-sm">
+                        <span className="text-slate-400">{k}:</span>{' '}
+                        <span className="font-medium text-slate-100">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-2 text-sm font-semibold text-slate-200">Linked events ({(detail.events || []).length})</div>
+              <EventsTable events={detail.events || []} showGodown={false} />
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

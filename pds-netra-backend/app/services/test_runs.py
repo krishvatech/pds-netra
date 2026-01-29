@@ -108,6 +108,38 @@ def create_test_run(
 
     return meta
 
+def _auto_deactivate_if_missing(run: Dict[str, Any], meta_path: Path) -> Dict[str, Any]:
+    # Only relevant if backend thinks it's ACTIVE
+    if run.get("status") != "ACTIVE":
+        return run
+
+    saved_path = run.get("saved_path")
+    if not saved_path:
+        return run
+
+    if Path(saved_path).exists():
+        return run
+
+    # MP4 is missing -> clear override and mark status
+    try:
+        override_path = write_edge_override(run, mode="live")
+    except Exception:
+        override_path = None
+
+    now = _utc_now()
+    run["status"] = "MISSING_VIDEO"
+    run["updated_at"] = now
+    run["deactivated_at"] = now
+    run["deactivated_reason"] = "VIDEO_MISSING"
+    if override_path:
+        run["override_path"] = str(override_path.resolve())
+
+    try:
+        meta_path.write_text(json.dumps(run, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    return run
 
 def list_test_runs() -> List[Dict[str, Any]]:
     _ensure_dirs()
@@ -124,6 +156,7 @@ def list_test_runs() -> List[Dict[str, Any]]:
             try:
                 with meta_path.open("r", encoding="utf-8") as f:
                     run = json.load(f)
+                run = _auto_deactivate_if_missing(run, meta_path)
                 run = _apply_completion_status(run)
                 runs.append(run)
             except Exception:
@@ -153,6 +186,7 @@ def get_test_run(run_id: str) -> Optional[Dict[str, Any]]:
     try:
         with meta_path.open("r", encoding="utf-8") as f:
             run = json.load(f)
+        run = _auto_deactivate_if_missing(run, meta_path)
         return _apply_completion_status(run)
     except Exception:
         return None

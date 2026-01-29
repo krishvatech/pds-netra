@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
-import { MovementTimelineChart } from '@/components/charts/MovementTimelineChart';
+import { MovementTimelineChart, SeriesPoint } from '@/components/charts/MovementTimelineChart';
 import { DispatchTraceTable } from '@/components/tables/DispatchTraceTable';
 import { MovementEventsTable } from '@/components/tables/MovementEventsTable';
 
@@ -39,7 +39,7 @@ function formatCount(value: number | undefined) {
 }
 
 function toSeries(items: MovementTimelinePoint[]) {
-  const buckets = new Map<string, Record<string, string | number>>();
+  const buckets = new Map<string, SeriesPoint>();
   const types = new Set<string>();
   for (const item of items) {
     const key = item.t;
@@ -78,7 +78,10 @@ export default function DispatchPage() {
     (async () => {
       try {
         const data = await getGodowns();
-        if (mounted) setGodowns(data);
+        if (mounted) {
+          const list = Array.isArray(data) ? data : data.items;
+          setGodowns(list);
+        }
       } catch {
         // Ignore; godown filters will remain manual
       }

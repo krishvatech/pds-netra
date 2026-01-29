@@ -10,6 +10,7 @@ const nav = [
   { href: '/dashboard/overview', label: 'Overview', icon: OverviewIcon },
   { href: '/dashboard/godowns', label: 'Godowns', icon: WarehouseIcon },
   { href: '/dashboard/cameras', label: 'Cameras', icon: CameraIcon },
+  { href: '/dashboard/authorized-users', label: 'Authorized Users', icon: UsersIcon },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertIcon },
   { href: '/dashboard/after-hours', label: 'After-hours', icon: AfterHoursIcon },
   { href: '/dashboard/after-hours/policies', label: 'After-hours Policies', icon: AfterHoursPolicyIcon },
@@ -472,6 +473,39 @@ function LiveIcon({ active }: { active: boolean }) {
   );
 }
 
+function UsersIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle
+        cx="9"
+        cy="7"
+        r="3"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+      />
+      <path
+        d="M3 18C3 15.2386 5.23858 13 8 13H10C12.7614 13 15 15.2386 15 18"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <circle
+        cx="17"
+        cy="7"
+        r="2"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+      />
+      <path
+        d="M18 13C19.6569 13 21 14.3431 21 16V18"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [profile, setProfile] = useState('default');
@@ -501,20 +535,18 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
-                active
+              className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${active
                   ? 'bg-white/10 shadow-sm border border-white/15 font-semibold text-white'
                   : 'text-slate-300 hover:bg-white/5'
-              }`}
+                }`}
             >
               <span className="flex items-center gap-3">
                 <item.icon active={active} />
                 {item.label}
               </span>
               <span
-                className={`h-2 w-2 rounded-full ${
-                  active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600 group-hover:bg-amber-200'
-                }`}
+                className={`h-2 w-2 rounded-full ${active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600 group-hover:bg-amber-200'
+                  }`}
               />
             </Link>
           );
