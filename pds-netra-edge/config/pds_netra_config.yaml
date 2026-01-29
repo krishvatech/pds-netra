@@ -1,5 +1,8 @@
 godown_id: GDN_001
+<<<<<<< Updated upstream
 # godown_id: DUMMY
+=======
+>>>>>>> Stashed changes
 timezone: Asia/Kolkata
 
 # MQTT connection details. These values can be overridden via environment
