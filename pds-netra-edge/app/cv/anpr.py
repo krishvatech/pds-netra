@@ -70,6 +70,7 @@ class RecognizedPlate:
     det_conf: float = 0.0
     ocr_conf: float = 0.0
     match_status: str = "UNKNOWN"
+    direction: Optional[str] = None
 
 
 class PlateDetector:
@@ -833,6 +834,9 @@ class AnprProcessor:
         save_crops_max: Optional[int] = None,
         dedup_interval_sec: int = 30,
         plate_rules_json: Optional[str] = None,   # ✅ NEW
+        gate_line: Optional[List[List[int]]] = None,
+        inside_side: Optional[str] = None,
+        direction_max_gap_sec: int = 120,
     ) -> None:
         self.logger = logging.getLogger(f"AnprProcessor-{camera_id}")
         self.camera_id = camera_id
@@ -913,6 +917,10 @@ class AnprProcessor:
         self.vote_history: Dict[str, List[Tuple[str, float, datetime.datetime]]] = {}
 
         self.frame_index = 0
+        self.gate_line = self._parse_gate_line(gate_line)
+        self.inside_side = (inside_side or "POSITIVE").strip().upper()
+        self.direction_max_gap_sec = max(1, int(direction_max_gap_sec))
+        self.plate_tracks: Dict[str, Tuple[int, datetime.datetime]] = {}
 
         # Crop tuning
         # shrink removes edges/background; pad adds a small border back (your "increase outer gate size")
@@ -933,6 +941,47 @@ class AnprProcessor:
             except Exception:
                 continue
         return None
+
+    def _parse_gate_line(self, gate_line: Optional[List[List[int]]]) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+        if not gate_line or not isinstance(gate_line, list) or len(gate_line) != 2:
+            return None
+        try:
+            p1 = gate_line[0]
+            p2 = gate_line[1]
+            if not (isinstance(p1, list) and isinstance(p2, list) and len(p1) == 2 and len(p2) == 2):
+                return None
+            return (float(p1[0]), float(p1[1])), (float(p2[0]), float(p2[1]))
+        except Exception:
+            return None
+
+    def _line_side(self, p1: Tuple[float, float], p2: Tuple[float, float], p: Tuple[float, float]) -> int:
+        (x1, y1), (x2, y2) = p1, p2
+        px, py = p
+        cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+        if abs(cross) < 1e-6:
+            return 0
+        return 1 if cross > 0 else -1
+
+    def _infer_direction(self, plate_norm: str, bbox: List[int], now_utc: datetime.datetime) -> str:
+        if self.gate_line is None:
+            return "UNKNOWN"
+        x1, y1, x2, y2 = bbox
+        cx = (x1 + x2) / 2.0
+        cy = (y1 + y2) / 2.0
+        side = self._line_side(self.gate_line[0], self.gate_line[1], (cx, cy))
+        if side == 0:
+            return "UNKNOWN"
+        last = self.plate_tracks.get(plate_norm)
+        direction = "UNKNOWN"
+        if last:
+            last_side, last_seen = last
+            if (now_utc - last_seen).total_seconds() <= self.direction_max_gap_sec and last_side != side:
+                if (self.inside_side == "POSITIVE" and side > 0) or (self.inside_side == "NEGATIVE" and side < 0):
+                    direction = "ENTRY"
+                else:
+                    direction = "EXIT"
+        self.plate_tracks[plate_norm] = (side, now_utc)
+        return direction
 
     def _should_emit(self, plate_text: str, zone_id: str, now_utc: datetime.datetime) -> bool:
         key = (plate_text, zone_id)
@@ -978,7 +1027,13 @@ class AnprProcessor:
 
         return best_plate, best_conf
 
-    def process_frame(self, frame: Any, now_utc: datetime.datetime, mqtt_client: MQTTClient) -> List[RecognizedPlate]:
+    def process_frame(
+        self,
+        frame: Any,
+        now_utc: datetime.datetime,
+        mqtt_client: MQTTClient,
+        snapshotter=None,
+    ) -> List[RecognizedPlate]:
         results_out: List[RecognizedPlate] = []
         if frame is None:
             return results_out
@@ -1129,6 +1184,7 @@ class AnprProcessor:
             plate_text_display = voted_plate
             norm_plate = normalize_plate_text(plate_text_display)
             combined_conf = float(voted_conf)
+            direction = self._infer_direction(norm_plate, bbox, now_utc)
 
             # Dedup
             if not self._should_emit(norm_plate, zone_id, now_utc):
@@ -1143,6 +1199,7 @@ class AnprProcessor:
                         det_conf=float(det_conf),
                         ocr_conf=float(ocr_conf),
                         match_status="DEDUP",
+                        direction=direction,
                     )
                 )
                 continue
@@ -1193,12 +1250,51 @@ class AnprProcessor:
                     rule_id=rule_id or "",
                     confidence=combined_conf,
                     plate_text=plate_text_display,
+                    plate_norm=norm_plate,
+                    direction=direction,
                     match_status=match_status,   # ✅ VERIFIED / NOT_VERIFIED / BLACKLIST
                     extra=extra,
                 ),
             )
             mqtt_client.publish_event(event)
             self._update_cache(norm_plate, zone_id, now_utc)
+
+            snapshot_url = None
+            if snapshotter is not None:
+                try:
+                    snapshot_url = snapshotter(
+                        frame,
+                        f"anpr-{uuid.uuid4()}",
+                        now_utc,
+                        bbox=bbox,
+                        label=f"ANPR {plate_text_display}",
+                    )
+                except Exception:
+                    snapshot_url = None
+
+            hit_event = EventModel(
+                godown_id=self.godown_id,
+                camera_id=self.camera_id,
+                event_id=str(uuid.uuid4()),
+                event_type="ANPR_HIT",
+                severity="info",
+                timestamp_utc=timestamp_iso,
+                bbox=bbox,
+                track_id=0,
+                image_url=snapshot_url,
+                clip_url=None,
+                meta=MetaModel(
+                    zone_id=zone_id if zone_id != "__GLOBAL__" else None,
+                    rule_id=rule_id or "",
+                    confidence=combined_conf,
+                    plate_text=plate_text_display,
+                    plate_norm=norm_plate,
+                    direction=direction,
+                    match_status=match_status,
+                    extra=extra,
+                ),
+            )
+            mqtt_client.publish_event(hit_event)
 
             results_out.append(
                 RecognizedPlate(
@@ -1211,6 +1307,7 @@ class AnprProcessor:
                     det_conf=float(det_conf),
                     ocr_conf=float(ocr_conf),
                     match_status=match_status,
+                    direction=direction,
                 )
             )
 

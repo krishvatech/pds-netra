@@ -13,15 +13,18 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 from datetime import timedelta
 from typing import Optional, List
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from zoneinfo import ZoneInfo
 
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
-from .notifications import notify_alert
+from .after_hours import get_after_hours_policy, is_after_hours
+from .notifications import notify_alert, notify_after_hours_alert, notify_animal_intrusion, notify_fire_detected
 
 
 def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
@@ -120,7 +123,22 @@ def apply_rules(db: Session, event: Event) -> None:
             updated_meta = True
             zone_id = inferred_zone
     # Map raw event_type to alert_type. Unknown types result in no alert.
+    if _handle_fire_detected(db, event):
+        if updated_meta:
+            db.add(event)
+            db.commit()
+        return
+    if _handle_animal_intrusion(db, event):
+        if updated_meta:
+            db.add(event)
+            db.commit()
+        return
     alert_type = _map_event_to_alert_type(event.event_type, meta)
+    if _handle_after_hours_presence(db, event):
+        if updated_meta:
+            db.add(event)
+            db.commit()
+        return
     if alert_type is None:
         if updated_meta:
             db.add(event)
@@ -176,9 +194,118 @@ def apply_rules(db: Session, event: Event) -> None:
         db.add(link)
         db.commit()
         try:
-            notify_alert(alert, event)
+            notify_alert(db, alert, event)
         except Exception:
             pass
+
+
+def _handle_after_hours_presence(db: Session, event: Event) -> bool:
+    presence_types = {"PERSON_DETECTED", "VEHICLE_DETECTED", "ANPR_HIT"}
+    if event.event_type not in presence_types:
+        return False
+    meta = event.meta or {}
+    policy = get_after_hours_policy(db, event.godown_id)
+    if not policy.enabled:
+        return True
+    is_ah = is_after_hours(event.timestamp_utc, policy)
+    if meta.get("is_after_hours") != is_ah:
+        meta = dict(meta)
+        meta["is_after_hours"] = is_ah
+        event.meta = meta
+        db.add(event)
+        db.commit()
+    count_raw = meta.get("count")
+    try:
+        count = int(count_raw) if count_raw is not None else 0
+    except Exception:
+        count = 0
+    if not is_ah or policy.presence_allowed or count <= 0:
+        return True
+    alert_type = (
+        "AFTER_HOURS_PERSON_PRESENCE"
+        if event.event_type == "PERSON_DETECTED"
+        else "AFTER_HOURS_VEHICLE_PRESENCE"
+    )
+    snapshot_url = None
+    if isinstance(meta.get("evidence"), dict):
+        snapshot_url = meta.get("evidence", {}).get("snapshot_url")
+    if not snapshot_url:
+        snapshot_url = event.image_url
+    plate = meta.get("vehicle_plate") or meta.get("plate_text")
+    now = event.timestamp_utc
+    existing = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == alert_type,
+            Alert.status.in_(["OPEN", "ACK"]),
+        )
+        .order_by(Alert.start_time.desc())
+        .first()
+    )
+    if existing:
+        link = AlertEventLink(alert_id=existing.id, event_id=event.id)
+        db.add(link)
+        existing.end_time = now
+        extra = dict(existing.extra or {})
+        extra["last_seen_at"] = now.isoformat()
+        extra["detected_count"] = count
+        if snapshot_url:
+            extra["snapshot_url"] = snapshot_url
+        if plate:
+            extra["vehicle_plate"] = plate
+        existing.extra = extra
+        db.commit()
+        return True
+    cutoff = now - timedelta(seconds=max(1, policy.cooldown_seconds))
+    recent = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == alert_type,
+            Alert.start_time >= cutoff,
+        )
+        .order_by(Alert.start_time.desc())
+        .first()
+    )
+    if recent:
+        return True
+    summary = (
+        f"After-hours person detected (count={count})"
+        if alert_type == "AFTER_HOURS_PERSON_PRESENCE"
+        else f"After-hours vehicle detected (count={count})"
+    )
+    alert = Alert(
+        godown_id=event.godown_id,
+        camera_id=event.camera_id,
+        alert_type=alert_type,
+        severity_final="critical",
+        start_time=now,
+        end_time=None,
+        status="OPEN",
+        title="After-hours Presence Detected",
+        summary=summary,
+        zone_id=(event.meta or {}).get("zone_id"),
+        extra={
+            "detected_count": count,
+            "snapshot_url": snapshot_url,
+            "vehicle_plate": plate,
+            "occurred_at": now.isoformat(),
+            "last_seen_at": now.isoformat(),
+        },
+    )
+    db.add(alert)
+    db.flush()
+    link = AlertEventLink(alert_id=alert.id, event_id=event.id)
+    db.add(link)
+    db.commit()
+    try:
+        notify_after_hours_alert(db, alert, count=count, plate=plate, snapshot_url=snapshot_url)
+    except Exception:
+        pass
+    return True
 
 
 def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str]:
@@ -206,6 +333,10 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
         return "SECURITY_UNAUTH_ACCESS"
     if event_type == "ANIMAL_INTRUSION":
         return "ANIMAL_INTRUSION"
+    if event_type == "ANIMAL_DETECTED":
+        return "ANIMAL_INTRUSION"
+    if event_type == "FIRE_DETECTED":
+        return "FIRE_DETECTED"
     if event_type == "BAG_MOVEMENT":
         # Only consider after-hours or generic bag movements as anomalies
         movement_type = meta.get("movement_type") if meta else None
@@ -242,7 +373,21 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
             else "Unauthorized access detected"
         )
     if alert_type == "ANIMAL_INTRUSION":
+        species = (event.meta or {}).get("animal_species") or (event.meta or {}).get("species")
+        count = (event.meta or {}).get("animal_count") or (event.meta or {}).get("count")
+        suffix = f" ({species})" if species else ""
+        if count:
+            return f"Animal intrusion detected{suffix} count={count}"
         return f"Animal intrusion detected in zone {event.meta.get('zone_id')}"
+    if alert_type == "FIRE_DETECTED":
+        conf = (event.meta or {}).get("fire_confidence") or (event.meta or {}).get("confidence")
+        classes = (event.meta or {}).get("fire_classes")
+        class_text = ""
+        if isinstance(classes, list) and classes:
+            class_text = f" ({', '.join(classes)})"
+        if conf is not None:
+            return f"Fire detected{class_text} confidence={float(conf):.2f}"
+        return f"Fire detected{class_text}"
     if alert_type == "OPERATION_BAG_MOVEMENT_ANOMALY":
         return f"After-hours bag movement detected in zone {event.meta.get('zone_id')}"
     if alert_type == "OPERATION_UNPLANNED_MOVEMENT":
@@ -265,3 +410,233 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         plate = event.meta.get("plate_text") if event.meta else None
         return f"ANPR mismatch for plate {plate}"
     return f"Alert: {alert_type}"
+
+
+def _parse_time_string(value: str) -> datetime.time:
+    try:
+        return datetime.datetime.strptime(value, "%H:%M").time()
+    except Exception:
+        return datetime.time(0, 0)
+
+
+def _is_time_in_range(now_time: datetime.time, start_time: datetime.time, end_time: datetime.time) -> bool:
+    if start_time <= end_time:
+        return start_time <= now_time < end_time
+    return now_time >= start_time or now_time < end_time
+
+
+def _is_night(ts: datetime.datetime) -> bool:
+    tz_name = os.getenv("ANIMAL_TIMEZONE", "Asia/Kolkata")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+    local_time = ts.astimezone(tz).timetz()
+    start_t = _parse_time_string(os.getenv("ANIMAL_NIGHT_START", "19:00"))
+    end_t = _parse_time_string(os.getenv("ANIMAL_NIGHT_END", "06:00"))
+    return _is_time_in_range(local_time, start_t, end_t)
+
+
+def _handle_fire_detected(db: Session, event: Event) -> bool:
+    if event.event_type != "FIRE_DETECTED":
+        return False
+    meta = event.meta or {}
+    classes = meta.get("fire_classes") or []
+    confidence = meta.get("fire_confidence") or meta.get("confidence")
+    model_name = meta.get("fire_model_name")
+    model_version = meta.get("fire_model_version")
+    weights_id = meta.get("fire_weights_id")
+    cooldown_sec = int(os.getenv("FIRE_ALERT_COOLDOWN_SEC", "600"))
+
+    event.severity_raw = "critical"
+    db.add(event)
+    db.commit()
+
+    existing = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == "FIRE_DETECTED",
+            Alert.status.in_(["OPEN", "ACK"]),
+        )
+        .order_by(Alert.start_time.desc())
+        .first()
+    )
+    if existing:
+        link = AlertEventLink(alert_id=existing.id, event_id=event.id)
+        db.add(link)
+        existing.end_time = event.timestamp_utc
+        extra = dict(existing.extra or {})
+        extra["fire_classes"] = classes
+        extra["fire_confidence"] = confidence
+        extra["fire_model_name"] = model_name
+        extra["fire_model_version"] = model_version
+        extra["fire_weights_id"] = weights_id
+        extra["last_seen_at"] = event.timestamp_utc.isoformat()
+        if event.image_url:
+            extra["snapshot_url"] = event.image_url
+        existing.extra = extra
+        db.commit()
+        return True
+
+    cutoff = event.timestamp_utc - timedelta(seconds=max(1, cooldown_sec))
+    recent = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == "FIRE_DETECTED",
+            Alert.start_time >= cutoff,
+        )
+        .order_by(Alert.start_time.desc())
+        .first()
+    )
+    if recent:
+        return True
+
+    alert = Alert(
+        godown_id=event.godown_id,
+        camera_id=event.camera_id,
+        alert_type="FIRE_DETECTED",
+        severity_final="critical",
+        start_time=event.timestamp_utc,
+        end_time=None,
+        status="OPEN",
+        summary=_build_alert_summary("FIRE_DETECTED", event),
+        zone_id=(event.meta or {}).get("zone_id"),
+        extra={
+            "fire_classes": classes,
+            "fire_confidence": confidence,
+            "fire_model_name": model_name,
+            "fire_model_version": model_version,
+            "fire_weights_id": weights_id,
+            "snapshot_url": event.image_url,
+            "occurred_at": event.timestamp_utc.isoformat(),
+            "last_seen_at": event.timestamp_utc.isoformat(),
+        },
+    )
+    db.add(alert)
+    db.flush()
+    link = AlertEventLink(alert_id=alert.id, event_id=event.id)
+    db.add(link)
+    db.commit()
+    try:
+        notify_fire_detected(
+            db,
+            alert,
+            classes=classes,
+            confidence=confidence,
+            snapshot_url=event.image_url,
+        )
+    except Exception:
+        pass
+    return True
+
+
+def _handle_animal_intrusion(db: Session, event: Event) -> bool:
+    if event.event_type not in {"ANIMAL_INTRUSION", "ANIMAL_DETECTED"}:
+        return False
+    meta = event.meta or {}
+    species = meta.get("animal_species") or meta.get("species") or meta.get("movement_type")
+    count_raw = meta.get("animal_count") or meta.get("count")
+    try:
+        count = int(count_raw) if count_raw is not None else 1
+    except Exception:
+        count = 1
+    confidence = meta.get("animal_confidence") or meta.get("confidence")
+    is_night = _is_night(event.timestamp_utc)
+    if meta.get("animal_is_night") != is_night:
+        meta = dict(meta)
+        meta["animal_is_night"] = is_night
+        event.meta = meta
+        db.add(event)
+        db.commit()
+    cooldown_sec = int(os.getenv("ANIMAL_ALERT_COOLDOWN_SEC", "300"))
+    severity_day = os.getenv("ANIMAL_DAY_SEVERITY", "warning").lower()
+    severity = "critical" if is_night else severity_day
+    event.severity_raw = severity
+    db.add(event)
+    db.commit()
+    species_key = species or "unknown"
+
+    def _alert_species(alert: Alert) -> str:
+        extra = alert.extra or {}
+        if isinstance(extra, dict):
+            return extra.get("animal_species") or "unknown"
+        return "unknown"
+
+    existing = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == "ANIMAL_INTRUSION",
+            Alert.status.in_(["OPEN", "ACK"]),
+        )
+        .order_by(Alert.start_time.desc())
+        .first()
+    )
+    if existing and _alert_species(existing) != species_key:
+        existing = None
+    if existing:
+        link = AlertEventLink(alert_id=existing.id, event_id=event.id)
+        db.add(link)
+        existing.end_time = event.timestamp_utc
+        extra = dict(existing.extra or {})
+        extra["animal_species"] = species_key
+        extra["animal_count"] = count
+        extra["animal_confidence"] = confidence
+        extra["animal_is_night"] = is_night
+        extra["last_seen_at"] = event.timestamp_utc.isoformat()
+        if event.image_url:
+            extra["snapshot_url"] = event.image_url
+        existing.extra = extra
+        db.commit()
+        return True
+    cutoff = event.timestamp_utc - timedelta(seconds=max(1, cooldown_sec))
+    recent_alerts = (
+        db.query(Alert)
+        .filter(
+            Alert.godown_id == event.godown_id,
+            Alert.camera_id == event.camera_id,
+            Alert.alert_type == "ANIMAL_INTRUSION",
+            Alert.start_time >= cutoff,
+        )
+        .order_by(Alert.start_time.desc())
+        .all()
+    )
+    if any(_alert_species(alert) == species_key for alert in recent_alerts):
+        return True
+    alert = Alert(
+        godown_id=event.godown_id,
+        camera_id=event.camera_id,
+        alert_type="ANIMAL_INTRUSION",
+        severity_final=severity,
+        start_time=event.timestamp_utc,
+        end_time=None,
+        status="OPEN",
+        summary=_build_alert_summary("ANIMAL_INTRUSION", event),
+        zone_id=meta.get("zone_id"),
+        extra={
+            "animal_species": species_key,
+            "animal_count": count,
+            "animal_confidence": confidence,
+            "animal_is_night": is_night,
+            "snapshot_url": event.image_url,
+            "occurred_at": event.timestamp_utc.isoformat(),
+            "last_seen_at": event.timestamp_utc.isoformat(),
+        },
+    )
+    db.add(alert)
+    db.flush()
+    link = AlertEventLink(alert_id=alert.id, event_id=event.id)
+    db.add(link)
+    db.commit()
+    try:
+        notify_animal_intrusion(db, alert, species=species_key, count=count, snapshot_url=event.image_url, is_night=is_night)
+    except Exception:
+        pass
+    return True

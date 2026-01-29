@@ -28,6 +28,7 @@ anpr:
   registered_file: null
   dedup_interval_sec: 60
   save_csv: "./anpr_debug.csv"
+  direction_max_gap_sec: 120
   # save_crops_dir: "./././anpr_crops"
   # save_crops_max: 15
 
@@ -39,8 +40,23 @@ tracking:
 
 cameras:
   - id: CAM_GATE_1
+    role: GATE_ANPR
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     #test_video: "./data/truck_road.mp4"
+    modules:
+      anpr_enabled: true
+      gate_entry_exit_enabled: true
+      person_after_hours_enabled: false
+      animal_detection_enabled: false
+      fire_detection_enabled: false
+      health_monitoring_enabled: true
+    anpr:
+      gate_line:
+        - [960, 0]
+        - [960, 1080]
+      inside_side: "POSITIVE"
+      direction_inference: "LINE_CROSSING"
+      anpr_event_cooldown_seconds: 10
     # Zones required for ANPR
     zones:
       - id: gate_outer
@@ -73,8 +89,16 @@ cameras:
       blocked_consecutive_frames: 3
 
   - id: CAM_AISLE_3
+    role: SECURITY
     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1"
     # test_video: "./data/truck_road.mp4"
+    modules:
+      anpr_enabled: false
+      gate_entry_exit_enabled: false
+      person_after_hours_enabled: true
+      animal_detection_enabled: true
+      fire_detection_enabled: false
+      health_monitoring_enabled: true
     zones:
       - id: aisle_zone3
         polygon:
@@ -172,3 +196,38 @@ face_recognition:
       zone_id: all
       allow_unknown: false
       log_known_only: false
+
+watchlist:
+  enabled: true
+  min_match_confidence: 0.6
+  cooldown_seconds: 120
+  sync_interval_sec: 300
+  auto_embed: false
+  http_fallback: false
+
+after_hours_presence:
+  enabled: true
+  day_start: "09:00"
+  day_end: "19:00"
+  emit_only_after_hours: true
+  person_interval_sec: 2
+  vehicle_interval_sec: 2
+  person_cooldown_sec: 10
+  vehicle_cooldown_sec: 10
+  min_confidence: 0.25
+  person_classes: ["person"]
+  vehicle_classes: ["car", "truck", "bus", "motorcycle", "bicycle", "vehicle"]
+  http_fallback: false
+
+fire_detection:
+  enabled: false
+  model_path: "models/fire.pt"
+  device: "cpu"
+  conf: 0.35
+  iou: 0.45
+  cooldown_seconds: 60
+  min_frames_confirm: 3
+  zones_enabled: false
+  interval_sec: 1.5
+  class_keywords: ["fire", "smoke"]
+  save_snapshot: true

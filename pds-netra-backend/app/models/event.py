@@ -45,22 +45,27 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
     godown_id: Mapped[str] = mapped_column(String(64), index=True)
     camera_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     alert_type: Mapped[str] = mapped_column(String(64), index=True)
     severity_final: Mapped[str] = mapped_column(String(16))
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), default="OPEN")  # OPEN or CLOSED
+    status: Mapped[str] = mapped_column(String(16), default="OPEN")  # OPEN, ACK, or CLOSED
+    title: Mapped[str | None] = mapped_column(String(256), nullable=True)
     summary: Mapped[str | None] = mapped_column(String, nullable=True)
     zone_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     events: Mapped[list[AlertEventLink]] = relationship(
         "AlertEventLink", back_populates="alert", cascade="all, delete-orphan"
     )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class AlertEventLink(Base):

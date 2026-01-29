@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   createRule,
   deleteRule,
+  getAfterHoursPolicy,
   getCameraZones,
   getGodownDetail,
   getGodowns,
   getRules,
+  updateAfterHoursPolicy,
   updateRule
 } from '@/lib/api';
-import type { GodownListItem, RuleItem } from '@/lib/types';
+import type { AfterHoursPolicy, GodownListItem, RuleItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -123,6 +125,20 @@ export default function RulesPage() {
   const [cameraOptions, setCameraOptions] = useState<string[]>([]);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
 
+  const [policyGodown, setPolicyGodown] = useState('');
+  const [policyForm, setPolicyForm] = useState({
+    timezone: 'Asia/Kolkata',
+    day_start: '09:00',
+    day_end: '19:00',
+    presence_allowed: false,
+    cooldown_seconds: '120',
+    enabled: true,
+    source: 'default'
+  });
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     id: null as number | null,
     godown_id: '',
@@ -159,6 +175,47 @@ export default function RulesPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!policyGodown && godowns.length > 0) {
+      setPolicyGodown(godowns[0].godown_id);
+    }
+  }, [godowns, policyGodown]);
+
+  useEffect(() => {
+    if (filterGodown && filterGodown !== policyGodown) {
+      setPolicyGodown(filterGodown);
+    }
+  }, [filterGodown, policyGodown]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!policyGodown) return;
+    (async () => {
+      setPolicyLoading(true);
+      setPolicyError(null);
+      try {
+        const policy = await getAfterHoursPolicy(policyGodown);
+        if (!mounted) return;
+        setPolicyForm({
+          timezone: policy.timezone,
+          day_start: policy.day_start,
+          day_end: policy.day_end,
+          presence_allowed: policy.presence_allowed,
+          cooldown_seconds: String(policy.cooldown_seconds ?? '120'),
+          enabled: policy.enabled,
+          source: policy.source ?? 'override'
+        });
+      } catch (e) {
+        if (mounted) setPolicyError(e instanceof Error ? e.message : 'Failed to load policy');
+      } finally {
+        if (mounted) setPolicyLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [policyGodown]);
 
   useEffect(() => {
     let mounted = true;
@@ -238,6 +295,37 @@ export default function RulesPage() {
   }, []);
 
   const formType = RULE_TYPES.find((r) => r.value === form.type) ?? RULE_TYPES[0];
+
+  async function savePolicy() {
+    if (!policyGodown) return;
+    setPolicySaving(true);
+    setPolicyError(null);
+    const cooldown = Number(policyForm.cooldown_seconds);
+    const payload: Partial<AfterHoursPolicy> = {
+      timezone: policyForm.timezone,
+      day_start: policyForm.day_start,
+      day_end: policyForm.day_end,
+      presence_allowed: policyForm.presence_allowed,
+      cooldown_seconds: Number.isNaN(cooldown) ? 120 : cooldown,
+      enabled: policyForm.enabled
+    };
+    try {
+      const updated = await updateAfterHoursPolicy(policyGodown, payload);
+      setPolicyForm({
+        timezone: updated.timezone,
+        day_start: updated.day_start,
+        day_end: updated.day_end,
+        presence_allowed: updated.presence_allowed,
+        cooldown_seconds: String(updated.cooldown_seconds ?? '120'),
+        enabled: updated.enabled,
+        source: updated.source ?? 'override'
+      });
+    } catch (e) {
+      setPolicyError(e instanceof Error ? e.message : 'Failed to save policy');
+    } finally {
+      setPolicySaving(false);
+    }
+  }
 
   async function refresh() {
     const resp = await getRules({
@@ -403,6 +491,91 @@ export default function RulesPage() {
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="animate-fade-up hud-card">
+        <CardHeader>
+          <div className="text-lg font-semibold font-display">After-hours policy</div>
+          <div className="text-sm text-slate-600">Backend source-of-truth for after-hours presence.</div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Godown</div>
+              <Select
+                value={policyGodown}
+                onChange={(e) => setPolicyGodown(e.target.value)}
+                options={[{ label: 'Select godown', value: '' }, ...godownOptions.filter((o) => o.value)]}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Timezone</div>
+              <Input
+                value={policyForm.timezone}
+                onChange={(e) => setPolicyForm((s) => ({ ...s, timezone: e.target.value }))}
+                placeholder="Asia/Kolkata"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Day start</div>
+              <Input
+                value={policyForm.day_start}
+                onChange={(e) => setPolicyForm((s) => ({ ...s, day_start: e.target.value }))}
+                placeholder="09:00"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Day end</div>
+              <Input
+                value={policyForm.day_end}
+                onChange={(e) => setPolicyForm((s) => ({ ...s, day_end: e.target.value }))}
+                placeholder="19:00"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Cooldown (sec)</div>
+              <Input
+                type="number"
+                value={policyForm.cooldown_seconds}
+                onChange={(e) => setPolicyForm((s) => ({ ...s, cooldown_seconds: e.target.value }))}
+                placeholder="120"
+              />
+            </div>
+            <div className="flex items-end gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={policyForm.enabled}
+                  onChange={(e) => setPolicyForm((s) => ({ ...s, enabled: e.target.checked }))}
+                />
+                Policy enabled
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={policyForm.presence_allowed}
+                  onChange={(e) => setPolicyForm((s) => ({ ...s, presence_allowed: e.target.checked }))}
+                />
+                Allow after-hours presence
+              </label>
+            </div>
+            <div className="flex items-end">
+              <Button onClick={savePolicy} disabled={!policyGodown || policySaving || policyLoading}>
+                {policySaving ? 'Saving...' : 'Save policy'}
+              </Button>
+            </div>
+            <div className="flex items-end text-xs text-slate-500">
+              Source: {policyForm.source}
+            </div>
+          </div>
+          {policyError && (
+            <div className="mt-3">
+              <ErrorBanner message={policyError} onRetry={() => window.location.reload()} />
+            </div>
+          )}
         </CardContent>
       </Card>
 

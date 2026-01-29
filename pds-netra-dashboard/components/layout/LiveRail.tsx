@@ -15,6 +15,14 @@ function severityRank(sev: Severity) {
   return 1;
 }
 
+function alertPriority(alert: AlertItem): number {
+  if (alert.alert_type === 'FIRE_DETECTED') return 5;
+  if (alert.alert_type === 'BLACKLIST_PERSON_MATCH') return 4;
+  if (alert.alert_type === 'AFTER_HOURS_PERSON_PRESENCE') return 3;
+  if (alert.alert_type === 'AFTER_HOURS_VEHICLE_PRESENCE') return 3;
+  return 0;
+}
+
 function isQuietNow(start: string, end: string) {
   const now = new Date();
   const [sh, sm] = start.split(':').map(Number);
@@ -153,6 +161,8 @@ export function LiveRail() {
   const sortedAlerts = useMemo(() => {
     const copy = [...alerts];
     copy.sort((a, b) => {
+      const priDiff = alertPriority(b) - alertPriority(a);
+      if (priDiff !== 0) return priDiff;
       const sevDiff = severityRank(b.severity_final as Severity) - severityRank(a.severity_final as Severity);
       if (sevDiff !== 0) return sevDiff;
       return (alertEpoch(b) ?? 0) - (alertEpoch(a) ?? 0);

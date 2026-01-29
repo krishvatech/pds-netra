@@ -10,13 +10,19 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
+from ...core.auth import require_roles
 from ...models.event import Alert, Event
 from ...models.dispatch_issue import DispatchIssue
+from ...models.alert_report import AlertReport
+from ...models.notification_outbox import NotificationOutbox
+from ...schemas.alert_report import AlertReportListItem, AlertReportOut
+from ...schemas.notifications import NotificationDeliveryOut
+from ...services.alert_reports import generate_hq_report
 
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -322,3 +328,62 @@ def export_movement_csv(
             yield ",".join([str(x) for x in row]) + "\n"
 
     return StreamingResponse(_iter(), media_type="text/csv")
+
+
+@router.get("/hq", response_model=list[AlertReportListItem])
+def list_hq_reports(
+    limit: int = Query(30),
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+):
+    limit = max(1, min(int(limit), 200))
+    rows = (
+        db.query(AlertReport)
+        .filter(AlertReport.scope == "HQ")
+        .order_by(AlertReport.generated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return rows
+
+
+@router.get("/hq/{report_id}", response_model=AlertReportOut)
+def get_hq_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+):
+    report = db.get(AlertReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+@router.get("/hq/{report_id}/deliveries", response_model=list[NotificationDeliveryOut])
+def get_hq_report_deliveries(
+    report_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+):
+    report = db.get(AlertReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    rows = (
+        db.query(NotificationOutbox)
+        .filter(NotificationOutbox.report_id == report.id)
+        .order_by(NotificationOutbox.created_at.desc())
+        .all()
+    )
+    return rows
+
+
+@router.post("/hq/generate", response_model=AlertReportOut)
+def generate_hq_report_endpoint(
+    period: str = Query("24h"),
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+):
+    period = period if period in {"24h", "1h"} else "24h"
+    report = generate_hq_report(db, period=period, force=force)
+    return report

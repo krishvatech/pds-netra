@@ -79,6 +79,45 @@ export default function OverviewPage() {
         <HealthStatusCard title="Cameras with issues" value={data?.stats.cameras_with_issues ?? '-'} />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 stagger">
+        <HealthStatusCard
+          title="After-hours person alerts (24h / 7d)"
+          value={
+            data
+              ? `${data.stats.after_hours_person_24h ?? 0} / ${data.stats.after_hours_person_7d ?? 0}`
+              : '-'
+          }
+        />
+        <HealthStatusCard
+          title="After-hours vehicle alerts (24h / 7d)"
+          value={
+            data
+              ? `${data.stats.after_hours_vehicle_24h ?? 0} / ${data.stats.after_hours_vehicle_7d ?? 0}`
+              : '-'
+          }
+        />
+        <HealthStatusCard
+          title="Animal intrusion alerts (24h / 7d)"
+          value={
+            data
+              ? `${data.stats.animal_intrusions_24h ?? 0} / ${data.stats.animal_intrusions_7d ?? 0}`
+              : '-'
+          }
+        />
+        <HealthStatusCard
+          title="Fire alerts (24h / 7d)"
+          value={
+            data
+              ? `${data.stats.fire_alerts_24h ?? 0} / ${data.stats.fire_alerts_7d ?? 0}`
+              : '-'
+          }
+        />
+        <HealthStatusCard
+          title="Open gate sessions"
+          value={data ? `${data.stats.open_gate_sessions ?? 0}` : '-'}
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 stagger">
         <AlertsByTypeChart data={alertsByType} />
         <AlertsOverTimeChart data={alertsOverTime} />

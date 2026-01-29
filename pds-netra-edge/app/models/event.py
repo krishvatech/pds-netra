@@ -22,10 +22,27 @@ class MetaModel(BaseModel):
     movement_type: Optional[str] = None
     # Optional number plate string for ANPR events.
     plate_text: Optional[str] = None
+    plate_norm: Optional[str] = None
+    direction: Optional[str] = None
     # Optional match status for ANPR events (e.g. "WHITELIST", "BLACKLIST", "UNKNOWN").
     match_status: Optional[str] = None
     # Optional reason for tamper or health events (e.g. "BLACK_FRAME", "CAMERA_MOVED").
     reason: Optional[str] = None
+    # Optional face recognition fields.
+    person_id: Optional[str] = None
+    person_name: Optional[str] = None
+    person_role: Optional[str] = None
+    animal_species: Optional[str] = None
+    animal_count: Optional[int] = None
+    animal_confidence: Optional[float] = None
+    animal_is_night: Optional[bool] = None
+    animal_bboxes: Optional[List[List[int]]] = None
+    fire_classes: Optional[List[str]] = None
+    fire_confidence: Optional[float] = None
+    fire_bboxes: Optional[List[List[int]]] = None
+    fire_model_name: Optional[str] = None
+    fire_model_version: Optional[str] = None
+    fire_weights_id: Optional[str] = None
     extra: Dict[str, str] = Field(default_factory=dict)
 
 

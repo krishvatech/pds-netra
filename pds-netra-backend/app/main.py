@@ -37,9 +37,11 @@ def create_app() -> FastAPI:
     media_root = Path(__file__).resolve().parents[1] / "data" / "snapshots"
     annotated_root = Path(__file__).resolve().parents[1] / "data" / "annotated"
     live_root = Path(__file__).resolve().parents[1] / "data" / "live"
+    watchlist_root = Path(__file__).resolve().parents[1] / "data" / "watchlist"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
     app.mount("/media/live", StaticFiles(directory=live_root, check_dir=False), name="live")
+    app.mount("/media/watchlist", StaticFiles(directory=watchlist_root, check_dir=False), name="watchlist")
     app.state.mqtt_consumer = None
     app.state.dispatch_watchdog_stop = None
     app.state.dispatch_watchdog_thread = None
@@ -51,6 +53,7 @@ def create_app() -> FastAPI:
         media_root.mkdir(parents=True, exist_ok=True)
         annotated_root.mkdir(parents=True, exist_ok=True)
         live_root.mkdir(parents=True, exist_ok=True)
+        watchlist_root.mkdir(parents=True, exist_ok=True)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
             Base.metadata.create_all(bind=engine)
         try:
@@ -62,6 +65,8 @@ def create_app() -> FastAPI:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN rtsp_url VARCHAR(512)"))
                     if "is_active" not in cols:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+                    if "modules_json" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN modules_json TEXT"))
         except Exception:
             pass
         if os.getenv("AUTO_SEED_GODOWNS", "true").lower() in {"1", "true", "yes"}:

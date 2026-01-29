@@ -35,7 +35,28 @@ from .loader import (
 
 # Helper constants defining class names for animals and bags. These sets can
 # be extended or customised according to YOLO26 output labels.
-ANIMAL_CLASSES = {"dog", "cow", "bull", "cat", "rat"}
+ANIMAL_CLASSES = {
+    "dog",
+    "cat",
+    "cow",
+    "bull",
+    "buffalo",
+    "monkey",
+    "rat",
+    "goat",
+    "sheep",
+    "pig",
+    "horse",
+    "donkey",
+    "deer",
+    "camel",
+    "boar",
+    "tiger",
+    "lion",
+    "leopard",
+    "bear",
+    "elephant",
+}
 BAG_CLASSES = {"bag", "sack", "pallet", "trolley"}
 
 
@@ -140,6 +161,7 @@ class RulesEvaluator:
 
         # Track last alert time for animal intrusions keyed by (track_id, zone_id).
         self.animal_alerts: Dict[Tuple[int, str], datetime.datetime] = {}
+        self.animal_species_alerts: Dict[str, datetime.datetime] = {}
         # Track bag state keyed by (camera_id, track_id). Each BagInfo holds
         # previous zone, position and whether movement has been reported.
         self.bag_state: Dict[Tuple[str, int], "BagInfo"] = {}
@@ -157,6 +179,14 @@ class RulesEvaluator:
         self.alert_min_conf = alert_min_conf
         self.zone_enforce = zone_enforce
         self.person_alerts: Dict[Tuple[str, object, Optional[str]], datetime.datetime] = {}
+        try:
+            self.animal_species_cooldown_sec = int(os.getenv("EDGE_ANIMAL_SPECIES_COOLDOWN_SEC", "60"))
+        except Exception:
+            self.animal_species_cooldown_sec = 60
+        self.animal_night_start = os.getenv("EDGE_ANIMAL_NIGHT_START", "19:00")
+        self.animal_night_end = os.getenv("EDGE_ANIMAL_NIGHT_END", "06:00")
+        self.animal_night_severity = os.getenv("EDGE_ANIMAL_NIGHT_SEVERITY", "critical")
+        self.animal_day_severity = os.getenv("EDGE_ANIMAL_DAY_SEVERITY", "warning")
 
     def update_rules(self, rules: List[BaseRule]) -> None:
         """Replace the rule set for this evaluator."""
@@ -503,11 +533,17 @@ class RulesEvaluator:
         mqtt_client: MQTTClient
             Client used to publish events.
         """
+        species = obj.class_name.lower()
+        last_species_alert = self.animal_species_alerts.get(species)
+        if last_species_alert and (now_utc - last_species_alert).total_seconds() < self.animal_species_cooldown_sec:
+            return
         key = (obj.track_id, zone_id)
         last_alert_time = self.animal_alerts.get(key)
         if last_alert_time is not None:
             # Suppress duplicate alerts for the same track in the same zone
             return
+        is_night = self._is_night(now_utc)
+        severity = self.animal_night_severity if is_night else self.animal_day_severity
         # Publish animal intrusion event
         event_id = str(uuid.uuid4())
         event = EventModel(
@@ -515,7 +551,7 @@ class RulesEvaluator:
             camera_id=self.camera_id,
             event_id=event_id,
             event_type="ANIMAL_INTRUSION",
-            severity="warning",
+            severity=severity,
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
             track_id=obj.track_id,
@@ -526,12 +562,26 @@ class RulesEvaluator:
                 rule_id=rule.id,
                 confidence=obj.confidence,
                 movement_type=None,
+                animal_species=species,
+                animal_count=1,
+                animal_confidence=obj.confidence,
+                animal_is_night=is_night,
+                animal_bboxes=[obj.bbox],
                 extra={},
             ),
         )
         mqtt_client.publish_event(event)
         # Record the alert time for deduplication
         self.animal_alerts[key] = now_utc
+        self.animal_species_alerts[species] = now_utc
+
+    def _is_night(self, now_utc: datetime.datetime) -> bool:
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
+        local_time = now_utc.astimezone(self.tz).timetz()
+        start_t = _parse_time_string(self.animal_night_start)
+        end_t = _parse_time_string(self.animal_night_end)
+        return _is_time_in_range(local_time, start_t, end_t)
 
     def _process_person_instant(
         self,

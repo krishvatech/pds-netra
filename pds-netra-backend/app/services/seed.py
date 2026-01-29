@@ -55,12 +55,19 @@ def seed_godowns(db: Session, seed_path: Path) -> int:
             cam_id = cam.get("id")
             if not cam_id:
                 continue
+            modules_json = None
+            if cam.get("modules") is not None:
+                try:
+                    modules_json = json.dumps(cam.get("modules"))
+                except Exception:
+                    modules_json = None
             camera = Camera(
                 id=cam_id,
                 godown_id=godown_id,
                 label=cam.get("label"),
                 role=cam.get("role"),
                 zones_json=cam.get("zones_json"),
+                modules_json=modules_json,
             )
             db.add(camera)
         count += 1
@@ -98,6 +105,12 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
                 zones_json = json.dumps(cam.get("zones"))
             except Exception:
                 zones_json = None
+        modules_json = None
+        if cam.get("modules") is not None:
+            try:
+                modules_json = json.dumps(cam.get("modules"))
+            except Exception:
+                modules_json = None
         existing = db.get(Camera, cam_id)
         if existing:
             updated = False
@@ -113,6 +126,9 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
             if cam.get("role") and existing.role != cam.get("role"):
                 existing.role = cam.get("role")
                 updated = True
+            if modules_json is not None and existing.modules_json != modules_json:
+                existing.modules_json = modules_json
+                updated = True
             if updated:
                 db.add(existing)
             continue
@@ -123,6 +139,7 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
             role=cam.get("role"),
             rtsp_url=cam.get("rtsp_url"),
             zones_json=zones_json,
+            modules_json=modules_json,
         )
         db.add(camera)
         count += 1

@@ -18,6 +18,11 @@ from .v1.live import router as live_router
 from .v1.cameras import router as cameras_router
 from .v1.dispatch_issues import router as dispatch_issues_router
 from .v1.rules import router as rules_router
+from .v1.watchlist import router as watchlist_router
+from .v1.edge_events import router as edge_events_router
+from .v1.after_hours import router as after_hours_router
+from .v1.vehicle_gate_sessions import router as vehicle_gate_sessions_router
+from .v1.notifications import router as notifications_router
 
 
 api_router = APIRouter()
@@ -32,3 +37,8 @@ api_router.include_router(live_router)
 api_router.include_router(cameras_router)
 api_router.include_router(dispatch_issues_router)
 api_router.include_router(rules_router)
+api_router.include_router(watchlist_router)
+api_router.include_router(edge_events_router)
+api_router.include_router(after_hours_router)
+api_router.include_router(vehicle_gate_sessions_router)
+api_router.include_router(notifications_router)

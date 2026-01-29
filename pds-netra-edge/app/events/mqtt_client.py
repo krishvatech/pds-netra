@@ -18,6 +18,8 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 
 from ..models.event import EventModel, HealthModel
+from ..schemas.watchlist import FaceMatchEvent
+from ..schemas.presence import PresenceEvent
 from ..config import Settings
 
 
@@ -108,6 +110,22 @@ class MQTTClient:
         result = self.client.publish(topic, payload, qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             self.logger.error("Failed to publish health: %s", mqtt.error_string(result.rc))
+
+    def publish_face_match(self, event: FaceMatchEvent) -> None:
+        """Publish a face match event to the watchlist topic."""
+        topic = f"pds/{event.godown_id}/face-match"
+        payload = event.model_dump_json()
+        result = self.client.publish(topic, payload, qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            self.logger.error("Failed to publish face match: %s", mqtt.error_string(result.rc))
+
+    def publish_presence(self, event: PresenceEvent) -> None:
+        """Publish an after-hours presence event to the presence topic."""
+        topic = f"pds/{event.godown_id}/presence"
+        payload = event.model_dump_json()
+        result = self.client.publish(topic, payload, qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            self.logger.error("Failed to publish presence: %s", mqtt.error_string(result.rc))
 
     def stop(self) -> None:
         """Stop the MQTT client and its network loop."""

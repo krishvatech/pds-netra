@@ -17,6 +17,7 @@ from ..core.db import SessionLocal
 from ..models.dispatch_issue import DispatchIssue
 from ..models.event import Event, Alert
 from .notifications import notify_alert
+from .vehicle_gate import process_vehicle_gate_sessions
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -52,6 +53,8 @@ def run_dispatch_watchdog(stop_event: threading.Event) -> None:
         try:
             with SessionLocal() as db:
                 _process_issues(db, logger)
+                if os.getenv("ENABLE_VEHICLE_GATE_WATCHDOG", "true").lower() in {"1", "true", "yes"}:
+                    process_vehicle_gate_sessions(db, logger)
         except Exception as exc:
             logger.exception("Dispatch watchdog cycle failed: %s", exc)
         stop_event.wait(interval_sec)
@@ -97,7 +100,7 @@ def _process_issues(db: Session, logger: logging.Logger) -> None:
         db.add(issue)
         logger.info("Dispatch alert created for issue_id=%s alert_id=%s", issue.id, alert.id)
         try:
-            notify_alert(alert, None)
+            notify_alert(db, alert, None)
         except Exception:
             pass
     db.commit()

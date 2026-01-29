@@ -15,7 +15,11 @@ import paho.mqtt.client as mqtt
 from ..core.config import settings
 from ..core.db import SessionLocal
 from ..schemas.event import EventIn
+from ..schemas.watchlist import FaceMatchEventIn
+from ..schemas.presence import PresenceEventIn
 from .event_ingest import handle_incoming_event
+from .watchlist import ingest_face_match_event
+from .presence import ingest_presence_event
 
 
 class MQTTConsumer:
@@ -49,6 +53,8 @@ class MQTTConsumer:
                 settings.mqtt_broker_port,
             )
             client.subscribe("pds/+/events", qos=1)
+            client.subscribe("pds/+/face-match", qos=1)
+            client.subscribe("pds/+/presence", qos=1)
             self._connected.set()
         else:
             self.logger.error("Failed to connect to MQTT broker with code %s", rc)
@@ -66,6 +72,34 @@ class MQTTConsumer:
     def on_message(self, client: mqtt.Client, userdata, msg) -> None:  # type: ignore
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
+        except Exception as exc:
+            self.logger.warning("Invalid event payload: %s", exc)
+            return
+        if isinstance(payload, dict) and payload.get("event_type") == "FACE_MATCH":
+            try:
+                face_event = FaceMatchEventIn.model_validate(payload)
+            except Exception as exc:
+                self.logger.warning("Invalid face match payload: %s", exc)
+                return
+            with SessionLocal() as db:
+                try:
+                    ingest_face_match_event(db, face_event)
+                except Exception as exc:
+                    self.logger.exception("Failed to ingest face match event: %s", exc)
+            return
+        if isinstance(payload, dict) and payload.get("event_type") in {"PERSON_DETECTED", "VEHICLE_DETECTED", "ANPR_HIT"}:
+            try:
+                presence_event = PresenceEventIn.model_validate(payload)
+            except Exception as exc:
+                self.logger.warning("Invalid presence payload: %s", exc)
+                return
+            with SessionLocal() as db:
+                try:
+                    ingest_presence_event(db, presence_event)
+                except Exception as exc:
+                    self.logger.exception("Failed to ingest presence event: %s", exc)
+            return
+        try:
             event_in = EventIn.parse_obj(payload)
         except Exception as exc:
             self.logger.warning("Invalid event payload: %s", exc)

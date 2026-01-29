@@ -18,10 +18,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ...core.db import get_db
+from ...core.auth import get_optional_user
 from ...models.event import Event, Alert, AlertEventLink
 from ...models.godown import Godown, Camera
 from ...models.alert_action import AlertAction
+from ...models.notification_outbox import NotificationOutbox
 from ...schemas.alert_action import AlertActionCreate, AlertActionOut
+from ...schemas.notifications import NotificationDeliveryOut
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
@@ -207,11 +210,14 @@ def list_alerts(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    user=Depends(get_optional_user),
 ) -> dict:
     """List alerts with optional filters."""
     query = db.query(Alert, Godown.district, Godown.name).join(
         Godown, Godown.id == Alert.godown_id, isouter=True
     )
+    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
+        query = query.filter(Alert.godown_id == user.godown_id)
     if godown_id:
         query = query.filter(Alert.godown_id == godown_id)
     if district:
@@ -253,6 +259,67 @@ def list_alerts(
                 }
             except Exception:
                 key_meta = {}
+        if alert.alert_type == "BLACKLIST_PERSON_MATCH":
+            extra = alert.extra or {}
+            key_meta.update(
+                {
+                    "person_id": extra.get("person_id"),
+                    "person_name": extra.get("person_name"),
+                    "match_score": extra.get("match_score"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                }
+            )
+        if alert.alert_type in {"AFTER_HOURS_PERSON_PRESENCE", "AFTER_HOURS_VEHICLE_PRESENCE"}:
+            extra = alert.extra or {}
+            key_meta.update(
+                {
+                    "detected_count": extra.get("detected_count"),
+                    "vehicle_plate": extra.get("vehicle_plate"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                    "occurred_at": extra.get("occurred_at"),
+                    "last_seen_at": extra.get("last_seen_at"),
+                }
+            )
+        if alert.alert_type == "ANIMAL_INTRUSION":
+            extra = alert.extra or {}
+            key_meta.update(
+                {
+                    "animal_species": extra.get("animal_species"),
+                    "animal_count": extra.get("animal_count"),
+                    "animal_confidence": extra.get("animal_confidence"),
+                    "animal_is_night": extra.get("animal_is_night"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                    "occurred_at": extra.get("occurred_at"),
+                    "last_seen_at": extra.get("last_seen_at"),
+                }
+            )
+        if alert.alert_type == "FIRE_DETECTED":
+            extra = alert.extra or {}
+            key_meta.update(
+                {
+                    "fire_classes": extra.get("fire_classes"),
+                    "fire_confidence": extra.get("fire_confidence"),
+                    "fire_model_name": extra.get("fire_model_name"),
+                    "fire_model_version": extra.get("fire_model_version"),
+                    "fire_weights_id": extra.get("fire_weights_id"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                    "occurred_at": extra.get("occurred_at"),
+                    "last_seen_at": extra.get("last_seen_at"),
+                }
+            )
+        if alert.alert_type == "DISPATCH_MOVEMENT_DELAY":
+            extra = alert.extra or {}
+            key_meta.update(
+                {
+                    "plate_norm": extra.get("plate_norm"),
+                    "plate_raw": extra.get("plate_raw"),
+                    "entry_at": extra.get("entry_at"),
+                    "age_hours": extra.get("age_hours"),
+                    "threshold_hours": extra.get("threshold_hours"),
+                    "last_seen_at": extra.get("last_seen_at"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                }
+            )
         items.append(
             {
                 "id": alert.id,
@@ -274,11 +341,14 @@ def list_alerts(
 
 
 @router.get("/alerts/{alert_id}")
-def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
+def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_optional_user)) -> dict:
     """Retrieve a single alert with its linked events."""
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
+        if alert.godown_id != user.godown_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
     godown = db.get(Godown, alert.godown_id)
     linked_ids = [link.event_id for link in alert.events]
     events = [link.event for link in alert.events]
@@ -295,6 +365,67 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
             "reason": meta.get("reason"),
             "run_id": extra.get("run_id"),
         }
+    if alert.alert_type == "BLACKLIST_PERSON_MATCH":
+        extra = alert.extra or {}
+        key_meta.update(
+            {
+                "person_id": extra.get("person_id"),
+                "person_name": extra.get("person_name"),
+                "match_score": extra.get("match_score"),
+                "snapshot_url": extra.get("snapshot_url"),
+            }
+        )
+    if alert.alert_type in {"AFTER_HOURS_PERSON_PRESENCE", "AFTER_HOURS_VEHICLE_PRESENCE"}:
+        extra = alert.extra or {}
+        key_meta.update(
+            {
+                "detected_count": extra.get("detected_count"),
+                "vehicle_plate": extra.get("vehicle_plate"),
+                "snapshot_url": extra.get("snapshot_url"),
+                "occurred_at": extra.get("occurred_at"),
+                "last_seen_at": extra.get("last_seen_at"),
+            }
+        )
+    if alert.alert_type == "ANIMAL_INTRUSION":
+        extra = alert.extra or {}
+        key_meta.update(
+            {
+                "animal_species": extra.get("animal_species"),
+                "animal_count": extra.get("animal_count"),
+                "animal_confidence": extra.get("animal_confidence"),
+                "animal_is_night": extra.get("animal_is_night"),
+                "snapshot_url": extra.get("snapshot_url"),
+                "occurred_at": extra.get("occurred_at"),
+                "last_seen_at": extra.get("last_seen_at"),
+            }
+        )
+    if alert.alert_type == "FIRE_DETECTED":
+        extra = alert.extra or {}
+        key_meta.update(
+            {
+                "fire_classes": extra.get("fire_classes"),
+                "fire_confidence": extra.get("fire_confidence"),
+                "fire_model_name": extra.get("fire_model_name"),
+                "fire_model_version": extra.get("fire_model_version"),
+                "fire_weights_id": extra.get("fire_weights_id"),
+                "snapshot_url": extra.get("snapshot_url"),
+                "occurred_at": extra.get("occurred_at"),
+                "last_seen_at": extra.get("last_seen_at"),
+            }
+        )
+    if alert.alert_type == "DISPATCH_MOVEMENT_DELAY":
+        extra = alert.extra or {}
+        key_meta.update(
+            {
+                "plate_norm": extra.get("plate_norm"),
+                "plate_raw": extra.get("plate_raw"),
+                "entry_at": extra.get("entry_at"),
+                "age_hours": extra.get("age_hours"),
+                "threshold_hours": extra.get("threshold_hours"),
+                "last_seen_at": extra.get("last_seen_at"),
+                "snapshot_url": extra.get("snapshot_url"),
+            }
+        )
     return {
         "id": alert.id,
         "godown_id": alert.godown_id,
@@ -314,13 +445,36 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/alerts/{alert_id}/ack")
-def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
+@router.get("/alerts/{alert_id}/deliveries", response_model=list[NotificationDeliveryOut])
+def get_alert_deliveries(alert_id: int, db: Session = Depends(get_db), user=Depends(get_optional_user)):
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    action = AlertAction(alert_id=alert_id, action_type="ACK", actor=None, note=None)
+    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
+        if alert.godown_id != user.godown_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    deliveries = (
+        db.query(NotificationOutbox)
+        .filter(NotificationOutbox.alert_id == alert.public_id)
+        .order_by(NotificationOutbox.created_at.desc())
+        .all()
+    )
+    return deliveries
+
+
+@router.post("/alerts/{alert_id}/ack")
+def acknowledge_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_optional_user)) -> dict:
+    alert = db.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    actor = user.username if user else None
+    action = AlertAction(alert_id=alert_id, action_type="ACK", actor=actor, note=None)
+    alert.status = "ACK"
+    if user and user.username:
+        alert.acknowledged_by = user.username
+    alert.acknowledged_at = datetime.utcnow()
     db.add(action)
+    db.add(alert)
     db.commit()
     return {"status": alert.status, "alert_id": alert.id}
 
@@ -358,6 +512,10 @@ def create_alert_action(
     elif action_type in {"REOPEN"}:
         alert.status = "OPEN"
         alert.end_time = None
+    elif action_type in {"ACK"}:
+        alert.status = "ACK"
+        alert.acknowledged_by = payload.actor
+        alert.acknowledged_at = datetime.utcnow()
     db.add(action)
     db.add(alert)
     db.commit()

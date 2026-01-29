@@ -351,38 +351,19 @@ class FaceRecognitionProcessor:
         """Update dedup cache with the current timestamp for the given key."""
         self.dedup_cache[key] = now
 
-    def process_frame(
+    def process_faces(
         self,
-        frame: any,
+        faces: List[Tuple[List[int], List[float]]],
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
     ) -> List[FaceOverlay]:
-        """
-        Detect and recognize faces in the frame and publish events
-        according to configured policies.
-
-        Parameters
-        ----------
-        frame: numpy.ndarray
-            The current frame in BGR format.
-        now_utc: datetime.datetime
-            Current UTC timestamp (aware or naive; will be treated as UTC).
-        mqtt_client: MQTTClient
-            Client used to publish events.
-        """
-        if frame is None:
-            return []
+        """Process precomputed face detections and embeddings."""
         if not self.global_config.enabled:
             return []
         if now_utc.tzinfo is None:
             now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
         timestamp_iso = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
         log_faces = os.getenv("PDS_FACE_LOG", "0") == "1"
-        try:
-            faces = detect_faces(frame)
-        except Exception as exc:
-            self.logger.exception("Face detection failed: %r", exc)
-            return []
         if log_faces:
             if self._last_face_log is None or (now_utc - self._last_face_log).total_seconds() >= 2:
                 self.logger.info(
@@ -587,3 +568,22 @@ class FaceRecognitionProcessor:
                     mqtt_client.publish_event(event)
                     self._update_cache(dedup_key, now_utc)
         return overlays
+
+    def process_frame(
+        self,
+        frame: any,
+        now_utc: datetime.datetime,
+        mqtt_client: MQTTClient,
+    ) -> List[FaceOverlay]:
+        """
+        Detect and recognize faces in the frame and publish events
+        according to configured policies.
+        """
+        if frame is None:
+            return []
+        try:
+            faces = detect_faces(frame)
+        except Exception as exc:
+            self.logger.exception("Face detection failed: %r", exc)
+            return []
+        return self.process_faces(faces, now_utc, mqtt_client)

@@ -26,11 +26,36 @@ class ZoneConfig:
 
 
 @dataclass
+class CameraModules:
+    """Optional per-camera module overrides."""
+    anpr_enabled: Optional[bool] = None
+    gate_entry_exit_enabled: Optional[bool] = None
+    person_after_hours_enabled: Optional[bool] = None
+    animal_detection_enabled: Optional[bool] = None
+    fire_detection_enabled: Optional[bool] = None
+    health_monitoring_enabled: Optional[bool] = None
+
+
+@dataclass
+class CameraAnprConfig:
+    """Per-camera ANPR overrides."""
+    gate_line: Optional[List[List[int]]] = None
+    inside_side: Optional[str] = None
+    direction_inference: Optional[str] = None
+    anpr_event_cooldown_seconds: Optional[int] = None
+
+
+@dataclass
 class CameraConfig:
     """Configuration for a single camera source."""
     id: str
     rtsp_url: str
     test_video: Optional[str] = None
+    role: str = "SECURITY"
+    # Track if role was explicitly provided in config to preserve legacy behavior.
+    role_explicit: bool = False
+    modules: Optional[CameraModules] = None
+    anpr: Optional[CameraAnprConfig] = None
     zones: List[ZoneConfig] = field(default_factory=list)
     # Health configuration for the camera. If None, defaults will be applied.
     health: Optional['HealthConfig'] = None
@@ -86,6 +111,50 @@ class TrackingConfig:
     conf: Optional[float] = None
     iou: Optional[float] = None
 
+
+@dataclass
+class WatchlistConfig:
+    """Watchlist (blacklist) detection configuration."""
+    enabled: bool = False
+    min_match_confidence: float = 0.6
+    cooldown_seconds: int = 120
+    sync_interval_sec: int = 300
+    auto_embed: bool = False
+    http_fallback: bool = False
+
+
+@dataclass
+class AfterHoursPresenceConfig:
+    """After-hours presence detection configuration."""
+    enabled: bool = False
+    day_start: str = "09:00"
+    day_end: str = "19:00"
+    emit_only_after_hours: bool = True
+    person_interval_sec: int = 2
+    vehicle_interval_sec: int = 2
+    person_cooldown_sec: int = 10
+    vehicle_cooldown_sec: int = 10
+    min_confidence: float = 0.0
+    person_classes: List[str] = field(default_factory=lambda: ["person"])
+    vehicle_classes: List[str] = field(default_factory=lambda: ["car", "truck", "bus", "motorcycle", "bicycle", "vehicle"])
+    http_fallback: bool = False
+
+
+@dataclass
+class FireDetectionConfig:
+    """Fire detection configuration."""
+    enabled: bool = False
+    model_path: str = "models/fire.pt"
+    device: str = "cpu"
+    conf: float = 0.35
+    iou: float = 0.45
+    cooldown_seconds: int = 60
+    min_frames_confirm: int = 3
+    zones_enabled: bool = False
+    interval_sec: float = 1.5
+    class_keywords: List[str] = field(default_factory=lambda: ["fire", "smoke"])
+    save_snapshot: bool = True
+
 @dataclass
 class AnprConfig:
     """Configuration for ANPR/plate recognition."""
@@ -110,6 +179,9 @@ class AnprConfig:
     save_csv: Optional[str] = None
     save_crops_dir: Optional[str] = None
     save_crops_max: Optional[int] = None
+    gate_line: Optional[List[List[int]]] = None
+    inside_side: Optional[str] = None
+    direction_max_gap_sec: int = 120
 
 
 @dataclass
@@ -138,6 +210,9 @@ class Settings:
     bag_movement_px_threshold: int = 50
     bag_movement_time_window_sec: int = 2
     anpr: Optional[AnprConfig] = None
+    watchlist: Optional[WatchlistConfig] = None
+    after_hours_presence: Optional[AfterHoursPresenceConfig] = None
+    fire_detection: Optional[FireDetectionConfig] = None
 
 # Health configuration for camera monitoring and tamper detection
 @dataclass
@@ -214,6 +289,91 @@ def _load_yaml_file(config_path: Path) -> dict:
         raise FileNotFoundError(f"Configuration file {config_path!s} not found")
     with config_path.open('r', encoding='utf-8') as f:
         return yaml.safe_load(f) or {}
+
+
+def _parse_optional_bool(value: object) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
+
+
+def _parse_gate_line(value: object) -> Optional[List[List[int]]]:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        x1 = value.get("x1")
+        y1 = value.get("y1")
+        x2 = value.get("x2")
+        y2 = value.get("y2")
+        try:
+            if None not in (x1, y1, x2, y2):
+                return [[int(x1), int(y1)], [int(x2), int(y2)]]
+        except Exception:
+            return None
+        return None
+    if isinstance(value, list) and len(value) == 2:
+        try:
+            p1, p2 = value
+            if (
+                isinstance(p1, list)
+                and isinstance(p2, list)
+                and len(p1) == 2
+                and len(p2) == 2
+            ):
+                return [[int(p1[0]), int(p1[1])], [int(p2[0]), int(p2[1])]]
+        except Exception:
+            return None
+    return None
+
+
+def _parse_camera_modules(value: object) -> Optional[CameraModules]:
+    if not isinstance(value, dict):
+        return None
+    modules = CameraModules(
+        anpr_enabled=_parse_optional_bool(value.get("anpr_enabled")),
+        gate_entry_exit_enabled=_parse_optional_bool(value.get("gate_entry_exit_enabled")),
+        person_after_hours_enabled=_parse_optional_bool(value.get("person_after_hours_enabled")),
+        animal_detection_enabled=_parse_optional_bool(value.get("animal_detection_enabled")),
+        fire_detection_enabled=_parse_optional_bool(value.get("fire_detection_enabled")),
+        health_monitoring_enabled=_parse_optional_bool(value.get("health_monitoring_enabled")),
+    )
+    if all(getattr(modules, field) is None for field in modules.__dataclass_fields__):
+        return None
+    return modules
+
+
+def _parse_camera_anpr_config(cam_dict: dict) -> Optional[CameraAnprConfig]:
+    data = cam_dict.get("anpr") or {}
+    if not isinstance(data, dict):
+        data = {}
+    gate_line = _parse_gate_line(data.get("gate_line") or cam_dict.get("gate_line"))
+    inside_side = data.get("inside_side") or cam_dict.get("inside_side")
+    direction_inference = data.get("direction_inference") or cam_dict.get("direction_inference")
+    if isinstance(direction_inference, str):
+        direction_inference = direction_inference.strip().upper()
+    cooldown = data.get("anpr_event_cooldown_seconds") or cam_dict.get("anpr_event_cooldown_seconds")
+    try:
+        cooldown_val = int(cooldown) if cooldown is not None else None
+    except Exception:
+        cooldown_val = None
+    if gate_line is None and inside_side is None and direction_inference is None and cooldown_val is None:
+        return None
+    return CameraAnprConfig(
+        gate_line=gate_line,
+        inside_side=str(inside_side).strip().upper() if inside_side else None,
+        direction_inference=direction_inference,
+        anpr_event_cooldown_seconds=cooldown_val,
+    )
 
 
 def load_settings(config_path: str) -> Settings:
@@ -299,10 +459,19 @@ def load_settings(config_path: str) -> Settings:
         cam_id = cam_dict['id']
         rtsp_env_key = f"RTSP_URL_{cam_id}"
         rtsp_url = os.getenv(rtsp_env_key, cam_dict['rtsp_url'])
+        role_raw = cam_dict.get("role")
+        role_explicit = "role" in cam_dict and role_raw is not None
+        role = str(role_raw or "SECURITY").strip().upper()
+        modules_cfg = _parse_camera_modules(cam_dict.get("modules"))
+        anpr_cam_cfg = _parse_camera_anpr_config(cam_dict)
         cameras_cfg.append(CameraConfig(
             id=cam_id,
             rtsp_url=rtsp_url,
             test_video=cam_dict.get('test_video'),
+            role=role,
+            role_explicit=role_explicit,
+            modules=modules_cfg,
+            anpr=anpr_cam_cfg,
             zones=zones,
             health=health_cfg,
         ))
@@ -371,9 +540,16 @@ def load_settings(config_path: str) -> Settings:
                 save_csv=anpr_data.get("save_csv"),
                 save_crops_dir=anpr_data.get("save_crops_dir"),
                 save_crops_max=anpr_data.get("save_crops_max"),
+                gate_line=anpr_data.get("gate_line"),
+                inside_side=anpr_data.get("inside_side"),
+                direction_max_gap_sec=int(anpr_data.get("direction_max_gap_sec", 120)),
             )
         except Exception:
             anpr_cfg = None
+
+    watchlist_cfg = _load_watchlist_config(data)
+    after_hours_cfg = _load_after_hours_presence_config(data)
+    fire_cfg = _load_fire_detection_config(data)
 
     return Settings(
         godown_id=godown_id,
@@ -392,11 +568,150 @@ def load_settings(config_path: str) -> Settings:
         bag_movement_px_threshold=bag_movement_px_threshold,
         bag_movement_time_window_sec=bag_movement_time_window_sec,
         anpr=anpr_cfg,
+        watchlist=watchlist_cfg,
+        after_hours_presence=after_hours_cfg,
+        fire_detection=fire_cfg,
+    )
+
+
+def _load_watchlist_config(data: dict) -> WatchlistConfig:
+    wl_data = data.get("watchlist") or {}
+    enabled = os.getenv("EDGE_WATCHLIST_ENABLED", str(wl_data.get("enabled", False))).lower() in {"1", "true", "yes"}
+    try:
+        min_conf = float(os.getenv("EDGE_WATCHLIST_MIN_CONF", wl_data.get("min_match_confidence", 0.6)))
+    except Exception:
+        min_conf = 0.6
+    try:
+        cooldown = int(os.getenv("EDGE_WATCHLIST_COOLDOWN_SEC", wl_data.get("cooldown_seconds", 120)))
+    except Exception:
+        cooldown = 120
+    try:
+        sync_sec = int(os.getenv("EDGE_WATCHLIST_SYNC_SEC", wl_data.get("sync_interval_sec", 300)))
+    except Exception:
+        sync_sec = 300
+    auto_embed = os.getenv("EDGE_WATCHLIST_AUTO_EMBED", str(wl_data.get("auto_embed", False))).lower() in {"1", "true", "yes"}
+    http_fallback = os.getenv("EDGE_WATCHLIST_HTTP_FALLBACK", str(wl_data.get("http_fallback", False))).lower() in {"1", "true", "yes"}
+    return WatchlistConfig(
+        enabled=enabled,
+        min_match_confidence=min_conf,
+        cooldown_seconds=cooldown,
+        sync_interval_sec=sync_sec,
+        auto_embed=auto_embed,
+        http_fallback=http_fallback,
+    )
+
+
+def _load_after_hours_presence_config(data: dict) -> AfterHoursPresenceConfig:
+    ah_data = data.get("after_hours_presence") or {}
+    enabled = os.getenv("EDGE_AFTER_HOURS_ENABLED", str(ah_data.get("enabled", False))).lower() in {"1", "true", "yes"}
+    day_start = os.getenv("EDGE_AFTER_HOURS_DAY_START", ah_data.get("day_start", "09:00"))
+    day_end = os.getenv("EDGE_AFTER_HOURS_DAY_END", ah_data.get("day_end", "19:00"))
+    emit_only = os.getenv("EDGE_AFTER_HOURS_ONLY", str(ah_data.get("emit_only_after_hours", True))).lower() in {"1", "true", "yes"}
+    try:
+        person_interval = int(os.getenv("EDGE_AFTER_HOURS_PERSON_INTERVAL_SEC", ah_data.get("person_interval_sec", 2)))
+    except Exception:
+        person_interval = 2
+    try:
+        vehicle_interval = int(os.getenv("EDGE_AFTER_HOURS_VEHICLE_INTERVAL_SEC", ah_data.get("vehicle_interval_sec", 2)))
+    except Exception:
+        vehicle_interval = 2
+    try:
+        person_cooldown = int(os.getenv("EDGE_AFTER_HOURS_PERSON_COOLDOWN_SEC", ah_data.get("person_cooldown_sec", 10)))
+    except Exception:
+        person_cooldown = 10
+    try:
+        vehicle_cooldown = int(os.getenv("EDGE_AFTER_HOURS_VEHICLE_COOLDOWN_SEC", ah_data.get("vehicle_cooldown_sec", 10)))
+    except Exception:
+        vehicle_cooldown = 10
+    try:
+        min_conf = float(os.getenv("EDGE_AFTER_HOURS_MIN_CONF", ah_data.get("min_confidence", 0.0)))
+    except Exception:
+        min_conf = 0.0
+    person_classes_raw = os.getenv("EDGE_AFTER_HOURS_PERSON_CLASSES") or ah_data.get("person_classes") or ["person"]
+    vehicle_classes_raw = os.getenv("EDGE_AFTER_HOURS_VEHICLE_CLASSES") or ah_data.get("vehicle_classes") or [
+        "car",
+        "truck",
+        "bus",
+        "motorcycle",
+        "bicycle",
+        "vehicle",
+    ]
+    if isinstance(person_classes_raw, str):
+        person_classes = [c.strip() for c in person_classes_raw.split(",") if c.strip()]
+    else:
+        person_classes = [str(c) for c in person_classes_raw]
+    if isinstance(vehicle_classes_raw, str):
+        vehicle_classes = [c.strip() for c in vehicle_classes_raw.split(",") if c.strip()]
+    else:
+        vehicle_classes = [str(c) for c in vehicle_classes_raw]
+    http_fallback = os.getenv("EDGE_AFTER_HOURS_HTTP_FALLBACK", str(ah_data.get("http_fallback", False))).lower() in {"1", "true", "yes"}
+    return AfterHoursPresenceConfig(
+        enabled=enabled,
+        day_start=str(day_start),
+        day_end=str(day_end),
+        emit_only_after_hours=emit_only,
+        person_interval_sec=person_interval,
+        vehicle_interval_sec=vehicle_interval,
+        person_cooldown_sec=person_cooldown,
+        vehicle_cooldown_sec=vehicle_cooldown,
+        min_confidence=min_conf,
+        person_classes=person_classes,
+        vehicle_classes=vehicle_classes,
+        http_fallback=http_fallback,
+    )
+
+
+def _load_fire_detection_config(data: dict) -> FireDetectionConfig:
+    fd_data = data.get("fire_detection") or {}
+    enabled = os.getenv("EDGE_FIRE_ENABLED", str(fd_data.get("enabled", False))).lower() in {"1", "true", "yes"}
+    model_path = os.getenv("EDGE_FIRE_MODEL_PATH", fd_data.get("model_path", "models/fire.pt"))
+    device = os.getenv("EDGE_FIRE_DEVICE", fd_data.get("device", "cpu"))
+    try:
+        conf = float(os.getenv("EDGE_FIRE_CONF", fd_data.get("conf", 0.35)))
+    except Exception:
+        conf = 0.35
+    try:
+        iou = float(os.getenv("EDGE_FIRE_IOU", fd_data.get("iou", 0.45)))
+    except Exception:
+        iou = 0.45
+    try:
+        cooldown = int(os.getenv("EDGE_FIRE_COOLDOWN_SEC", fd_data.get("cooldown_seconds", 60)))
+    except Exception:
+        cooldown = 60
+    try:
+        min_frames = int(os.getenv("EDGE_FIRE_MIN_FRAMES", fd_data.get("min_frames_confirm", 3)))
+    except Exception:
+        min_frames = 3
+    zones_enabled = os.getenv("EDGE_FIRE_ZONES_ENABLED", str(fd_data.get("zones_enabled", False))).lower() in {"1", "true", "yes"}
+    try:
+        interval_sec = float(os.getenv("EDGE_FIRE_INTERVAL_SEC", fd_data.get("interval_sec", 1.5)))
+    except Exception:
+        interval_sec = 1.5
+    class_keywords_raw = os.getenv("EDGE_FIRE_CLASS_KEYWORDS") or fd_data.get("class_keywords") or ["fire", "smoke"]
+    if isinstance(class_keywords_raw, str):
+        class_keywords = [c.strip() for c in class_keywords_raw.split(",") if c.strip()]
+    else:
+        class_keywords = [str(c) for c in class_keywords_raw]
+    save_snapshot = os.getenv("EDGE_FIRE_SAVE_SNAPSHOT", str(fd_data.get("save_snapshot", True))).lower() in {"1", "true", "yes"}
+    return FireDetectionConfig(
+        enabled=enabled,
+        model_path=str(model_path),
+        device=str(device),
+        conf=conf,
+        iou=iou,
+        cooldown_seconds=cooldown,
+        min_frames_confirm=min_frames,
+        zones_enabled=zones_enabled,
+        interval_sec=interval_sec,
+        class_keywords=class_keywords,
+        save_snapshot=save_snapshot,
     )
 
 
 __all__ = [
     'ZoneConfig',
+    'CameraModules',
+    'CameraAnprConfig',
     'CameraConfig',
     'RuleConfig',
     'Settings',
@@ -405,5 +720,8 @@ __all__ = [
     'FaceRecognitionConfig',
     'TrackingConfig',
     'AnprConfig',
+    'WatchlistConfig',
+    'AfterHoursPresenceConfig',
+    'FireDetectionConfig',
     'load_settings',
 ]

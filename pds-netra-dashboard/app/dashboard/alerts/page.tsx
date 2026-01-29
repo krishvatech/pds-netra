@@ -20,6 +20,7 @@ const severityOptions = [
 const statusOptions = [
   { label: 'All statuses', value: '' },
   { label: 'Open', value: 'OPEN' },
+  { label: 'Acknowledged', value: 'ACK' },
   { label: 'Closed', value: 'CLOSED' }
 ];
 
@@ -202,6 +203,16 @@ export default function AlertsPage() {
                     <span className="text-xs uppercase tracking-[0.2em] text-slate-300">{alert.severity_final}</span>
                   </div>
                 </div>
+                {alert.key_meta?.snapshot_url ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <img
+                      src={String(alert.key_meta.snapshot_url)}
+                      alt="Evidence snapshot"
+                      className="h-12 w-20 rounded border border-white/10 object-cover"
+                    />
+                    <div className="text-xs text-slate-400">Evidence</div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { createAlertAction, getAlertActions, getAlertDetail } from '@/lib/api';
-import type { AlertActionItem, AlertDetail } from '@/lib/types';
+import { createAlertAction, getAlertActions, getAlertDetail, getAlertDeliveries } from '@/lib/api';
+import type { AlertActionItem, AlertDelivery, AlertDetail } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EventsTable } from '@/components/tables/EventsTable';
@@ -19,6 +19,7 @@ export default function AlertDetailPage() {
 
   const [detail, setDetail] = useState<AlertDetail | null>(null);
   const [actions, setActions] = useState<AlertActionItem[]>([]);
+  const [deliveries, setDeliveries] = useState<AlertDelivery[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [actionType, setActionType] = useState('ACK');
@@ -32,9 +33,16 @@ export default function AlertDetailPage() {
           getAlertDetail(alertId),
           getAlertActions(alertId)
         ]);
+        let deliveriesResp: AlertDelivery[] = [];
+        try {
+          deliveriesResp = await getAlertDeliveries(alertId);
+        } catch {
+          deliveriesResp = [];
+        }
         if (mounted) {
           setDetail(d);
           setActions(actionsResp.items ?? []);
+          setDeliveries(deliveriesResp ?? []);
         }
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load alert');
@@ -146,6 +154,54 @@ export default function AlertDetailPage() {
                 <div className="mt-1 text-slate-100">{detail.summary}</div>
               </div>
             )}
+
+            {detail.key_meta?.snapshot_url && (
+              <div className="incident-card p-4 mb-4">
+                <div className="text-xs text-slate-400 uppercase tracking-[0.3em]">Evidence Snapshot</div>
+                <a
+                  href={String(detail.key_meta.snapshot_url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-amber-300 hover:underline"
+                >
+                  Open snapshot
+                </a>
+              </div>
+            )}
+
+            <div className="incident-card p-4 mb-4">
+              <div className="text-xs text-slate-400 uppercase tracking-[0.3em] mb-2">Delivery status</div>
+              {deliveries.length === 0 ? (
+                <div className="text-sm text-slate-400">No delivery records yet.</div>
+              ) : (
+                <div className="table-shell overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-400">
+                        <th className="py-2 pr-3">Channel</th>
+                        <th className="py-2 pr-3">Target</th>
+                        <th className="py-2 pr-3">Status</th>
+                        <th className="py-2 pr-3">Attempts</th>
+                        <th className="py-2 pr-3">Sent at</th>
+                        <th className="py-2 pr-3">Last error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deliveries.map((d) => (
+                        <tr key={d.id} className="border-t border-white/10">
+                          <td className="py-2 pr-3">{d.channel}</td>
+                          <td className="py-2 pr-3">{d.target}</td>
+                          <td className="py-2 pr-3">{d.status}</td>
+                          <td className="py-2 pr-3">{d.attempts}</td>
+                          <td className="py-2 pr-3">{formatUtc(d.sent_at ?? null)}</td>
+                          <td className="py-2 pr-3 text-xs text-slate-400">{d.last_error ?? '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
 
             <div className="incident-card p-4 mb-4">
               <div className="text-xs text-slate-400 uppercase tracking-[0.3em] mb-2">Incident actions</div>

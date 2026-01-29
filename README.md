@@ -5,6 +5,10 @@ Monorepo containing:
 - `pds-netra-backend/` (FastAPI + storage + REST APIs)
 - `pds-netra-dashboard/` (Next.js dashboard)
 
+## Documentation
+
+See `docs/README.md` for the full documentation pack.
+
 ## Local Mac setup (PoC)
 
 ### 1) MQTT broker (Mosquitto)

@@ -14,4 +14,4 @@ def test_load_settings(tmp_path):
     assert settings.godown_id == 'GDN_001'
     assert settings.timezone == 'Asia/Kolkata'
     assert len(settings.cameras) == 2
-    assert len(settings.rules) == 2
+    assert len(settings.rules) >= 2

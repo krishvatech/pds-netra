@@ -10,6 +10,7 @@ engine to create or update alerts.
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Tuple
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from ..models.godown import Godown, Camera
 from ..models.event import Event
 from ..schemas.event import EventIn
 from .rule_engine import apply_rules
+from .vehicle_gate import handle_anpr_hit_event
 
 
 def _point_in_polygon(x: float, y: float, polygon: List[Tuple[float, float]]) -> bool:
@@ -114,6 +116,18 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         inferred_zone = _infer_zone_id(event_in.bbox, camera.zones_json)
         if inferred_zone:
             meta["zone_id"] = inferred_zone
+    if event_in.event_type in {"ANPR_HIT", "FIRE_DETECTED"}:
+        existing = (
+            db.query(Event)
+            .filter(
+                Event.event_id_edge == event_in.event_id,
+                Event.event_type == event_in.event_type,
+                Event.godown_id == event_in.godown_id,
+            )
+            .first()
+        )
+        if existing:
+            return existing
     # Create Event instance
     event = Event(
         godown_id=event_in.godown_id,
@@ -131,6 +145,29 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
     db.add(event)
     db.commit()
     db.refresh(event)
+    if event.event_type == "ANPR_HIT":
+        role = (camera.role or "").strip().upper()
+        allow_gate_session = role in {"", "GATE_ANPR"}
+        if allow_gate_session:
+            try:
+                handle_anpr_hit_event(
+                    db,
+                    godown_id=event.godown_id,
+                    camera_id=event.camera_id,
+                    event_id=event.event_id_edge,
+                    occurred_at=event.timestamp_utc,
+                    meta=event.meta or {},
+                    image_url=event.image_url,
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+        else:
+            logging.getLogger("event_ingest").info(
+                "Ignoring ANPR gate session for non-gate camera: camera=%s role=%s",
+                event.camera_id,
+                role or "UNKNOWN",
+            )
     # Invoke rule engine
     apply_rules(db, event)
     return event

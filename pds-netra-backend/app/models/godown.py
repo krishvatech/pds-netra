@@ -36,5 +36,6 @@ class Camera(Base):
     rtsp_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     zones_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    modules_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
     godown: Mapped[Godown] = relationship("Godown", back_populates="cameras")

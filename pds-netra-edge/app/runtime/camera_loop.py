@@ -38,11 +38,17 @@ from ..rules.loader import (
 from ..rules.evaluator import RulesEvaluator
 from ..cv.anpr import AnprProcessor, PlateDetector
 from ..cv.tamper import analyze_frame_for_tamper, CameraTamperState
-from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig, CameraConfig, ZoneConfig
-from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces
+from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig, CameraConfig, ZoneConfig, CameraModules
+from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces, detect_faces
+from ..cv.fire_detection import FireDetectionProcessor
+from ..watchlist.manager import WatchlistManager
+from ..watchlist.processor import WatchlistProcessor
+from ..watchlist.sync_subscriber import WatchlistSyncSubscriber
+from ..presence.processor import AfterHoursPresenceProcessor, PresenceConfig
 from ..overrides import EdgeOverrideManager
 from ..snapshots import default_snapshot_writer
 from ..annotated_video import AnnotatedVideoWriter, LiveFrameWriter
+from .pipeline_router import select_pipeline
 
 
 @dataclass
@@ -63,6 +69,13 @@ class CameraHealthState:
     suppress_offline_events: bool = False
 
 
+class NullDetector:
+    """Lightweight detector that yields no detections (used for ANPR/health-only cameras)."""
+
+    def track(self, frame):  # type: ignore[no-untyped-def]
+        return []
+
+
 def start_camera_loops(
     settings: Settings,
     mqtt_client: MQTTClient,
@@ -81,6 +94,26 @@ def start_camera_loops(
     override_manager = EdgeOverrideManager(override_path, refresh_interval=5)
     if override_path:
         logger.info("Edge override path: %s", override_path)
+    watchlist_manager: Optional[WatchlistManager] = None
+    watchlist_subscriber: Optional[WatchlistSyncSubscriber] = None
+    if settings.watchlist and settings.watchlist.enabled:
+        backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
+        cache_dir = Path(
+            os.getenv(
+                "EDGE_WATCHLIST_DIR",
+                str(Path(__file__).resolve().parents[3] / "data" / "watchlist"),
+            )
+        )
+        watchlist_manager = WatchlistManager(
+            backend_url=backend_url,
+            cache_dir=cache_dir,
+            sync_interval_sec=settings.watchlist.sync_interval_sec,
+            auto_embed=settings.watchlist.auto_embed,
+            auth_token=os.getenv("EDGE_BACKEND_TOKEN"),
+        )
+        watchlist_manager.start()
+        watchlist_subscriber = WatchlistSyncSubscriber(settings, watchlist_manager)
+        watchlist_subscriber.start()
 
     # Load all rules once and convert into typed objects
     all_rules = load_rules(settings)
@@ -107,20 +140,29 @@ def start_camera_loops(
                     resolved_test,
                 )
 
+        pipeline_spec = select_pipeline(camera, settings)
+        modules = pipeline_spec.modules
+        logger.info("Camera routing: camera=%s role=%s modules=%s", camera.id, pipeline_spec.role, modules)
+
         # Main detector (animal / general)
-        try:
-            model_path = os.getenv("EDGE_YOLO_MODEL", "animal.pt")
-            detector = YoloDetector(
-                model_name=model_path,
-                device=device,
-                tracker_name=settings.tracking.tracker_name,
-                track_persist=settings.tracking.track_persist,
-                track_conf=settings.tracking.conf,
-                track_iou=settings.tracking.iou,
-            )
-        except Exception as exc:
-            logger.error("Error loading YOLO detector: %s", exc)
-            return
+        detector = None
+        need_general_detector = modules.animal_detection_enabled or modules.person_after_hours_enabled
+        if need_general_detector:
+            try:
+                model_path = os.getenv("EDGE_YOLO_MODEL", "animal.pt")
+                detector = YoloDetector(
+                    model_name=model_path,
+                    device=device,
+                    tracker_name=settings.tracking.tracker_name,
+                    track_persist=settings.tracking.track_persist,
+                    track_conf=settings.tracking.conf,
+                    track_iou=settings.tracking.iou,
+                )
+            except Exception as exc:
+                logger.error("Error loading YOLO detector: %s", exc)
+                return
+        else:
+            detector = NullDetector()
 
         # Prepare rules and zone polygons for this camera
         camera_rules = [r for r in all_rules if r.camera_id == camera.id]
@@ -139,19 +181,21 @@ def start_camera_loops(
             if c.strip()
         }
 
-        evaluator = RulesEvaluator(
-            camera_id=camera.id,
-            godown_id=settings.godown_id,
-            rules=camera_rules,
-            zone_polygons=zone_polygons,
-            timezone=settings.timezone,
-            alert_on_person=os.getenv("EDGE_ALERT_ON_PERSON", "false").lower() in {"1", "true", "yes"},
-            person_alert_cooldown_sec=int(os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10")),
-            alert_classes=[c.strip() for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",") if c.strip()],
-            alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
-            alert_min_conf=alert_min_conf,
-            zone_enforce=os.getenv("EDGE_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
-        )
+        evaluator: Optional[RulesEvaluator] = None
+        if modules.animal_detection_enabled:
+            evaluator = RulesEvaluator(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                rules=camera_rules,
+                zone_polygons=zone_polygons,
+                timezone=settings.timezone,
+                alert_on_person=os.getenv("EDGE_ALERT_ON_PERSON", "false").lower() in {"1", "true", "yes"},
+                person_alert_cooldown_sec=int(os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10")),
+                alert_classes=[c.strip() for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",") if c.strip()],
+                alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
+                alert_min_conf=alert_min_conf,
+                zone_enforce=os.getenv("EDGE_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
+            )
 
         # Bag movement processor (optional)
         bag_rules = [
@@ -160,7 +204,7 @@ def start_camera_loops(
             if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))
         ]
         bag_processor = None
-        if bag_rules:
+        if bag_rules and modules.animal_detection_enabled:
             bag_processor = BagMovementProcessor(
                 camera_id=camera.id,
                 godown_id=settings.godown_id,
@@ -181,9 +225,33 @@ def start_camera_loops(
         anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
         anpr_processor: Optional[AnprProcessor] = None
 
-        if settings.anpr is not None and settings.anpr.enabled:
+        if settings.anpr is not None and settings.anpr.enabled and modules.anpr_enabled:
             anpr_cfg = settings.anpr
             try:
+                gate_line = anpr_cfg.gate_line
+                inside_side = anpr_cfg.inside_side
+                dedup_interval = anpr_cfg.dedup_interval_sec
+                direction_inference = "LINE_CROSSING"
+                if camera.anpr is not None:
+                    if camera.anpr.gate_line is not None:
+                        gate_line = camera.anpr.gate_line
+                    if camera.anpr.inside_side is not None:
+                        inside_side = camera.anpr.inside_side
+                    if camera.anpr.direction_inference:
+                        direction_inference = camera.anpr.direction_inference.strip().upper()
+                    if camera.anpr.anpr_event_cooldown_seconds is not None:
+                        dedup_interval = camera.anpr.anpr_event_cooldown_seconds
+                    elif camera.anpr.anpr_event_cooldown_seconds is None:
+                        dedup_interval = 10
+                if camera.role_explicit and str(camera.role).strip().upper() == "GATE_ANPR" and camera.anpr is None:
+                    dedup_interval = 10
+                if not modules.gate_entry_exit_enabled:
+                    direction_inference = "SESSION_HEURISTIC"
+                if direction_inference not in {"LINE_CROSSING", "SESSION_HEURISTIC"}:
+                    direction_inference = "LINE_CROSSING"
+                if direction_inference == "SESSION_HEURISTIC":
+                    gate_line = None
+
                 plate_detector = PlateDetector(
                     YoloDetector(
                         model_name=anpr_cfg.model_path,
@@ -215,7 +283,10 @@ def start_camera_loops(
                     save_csv=anpr_cfg.save_csv,
                     save_crops_dir=anpr_cfg.save_crops_dir,
                     save_crops_max=anpr_cfg.save_crops_max,
-                    dedup_interval_sec=anpr_cfg.dedup_interval_sec,
+                    dedup_interval_sec=dedup_interval,
+                    gate_line=gate_line,
+                    inside_side=inside_side,
+                    direction_max_gap_sec=anpr_cfg.direction_max_gap_sec,
                 )
             except Exception as exc:
                 logger.error("Failed to initialize ANPR processor for camera %s: %s", camera.id, exc)
@@ -232,10 +303,12 @@ def start_camera_loops(
         state = CameraHealthState()
         camera_states[camera.id] = state
 
+        face_watchlist_enabled = modules.animal_detection_enabled or modules.person_after_hours_enabled
+
         # Face recognition (optional)
         face_processor: Optional[FaceRecognitionProcessor] = None
         fr_cfg = settings.face_recognition
-        if fr_cfg is not None and fr_cfg.enabled:
+        if fr_cfg is not None and fr_cfg.enabled and face_watchlist_enabled:
             fr_cam_cfg: Optional[FaceRecognitionCameraConfig] = None
             for cam_cfg in fr_cfg.cameras:
                 if cam_cfg.camera_id == camera.id:
@@ -257,6 +330,51 @@ def start_camera_loops(
                     logger.error("Failed to initialize face recognition for camera %s: %s", camera.id, exc)
                     face_processor = None
 
+        watchlist_processor: Optional[WatchlistProcessor] = None
+        if watchlist_manager is not None and settings.watchlist and settings.watchlist.enabled and face_watchlist_enabled:
+            watchlist_processor = WatchlistProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                manager=watchlist_manager,
+                min_confidence=settings.watchlist.min_match_confidence,
+                cooldown_seconds=settings.watchlist.cooldown_seconds,
+                zone_polygons=zone_polygons,
+                zone_enforce=os.getenv("EDGE_WATCHLIST_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
+                http_fallback=settings.watchlist.http_fallback,
+            )
+
+        presence_processor: Optional[AfterHoursPresenceProcessor] = None
+        if settings.after_hours_presence and settings.after_hours_presence.enabled and modules.person_after_hours_enabled:
+            ah_cfg = settings.after_hours_presence
+            presence_processor = AfterHoursPresenceProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                config=PresenceConfig(
+                    enabled=ah_cfg.enabled,
+                    day_start=ah_cfg.day_start,
+                    day_end=ah_cfg.day_end,
+                    emit_only_after_hours=ah_cfg.emit_only_after_hours,
+                    person_interval_sec=ah_cfg.person_interval_sec,
+                    vehicle_interval_sec=ah_cfg.vehicle_interval_sec,
+                    person_cooldown_sec=ah_cfg.person_cooldown_sec,
+                    vehicle_cooldown_sec=ah_cfg.vehicle_cooldown_sec,
+                    min_confidence=ah_cfg.min_confidence,
+                    person_classes=ah_cfg.person_classes,
+                    vehicle_classes=ah_cfg.vehicle_classes,
+                    http_fallback=ah_cfg.http_fallback,
+                    timezone=settings.timezone,
+                ),
+            )
+
+        fire_processor: Optional[FireDetectionProcessor] = None
+        if settings.fire_detection and settings.fire_detection.enabled and modules.fire_detection_enabled:
+            fire_processor = FireDetectionProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                config=settings.fire_detection,
+                zone_polygons=zone_polygons,
+            )
+
         snapshot_writer = default_snapshot_writer()
 
         def _is_file_source(source_val: str) -> bool:
@@ -269,15 +387,19 @@ def start_camera_loops(
         def camera_runner(
             camera_obj,
             default_source_local: str,
-            evaluator_local: RulesEvaluator,
+            evaluator_local: Optional[RulesEvaluator],
             anpr_processor_local: Optional[AnprProcessor],
             face_processor_local: Optional[FaceRecognitionProcessor],
+            watchlist_processor_local: Optional[WatchlistProcessor],
+            presence_processor_local: Optional[AfterHoursPresenceProcessor],
+            fire_processor_local: Optional[FireDetectionProcessor],
             health_cfg_local: HealthConfig,
             state_local: CameraHealthState,
-            detector_local: YoloDetector,
+            detector_local,
             snapshot_writer_local,
             detect_classes_local: set[str],
             bag_processor_local,
+            health_enabled_local: bool,
         ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
             live_writer: Optional[LiveFrameWriter] = None
@@ -285,8 +407,8 @@ def start_camera_loops(
             last_zone_sync = 0.0
 
             zone_sync_interval = float(os.getenv("EDGE_ZONES_SYNC_INTERVAL_SEC", "15"))
-            # IMPORTANT FIX: default backend URL should match your backend (most setups use 8000)
-            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+            # IMPORTANT FIX: default backend URL should match your backend (most setups use 8001)
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
 
             if state_local.started_at_utc is None:
                 state_local.started_at_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
@@ -403,8 +525,8 @@ def start_camera_loops(
                 state_local.is_online = True
                 state_local.offline_reported = False
 
-                # Tamper analysis (skip in test mode)
-                if frame is not None and current_state["mode"] != "test":
+                # Tamper analysis (skip in test mode or when health is disabled)
+                if health_enabled_local and frame is not None and current_state["mode"] != "test":
                     try:
                         tamper_candidates = analyze_frame_for_tamper(
                             camera_id=camera_obj.id,
@@ -468,47 +590,97 @@ def start_camera_loops(
                         )
 
                 # Evaluate detections
-                try:
-                    meta_extra = None
-                    if current_state["mode"] == "test" and current_state["run_id"]:
-                        meta_extra = {"run_id": str(current_state["run_id"])}
-                    evaluator_local.process_detections(
-                        objects,
-                        now,
-                        mqtt_client,
-                        frame=frame,
-                        snapshotter=snapshotter,
-                        instant_only=current_state["mode"] == "test",
-                        meta_extra=meta_extra,
-                    )
-                except Exception as exc:
-                    logging.getLogger("camera_loop").exception(
-                        "Rule evaluation failed for camera %s: %s", camera_obj.id, exc
-                    )
+                if evaluator_local is not None:
+                    try:
+                        meta_extra = None
+                        if current_state["mode"] == "test" and current_state["run_id"]:
+                            meta_extra = {"run_id": str(current_state["run_id"])}
+                        evaluator_local.process_detections(
+                            objects,
+                            now,
+                            mqtt_client,
+                            frame=frame,
+                            snapshotter=snapshotter,
+                            instant_only=current_state["mode"] == "test",
+                            meta_extra=meta_extra,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Rule evaluation failed for camera %s: %s", camera_obj.id, exc
+                        )
 
-                # ANPR + Face
+                if presence_processor_local is not None:
+                    try:
+                        presence_processor_local.process(
+                            objects,
+                            now,
+                            mqtt_client,
+                            frame=frame,
+                            snapshotter=snapshotter,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "After-hours presence processing failed for camera %s: %s", camera_obj.id, exc
+                        )
+
+                if fire_processor_local is not None:
+                    try:
+                        fire_processor_local.process(
+                            frame,
+                            now,
+                            mqtt_client,
+                            snapshotter=snapshotter,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Fire detection failed for camera %s: %s", camera_obj.id, exc
+                        )
+
+                # ANPR + Face + Watchlist
                 face_overlays: list[FaceOverlay] = []
                 anpr_results: Any = []
+                faces: list[tuple[list[int], list[float]]] = []
 
                 if anpr_processor_local is not None and frame is not None:
                     try:
-                        anpr_results = anpr_processor_local.process_frame(frame, now, mqtt_client) or []
+                        anpr_results = anpr_processor_local.process_frame(frame, now, mqtt_client, snapshotter=snapshotter) or []
                     except Exception as exc:
                         logging.getLogger("camera_loop").exception(
                             "ANPR processing failed for camera %s: %s", camera_obj.id, exc
                         )
                         anpr_results = []
 
-                if face_processor_local is not None and frame is not None:
+                if frame is not None and (face_processor_local is not None or watchlist_processor_local is not None):
                     try:
-                        face_overlays = face_processor_local.process_frame(frame, now, mqtt_client) or []
+                        faces = detect_faces(frame)
                     except Exception as exc:
+                        faces = []
                         logging.getLogger("camera_loop").exception(
-                            "Face recognition failed for camera %s: %s", camera_obj.id, exc
+                            "Face detection failed for camera %s: %s", camera_obj.id, exc
                         )
-                        face_overlays = []
-                    known_faces = sum(1 for face in face_overlays if face.status == "KNOWN")
-                    unknown_faces = sum(1 for face in face_overlays if face.status == "UNKNOWN")
+                    if watchlist_processor_local is not None:
+                        try:
+                            watchlist_processor_local.process_faces(
+                                faces,
+                                now,
+                                mqtt_client,
+                                snapshotter=snapshotter,
+                                frame=frame,
+                            )
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").exception(
+                                "Watchlist processing failed for camera %s: %s", camera_obj.id, exc
+                            )
+                    if face_processor_local is not None:
+                        try:
+                            face_overlays = face_processor_local.process_faces(faces, now, mqtt_client) or []
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").exception(
+                                "Face recognition failed for camera %s: %s", camera_obj.id, exc
+                            )
+                            face_overlays = []
+                        known_faces = sum(1 for face in face_overlays if face.status == "KNOWN")
+                        unknown_faces = sum(1 for face in face_overlays if face.status == "UNKNOWN")
 
                 if os.getenv("EDGE_LOG_FRAME_STATS", "true").lower() in {"1", "true", "yes"}:
                     logging.getLogger("camera_loop").info(
@@ -552,7 +724,7 @@ def start_camera_loops(
                     # Face overlays
                     for face in face_overlays:
                         if face.bbox:
-                            label = face.name if face.status == "KNOWN" else "Face"
+                            label = face.person_name if face.status == "KNOWN" and face.person_name else "Face"
                             dets.append((label, float(face.confidence or 1.0), face.bbox, -1))
 
                     # Draw zones
@@ -628,7 +800,7 @@ def start_camera_loops(
             current_source, current_mode, current_run_id = _resolve_source_local()
 
             while True:
-                state_local.suppress_offline_events = False
+                state_local.suppress_offline_events = not health_enabled_local
                 current_state["mode"] = current_mode
                 current_state["run_id"] = current_run_id
 
@@ -755,12 +927,16 @@ def start_camera_loops(
                 evaluator,
                 anpr_processor,
                 face_processor,
+                watchlist_processor,
+                presence_processor,
+                fire_processor,
                 health_cfg,
                 state,
                 detector,
                 snapshot_writer,
                 detect_classes,
                 bag_processor,
+                modules.health_monitoring_enabled,
             ),
             name=f"Pipeline-{camera.id}",
             daemon=True,
@@ -775,7 +951,7 @@ def start_camera_loops(
     if enable_discovery:
 
         def _discover_loop() -> None:
-            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
             try:
                 interval = float(os.getenv("EDGE_CAMERA_DISCOVERY_INTERVAL_SEC", "20"))
             except Exception:
@@ -812,7 +988,22 @@ def start_camera_loops(
                         with camera_lock:
                             if cam_id in started_cameras:
                                 continue
-                        new_camera = CameraConfig(id=cam_id, rtsp_url=rtsp_url, zones=zones)
+                        role = str(cam.get("role") or "SECURITY").strip().upper()
+                        modules_cfg = None
+                        modules_raw = cam.get("modules")
+                        if isinstance(modules_raw, dict):
+                            try:
+                                modules_cfg = CameraModules(**modules_raw)
+                            except Exception:
+                                modules_cfg = None
+                        new_camera = CameraConfig(
+                            id=cam_id,
+                            rtsp_url=rtsp_url,
+                            role=role,
+                            role_explicit=bool(cam.get("role")),
+                            modules=modules_cfg,
+                            zones=zones,
+                        )
                         settings.cameras.append(new_camera)
                         _start_camera(new_camera)
                 except Exception:

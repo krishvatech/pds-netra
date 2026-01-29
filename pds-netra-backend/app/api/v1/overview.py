@@ -16,6 +16,7 @@ from sqlalchemy import func
 from ...core.db import get_db
 from ...models.godown import Godown, Camera
 from ...models.event import Alert, Event
+from ...models.vehicle_gate_session import VehicleGateSession
 
 
 router = APIRouter(prefix="/api/v1", tags=["overview"])
@@ -45,6 +46,12 @@ def overview(db: Session = Depends(get_db)) -> dict:
         .scalar()
         or 0
     )
+    open_gate_sessions = (
+        db.query(func.count(VehicleGateSession.id))
+        .filter(VehicleGateSession.status == "OPEN")
+        .scalar()
+        or 0
+    )
 
     # Alerts by type (open alerts)
     alerts_by_type: Dict[str, int] = {}
@@ -69,6 +76,82 @@ def overview(db: Session = Depends(get_db)) -> dict:
         key = ts.strftime("%b %d")
         counts[key] = counts.get(key, 0) + 1
     alerts_over_time = [{"t": k, "count": v} for k, v in sorted(counts.items())]
+
+    now = datetime.utcnow()
+    since_24h = now - timedelta(hours=24)
+    after_hours_person_24h = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "AFTER_HOURS_PERSON_PRESENCE",
+            Alert.start_time >= since_24h,
+        )
+        .scalar()
+        or 0
+    )
+    after_hours_vehicle_24h = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "AFTER_HOURS_VEHICLE_PRESENCE",
+            Alert.start_time >= since_24h,
+        )
+        .scalar()
+        or 0
+    )
+    after_hours_person_7d = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "AFTER_HOURS_PERSON_PRESENCE",
+            Alert.start_time >= since,
+        )
+        .scalar()
+        or 0
+    )
+    after_hours_vehicle_7d = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "AFTER_HOURS_VEHICLE_PRESENCE",
+            Alert.start_time >= since,
+        )
+        .scalar()
+        or 0
+    )
+
+    animal_intrusions_24h = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "ANIMAL_INTRUSION",
+            Alert.start_time >= since_24h,
+        )
+        .scalar()
+        or 0
+    )
+    animal_intrusions_7d = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "ANIMAL_INTRUSION",
+            Alert.start_time >= since,
+        )
+        .scalar()
+        or 0
+    )
+    fire_alerts_24h = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "FIRE_DETECTED",
+            Alert.start_time >= since_24h,
+        )
+        .scalar()
+        or 0
+    )
+    fire_alerts_7d = (
+        db.query(func.count(Alert.id))
+        .filter(
+            Alert.alert_type == "FIRE_DETECTED",
+            Alert.start_time >= since,
+        )
+        .scalar()
+        or 0
+    )
 
     # Godown summary cards
     godown_rows = db.query(Godown).order_by(Godown.id.asc()).all()
@@ -126,6 +209,15 @@ def overview(db: Session = Depends(get_db)) -> dict:
             "cameras_with_issues": 0,
             "alerts_by_type": alerts_by_type,
             "alerts_over_time": alerts_over_time,
+            "after_hours_person_24h": after_hours_person_24h,
+            "after_hours_vehicle_24h": after_hours_vehicle_24h,
+            "after_hours_person_7d": after_hours_person_7d,
+            "after_hours_vehicle_7d": after_hours_vehicle_7d,
+            "animal_intrusions_24h": animal_intrusions_24h,
+            "animal_intrusions_7d": animal_intrusions_7d,
+            "fire_alerts_24h": fire_alerts_24h,
+            "fire_alerts_7d": fire_alerts_7d,
+            "open_gate_sessions": open_gate_sessions,
         },
         "godowns": godown_items,
     }

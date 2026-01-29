@@ -15,11 +15,22 @@ import type {
   DispatchIssueItem,
   DispatchTraceItem,
   AlertActionItem,
+  AlertStatus,
   Severity,
   TestRunDetail,
-  TestRunItem
+  TestRunItem,
+  AfterHoursPolicy,
+  AfterHoursPolicyAudit,
+  WatchlistPerson,
+  WatchlistMatchEvent,
+  VehicleGateSession,
+  AlertDelivery,
+  NotificationEndpoint,
+  AlertReport,
+  CameraInfo,
+  CameraModules
 } from './types';
-import { getToken } from './auth';
+import { getToken, getUser } from './auth';
 
 const BASE_URL = '';// Prefer Next.js rewrites (/api/...) to avoid CORS in local dev.
 
@@ -39,12 +50,17 @@ function buildQuery(query?: Query): string {
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const token = typeof window !== 'undefined' ? getToken() : null;
+  const user = typeof window !== 'undefined' ? getUser() : null;
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(init.headers ?? {})
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (user?.role) headers['X-User-Role'] = user.role;
+  if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
+  if (user?.district) headers['X-User-District'] = String(user.district);
+  if (user?.name) headers['X-User-Name'] = String(user.name);
 
   const resp = await fetch(url, {
     ...init,
@@ -63,7 +79,12 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const token = typeof window !== 'undefined' ? getToken() : null;
+  const user = typeof window !== 'undefined' ? getUser() : null;
   const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  if (user?.role) headers['X-User-Role'] = user.role;
+  if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
+  if (user?.district) headers['X-User-District'] = String(user.district);
+  if (user?.name) headers['X-User-Name'] = String(user.name);
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -101,6 +122,15 @@ export async function getGodownDetail(godownId: string): Promise<GodownDetail> {
   return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`);
 }
 
+export async function getCameras(params?: {
+  godown_id?: string;
+  role?: string;
+  is_active?: boolean;
+}): Promise<CameraInfo[]> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/cameras${q}`);
+}
+
 export async function getCameraZones(cameraId: string): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
   return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones`);
 }
@@ -122,7 +152,8 @@ export async function createCamera(payload: {
   role?: string;
   rtsp_url: string;
   is_active?: boolean;
-}): Promise<{ camera_id: string; godown_id: string; label?: string | null; role?: string | null; rtsp_url?: string | null; is_active?: boolean | null }> {
+  modules?: CameraModules;
+}): Promise<CameraInfo> {
   return apiFetch('/api/v1/cameras', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -131,8 +162,8 @@ export async function createCamera(payload: {
 
 export async function updateCamera(
   cameraId: string,
-  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean }
-): Promise<{ camera_id: string; godown_id: string; label?: string | null; role?: string | null; rtsp_url?: string | null; is_active?: boolean | null }> {
+  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean; modules?: CameraModules }
+): Promise<CameraInfo> {
   return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
@@ -157,7 +188,7 @@ export async function getAlerts(params?: {
   district?: string;
   alert_type?: string;
   severity?: Severity;
-  status?: 'OPEN' | 'CLOSED';
+  status?: AlertStatus;
   date_from?: string;
   date_to?: string;
   page?: number;
@@ -173,6 +204,73 @@ export async function getAlertDetail(alertId: string): Promise<AlertDetail> {
 
 export async function getAlertActions(alertId: string): Promise<{ items: AlertActionItem[]; total: number }> {
   return apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}/actions`);
+}
+
+export async function getAlertDeliveries(alertId: string): Promise<AlertDelivery[]> {
+  return apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}/deliveries`);
+}
+
+export async function getNotificationEndpoints(params?: {
+  scope?: string;
+  godown_id?: string;
+  channel?: string;
+}): Promise<NotificationEndpoint[]> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/notification/endpoints${q}`);
+}
+
+export async function createNotificationEndpoint(payload: {
+  scope: 'HQ' | 'GODOWN' | string;
+  godown_id?: string | null;
+  channel: 'WHATSAPP' | 'EMAIL' | string;
+  target: string;
+  is_enabled?: boolean;
+}): Promise<NotificationEndpoint> {
+  return apiFetch('/api/v1/notification/endpoints', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateNotificationEndpoint(
+  endpointId: string,
+  payload: { scope?: string; godown_id?: string | null; channel?: string; target?: string; is_enabled?: boolean }
+): Promise<NotificationEndpoint> {
+  return apiFetch(`/api/v1/notification/endpoints/${encodeURIComponent(endpointId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteNotificationEndpoint(endpointId: string): Promise<{ status: string; id: string }> {
+  return apiFetch(`/api/v1/notification/endpoints/${encodeURIComponent(endpointId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function getHqReports(limit = 30): Promise<AlertReport[]> {
+  return apiFetch(`/api/v1/reports/hq?limit=${encodeURIComponent(String(limit))}`);
+}
+
+export async function generateHqReport(period: '24h' | '1h' = '24h'): Promise<AlertReport> {
+  return apiFetch(`/api/v1/reports/hq/generate?period=${encodeURIComponent(period)}`, { method: 'POST' });
+}
+
+export async function getHqReportDeliveries(reportId: string): Promise<AlertDelivery[]> {
+  return apiFetch(`/api/v1/reports/hq/${encodeURIComponent(reportId)}/deliveries`);
+}
+
+export async function getVehicleGateSessions(params?: {
+  status?: string;
+  godown_id?: string;
+  q?: string;
+  date_from?: string;
+  date_to?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<Paginated<VehicleGateSession>> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/vehicle-gate-sessions${q}`);
 }
 
 export async function createAlertAction(alertId: string, payload: { action_type: string; actor?: string; note?: string }): Promise<AlertActionItem> {
@@ -283,6 +381,33 @@ export async function getRules(params?: {
   return apiFetch(`/api/v1/rules${q}`);
 }
 
+export async function getAfterHoursPolicy(godownId: string): Promise<AfterHoursPolicy> {
+  return apiFetch(`/api/v1/after-hours/policies/${encodeURIComponent(godownId)}`);
+}
+
+export async function getAfterHoursPolicies(params?: { godown_id?: string }): Promise<{ items: AfterHoursPolicy[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/after-hours/policies${q}`);
+}
+
+export async function getAfterHoursPolicyAudit(
+  godownId: string,
+  params?: { limit?: number }
+): Promise<{ items: AfterHoursPolicyAudit[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/after-hours/policies/${encodeURIComponent(godownId)}/audit${q}`);
+}
+
+export async function updateAfterHoursPolicy(
+  godownId: string,
+  payload: Partial<AfterHoursPolicy>
+): Promise<AfterHoursPolicy> {
+  return apiFetch(`/api/v1/after-hours/policies/${encodeURIComponent(godownId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function createRule(payload: Partial<RuleItem> & {
   godown_id: string;
   camera_id: string;
@@ -349,4 +474,47 @@ export async function getTestRunSnapshots(
 ): Promise<{ items: string[]; page: number; page_size: number; total: number }> {
   const q = params ? buildQuery(params as Record<string, any>) : '';
   return apiFetch(`/api/v1/test-runs/${encodeURIComponent(runId)}/snapshots/${encodeURIComponent(cameraId)}${q}`);
+}
+
+export async function getWatchlistPersons(params?: {
+  status?: string;
+  q?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<Paginated<WatchlistPerson>> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/watchlist/persons${q}`);
+}
+
+export async function createWatchlistPerson(form: FormData): Promise<WatchlistPerson> {
+  return apiFetchForm('/api/v1/watchlist/persons', form);
+}
+
+export async function updateWatchlistPerson(personId: string, payload: Partial<WatchlistPerson>): Promise<WatchlistPerson> {
+  return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deactivateWatchlistPerson(personId: string): Promise<WatchlistPerson> {
+  return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}/deactivate`, {
+    method: 'POST'
+  });
+}
+
+export async function getWatchlistPerson(personId: string): Promise<WatchlistPerson> {
+  return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}`);
+}
+
+export async function addWatchlistImages(personId: string, form: FormData): Promise<WatchlistPerson> {
+  return apiFetchForm(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}/images`, form);
+}
+
+export async function getWatchlistMatches(
+  personId: string,
+  params?: { page?: number; page_size?: number; date_from?: string; date_to?: string }
+): Promise<Paginated<WatchlistMatchEvent>> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}/matches${q}`);
 }
