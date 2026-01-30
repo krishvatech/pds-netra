@@ -29,21 +29,44 @@ from .notification_outbox import NotificationOutbox  # noqa: E402,F401
 from .alert_report import AlertReport  # noqa: E402,F401
 from .vehicle_gate_session import VehicleGateSession  # noqa: E402,F401
 from .authorized_user import AuthorizedUser  # noqa: E402,F401
+from .godown import Godown, Camera  # noqa: E402,F401
+from .event import Event, Alert, AlertEventLink  # noqa: E402,F401
+from .dispatch_issue import DispatchIssue  # noqa: E402,F401
 
 __all__ = [
     "Base",
+
+    # Rules / Policies
     "Rule",
-    "AlertAction",
     "AfterHoursPolicy",
     "AfterHoursPolicyAudit",
+
+    # Alerts / Events
+    "Alert",
+    "Event",
+    "AlertEventLink",
+    "AlertAction",
+    "AlertReport",
+
+    # Watchlist / Face
     "WatchlistPerson",
     "WatchlistPersonImage",
     "WatchlistPersonEmbedding",
     "FaceMatchEvent",
+
+    # Notifications
     "NotificationRecipient",
     "NotificationEndpoint",
     "NotificationOutbox",
-    "AlertReport",
+
+    # Godown / Camera
+    "Godown",
+    "Camera",
+
+    # Vehicle
     "VehicleGateSession",
+
+    # Users / Dispatch
     "AuthorizedUser",
+    "DispatchIssue",
 ]
