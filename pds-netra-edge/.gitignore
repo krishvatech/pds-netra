@@ -24,3 +24,6 @@ runs/
 
 # OS
 .DS_Store
+
+# Ignore runtime cache file
+pds-netra-edge/data/rules_cache.json

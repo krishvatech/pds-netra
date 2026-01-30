@@ -1,6 +1,11 @@
-godown_id: GDN_001
+godown_id: GDN_002
 # godown_id: DUMMY
 timezone: Asia/Kolkata
+
+# NOTE:
+# EDGE_CAMERAS_SOURCE=backend and EDGE_RULES_SOURCE=backend are set in .env,
+# so cameras and rules are fetched from the backend (dynamic godown/cameras).
+# Keep this file for global defaults only.
 
 # MQTT connection details. These values can be overridden via environment
 # variables (MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USERNAME, MQTT_PASSWORD).
@@ -26,11 +31,14 @@ anpr:
   ocr_min_conf: 0.2
   ocr_debug: true
   validate_india: true
+  allowed_start: "06:00"
+  allowed_end: "22:00"
+  alert_on_unauthorized: true
+  alert_on_outside_time: true
   show_invalid: false
   registered_file: null
   dedup_interval_sec: 60
-  save_csv: "./anpr_debug.csv"
-  direction_max_gap_sec: 120
+  save_csv: "../pds-netra-backend/data/anpr_csv/{godown_id}/anpr_debug.csv"
   # save_crops_dir: "./././anpr_crops"
   # save_crops_max: 15
 
@@ -39,144 +47,6 @@ tracking:
   track_persist: true
   conf: 0.25
   iou: 0.5
-
-cameras:
-  - id: CAM_GATE_1
-    role: GATE_ANPR
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
-    # test_video: "./data/truck_road.mp4"
-    # test_video: "./data/gate_1.mp4"
-    modules:
-      anpr_enabled: true
-      gate_entry_exit_enabled: true
-      person_after_hours_enabled: false
-      animal_detection_enabled: false
-      fire_detection_enabled: false
-      health_monitoring_enabled: true
-    anpr:
-      gate_line:
-        - [960, 0]
-        - [960, 1080]
-      inside_side: "POSITIVE"
-      direction_inference: "LINE_CROSSING"
-      anpr_event_cooldown_seconds: 10
-    # Zones required for ANPR
-    zones:
-      - id: gate_outer
-        polygon:
-          - [0, 0]
-          - [1920, 0]
-          - [1920, 1080]
-          - [0, 1080]
-      - id: gate_inner
-        polygon:
-          - [0, 0]
-          - [640, 0]
-          - [640, 384]
-          - [0, 384]
-    health:
-      enabled: true
-      no_frame_timeout_seconds: 15
-      min_fps: 3.0
-      low_light_threshold: 25
-      black_frame_threshold: 10
-      low_light_consecutive_frames: 30
-      uniform_std_threshold: 8
-      blur_threshold: 50.0
-      blackout_drop_ratio: 0.55
-      blackout_min_baseline: 25.0
-      moved_diff_threshold: 0.35
-      moved_consecutive_frames: 10
-      cooldown_seconds: 60
-      snapshot_on_tamper: true
-      blocked_consecutive_frames: 3
-
-  - id: CAM_AISLE_3
-    role: SECURITY
-    rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
-    # test_video: "./data/truck_road.mp4"
-    # test_video: "./data/aisle_3.mp4"
-    modules:
-      anpr_enabled: false
-      gate_entry_exit_enabled: false
-      person_after_hours_enabled: true
-      animal_detection_enabled: true
-      fire_detection_enabled: false
-      health_monitoring_enabled: true
-    zones:
-      - id: aisle_zone3
-        polygon:
-          - [50, 50]
-          - [500, 50]
-          - [500, 350]
-          - [50, 350]
-    health:
-      enabled: true
-      no_frame_timeout_seconds: 15
-      min_fps: 3.0
-      low_light_threshold: 25
-      black_frame_threshold: 5.0
-      low_light_consecutive_frames: 10
-      uniform_std_threshold: 6.0
-      blur_threshold: 50.0
-      blackout_drop_ratio: 0.55
-      blackout_min_baseline: 25.0
-      moved_diff_threshold: 0.35
-      moved_consecutive_frames: 10
-      cooldown_seconds: 60
-      snapshot_on_tamper: false
-
-rules:
-  - id: RULE_NO_PERSON_ALWAYS_GATE
-    type: NO_PERSON_DURING
-    camera_id: CAM_GATE_1
-    zone_id: all
-    start: "00:00"
-    end: "23:59"
-  - id: RULE_ANIMAL_INTRUSION_GATE
-    type: ANIMAL_FORBIDDEN
-    camera_id: CAM_GATE_1
-    zone_id: zone_1
-  - id: RULE_LOITERING_GATE
-    type: LOITERING
-    camera_id: CAM_GATE_1
-    zone_id: all
-    threshold_seconds: 120
-  - id: RULE_BAG_MONITOR_AISLE
-    type: BAG_MONITOR
-    camera_id: CAM_AISLE_3
-    zone_id: aisle_zone3
-    cooldown_seconds: 60
-  - id: RULE_BAG_ODD_HOURS_AISLE
-    type: BAG_ODD_HOURS
-    camera_id: CAM_AISLE_3
-    zone_id: aisle_zone3
-    start_local: "20:00"
-    end_local: "06:00"
-    cooldown_seconds: 60
-  - id: RULE_BAG_UNPLANNED_AISLE
-    type: BAG_UNPLANNED
-    camera_id: CAM_AISLE_3
-    zone_id: aisle_zone3
-    require_active_dispatch_plan: true
-    cooldown_seconds: 60
-  - id: RULE_BAG_TALLY_MISMATCH_AISLE
-    type: BAG_TALLY_MISMATCH
-    camera_id: CAM_AISLE_3
-    zone_id: aisle_zone3
-    allowed_overage_percent: 10
-    cooldown_seconds: 120
-  - id: RULE_NO_PERSON_ALWAYS_AISLE
-    type: NO_PERSON_DURING
-    camera_id: CAM_AISLE_3
-    zone_id: all
-    start: "00:00"
-    end: "23:59"
-  - id: RULE_LOITERING_AISLE
-    type: LOITERING
-    camera_id: CAM_AISLE_3
-    zone_id: all
-    threshold_seconds: 120
 
 # Face recognition configuration (optional)
 face_recognition:

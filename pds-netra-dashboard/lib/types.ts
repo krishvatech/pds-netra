@@ -467,3 +467,46 @@ export interface UpdateAuthorizedUserPayload {
   godown_id?: string | null;
   is_active?: boolean;
 }
+// ------------------------------------------------------------------
+// ANPR (CSV-first PoC) types
+// Backend: GET /api/v1/anpr/csv-events
+// ------------------------------------------------------------------
+export type AnprMatchStatus =
+  | 'VERIFIED'
+  | 'NOT_VERIFIED'
+  | 'BLACKLIST'
+  | 'DETECTED'
+  | 'DEDUP'
+  | 'GUESSED'
+  | 'UNKNOWN'
+  | string;
+
+export interface AnprCsvEvent {
+  timestamp_utc: string;
+  timestamp_local: string;
+  camera_id: string;
+  zone_id?: string | null;
+  plate_text: string;
+  match_status: AnprMatchStatus;
+  event_type: string;
+  det_conf: number;
+  ocr_conf: number;
+  combined_conf: number;
+  bbox?: number[] | null;
+}
+
+export interface AnprCsvEventsResponse {
+  source: {
+    csv_path: string;
+    csv_mtime_utc: string;
+  };
+  summary: {
+    total: number;
+    verified: number;
+    not_verified: number;
+    blacklist: number;
+    dedup: number;
+    last_seen_local: string | null;
+  };
+  events: AnprCsvEvent[];
+}
