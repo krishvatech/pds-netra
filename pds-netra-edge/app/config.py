@@ -58,7 +58,7 @@ class CameraConfig:
     anpr: Optional[CameraAnprConfig] = None
     zones: List[ZoneConfig] = field(default_factory=list)
     # Health configuration for the camera. If None, defaults will be applied.
-    health: Optional['HealthConfig'] = None
+    health: Optional["HealthConfig"] = None
 
 
 @dataclass
@@ -103,6 +103,7 @@ class FaceRecognitionConfig:
     dedup_interval_seconds: int = 60
     cameras: List[FaceRecognitionCameraConfig] = field(default_factory=list)
 
+
 @dataclass
 class TrackingConfig:
     """Tracking configuration for object IDs."""
@@ -136,7 +137,9 @@ class AfterHoursPresenceConfig:
     vehicle_cooldown_sec: int = 10
     min_confidence: float = 0.0
     person_classes: List[str] = field(default_factory=lambda: ["person"])
-    vehicle_classes: List[str] = field(default_factory=lambda: ["car", "truck", "bus", "motorcycle", "bicycle", "vehicle"])
+    vehicle_classes: List[str] = field(
+        default_factory=lambda: ["car", "truck", "bus", "motorcycle", "bicycle", "vehicle"]
+    )
     http_fallback: bool = False
 
 
@@ -154,6 +157,7 @@ class FireDetectionConfig:
     interval_sec: float = 1.5
     class_keywords: List[str] = field(default_factory=lambda: ["fire", "smoke"])
     save_snapshot: bool = True
+
 
 @dataclass
 class AnprConfig:
@@ -214,52 +218,12 @@ class Settings:
     after_hours_presence: Optional[AfterHoursPresenceConfig] = None
     fire_detection: Optional[FireDetectionConfig] = None
 
+
 # Health configuration for camera monitoring and tamper detection
 @dataclass
 class HealthConfig:
     """
     Camera health and tamper detection thresholds.
-
-    Attributes
-    ----------
-    enabled: bool
-        Whether health and tamper monitoring is enabled for this camera.
-    no_frame_timeout_seconds: int
-        Interval in seconds after which a camera without new frames is considered offline.
-    min_fps: float
-        Minimum expected FPS before health is considered degraded.
-    low_light_threshold: float
-        Mean brightness below which the scene is considered low light.
-    black_frame_threshold: float
-        Mean brightness threshold below which a frame is considered black.
-    tamper_frame_diff_threshold: float
-        Legacy threshold for difference between current frame and baseline for detecting camera movement.
-    uniform_std_threshold: float
-        Standard deviation threshold below which a frame is considered uniform/blocked.
-    blackout_drop_ratio: float
-        Sudden drop ratio vs baseline mean for blackout detection.
-    blackout_min_baseline: float
-        Minimum baseline mean required before using blackout drop ratio.
-    moved_diff_threshold: float
-        Normalized diff threshold (0..1) for camera moved detection.
-    blur_threshold: float
-        Laplacian variance threshold below which a frame is considered blurred.
-    snapshot_on_tamper: bool
-        Whether to capture a snapshot when a tamper event is detected.
-    low_light_consecutive_frames: int
-        Number of consecutive low-light frames required before emitting a low-light event.
-    blocked_stddev_threshold: float
-        Legacy uniform frame stddev threshold retained for backward compatibility.
-    blocked_consecutive_frames: int
-        Number of consecutive uniform frames required before emitting a lens blocked event.
-    blur_consecutive_frames: int
-        Number of consecutive blurred frames required before emitting a blur event.
-    moved_consecutive_frames: int
-        Number of consecutive frames with high difference required before emitting a camera moved event.
-    cooldown_seconds: int
-        Per-reason cooldown window before emitting the same tamper event again.
-    clear_consecutive_frames: int
-        Number of normal frames required before clearing a tamper condition.
     """
 
     enabled: bool = True
@@ -290,7 +254,7 @@ def _load_yaml_file(config_path: Path) -> dict:
         if allow_missing:
             return {}
         raise FileNotFoundError(f"Configuration file {config_path!s} not found")
-    with config_path.open('r', encoding='utf-8') as f:
+    with config_path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
@@ -350,7 +314,7 @@ def _parse_camera_modules(value: object) -> Optional[CameraModules]:
         fire_detection_enabled=_parse_optional_bool(value.get("fire_detection_enabled")),
         health_monitoring_enabled=_parse_optional_bool(value.get("health_monitoring_enabled")),
     )
-    if all(getattr(modules, field) is None for field in modules.__dataclass_fields__):
+    if all(getattr(modules, field_name) is None for field_name in modules.__dataclass_fields__):
         return None
     return modules
 
@@ -382,24 +346,6 @@ def _parse_camera_anpr_config(cam_dict: dict) -> Optional[CameraAnprConfig]:
 def load_settings(config_path: str) -> Settings:
     """
     Load settings from a YAML file and environment variables.
-
-    Environment variable overrides:
-
-    - ``GODOWN_ID`` overrides ``godown_id``
-    - ``MQTT_BROKER_HOST`` overrides broker host (defaults to ``localhost``)
-    - ``MQTT_BROKER_PORT`` overrides broker port (defaults to 1883)
-    - ``MQTT_USERNAME`` provides MQTT username if set
-    - ``MQTT_PASSWORD`` provides MQTT password if set
-
-    Parameters
-    ----------
-    config_path: str
-        Path to the YAML configuration file.
-
-    Returns
-    -------
-    Settings
-        A Settings instance with configuration and environment overrides applied.
     """
     path = Path(config_path)
     data = _load_yaml_file(path)
@@ -418,8 +364,9 @@ def load_settings(config_path: str) -> Settings:
     mqtt_broker_port = int(
         os.getenv("MQTT_BROKER_PORT", os.getenv("MQTT_PORT", data.get("mqtt", {}).get("port", 1883)))
     )
-    mqtt_username = os.getenv('MQTT_USERNAME', data.get('mqtt', {}).get('username'))
-    mqtt_password = os.getenv('MQTT_PASSWORD', data.get('mqtt', {}).get('password'))
+    mqtt_username = os.getenv("MQTT_USERNAME", data.get("mqtt", {}).get("username"))
+    mqtt_password = os.getenv("MQTT_PASSWORD", data.get("mqtt", {}).get("password"))
+
     dispatch_plan_path = os.getenv(
         "EDGE_DISPATCH_PLAN_PATH",
         str(Path(data.get("dispatch_plan_path", "data/dispatch_plan.json")).expanduser()),
@@ -428,12 +375,14 @@ def load_settings(config_path: str) -> Settings:
         dispatch_plan_reload_sec = int(os.getenv("EDGE_DISPATCH_PLAN_RELOAD_SEC", data.get("dispatch_plan_reload_sec", 10)))
     except Exception:
         dispatch_plan_reload_sec = 10
+
     bag_keywords_raw = os.getenv("EDGE_BAG_CLASS_KEYWORDS", "")
     if not bag_keywords_raw:
         bag_keywords_raw = ",".join(data.get("bag_class_keywords", []) or [])
     bag_class_keywords = [kw.strip().lower() for kw in bag_keywords_raw.split(",") if kw.strip()]
     if not bag_class_keywords:
         bag_class_keywords = ["bag", "sack", "backpack", "grain_sack"]
+
     try:
         bag_movement_px_threshold = int(os.getenv("EDGE_BAG_MOVE_PX", data.get("bag_movement_px_threshold", 50)))
     except Exception:
@@ -456,43 +405,48 @@ def load_settings(config_path: str) -> Settings:
 
     # Load cameras
     cameras_cfg: List[CameraConfig] = []
-    for cam_dict in data.get('cameras', []):
-        zones = [ZoneConfig(**zone) for zone in cam_dict.get('zones', [])]
+    for cam_dict in data.get("cameras", []):
+        zones = [ZoneConfig(**zone) for zone in cam_dict.get("zones", [])]
+
         # Parse health config if provided
-        health_cfg_dict = cam_dict.get('health') or {}
+        health_cfg_dict = cam_dict.get("health") or {}
         health_cfg = None
         try:
-            # If health section exists and is a dict, instantiate HealthConfig
             if isinstance(health_cfg_dict, dict) and health_cfg_dict:
                 health_cfg = HealthConfig(**health_cfg_dict)
         except Exception:
-            # Leave health_cfg as None if parsing fails
             health_cfg = None
-        cam_id = cam_dict['id']
+
+        cam_id = cam_dict["id"]
         rtsp_env_key = f"RTSP_URL_{cam_id}"
-        rtsp_url = os.getenv(rtsp_env_key, cam_dict['rtsp_url'])
+        rtsp_url = os.getenv(rtsp_env_key, cam_dict["rtsp_url"])
+
         role_raw = cam_dict.get("role")
         role_explicit = "role" in cam_dict and role_raw is not None
         role = str(role_raw or "SECURITY").strip().upper()
+
         modules_cfg = _parse_camera_modules(cam_dict.get("modules"))
         anpr_cam_cfg = _parse_camera_anpr_config(cam_dict)
-        cameras_cfg.append(CameraConfig(
-            id=cam_id,
-            rtsp_url=rtsp_url,
-            test_video=cam_dict.get('test_video'),
-            role=role,
-            role_explicit=role_explicit,
-            modules=modules_cfg,
-            anpr=anpr_cam_cfg,
-            zones=zones,
-            health=health_cfg,
-        ))
+
+        cameras_cfg.append(
+            CameraConfig(
+                id=cam_id,
+                rtsp_url=rtsp_url,
+                test_video=cam_dict.get("test_video"),
+                role=role,
+                role_explicit=role_explicit,
+                modules=modules_cfg,
+                anpr=anpr_cam_cfg,
+                zones=zones,
+                health=health_cfg,
+            )
+        )
 
     # Load rules (YAML deprecated by default; use EDGE_RULES_SOURCE=yaml to enable)
     rules_cfg: List[RuleConfig] = []
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source != "backend":
-        for rule in data.get('rules', []):
+        for rule in data.get("rules", []):
             rules_cfg.append(RuleConfig(**rule))
 
     # Load face recognition config if present
@@ -517,23 +471,34 @@ def load_settings(config_path: str) -> Settings:
         except Exception:
             face_recognition_cfg = None
 
-    # Load ANPR config if present
+    # -------------------- ANPR (ONLY CHANGES HERE) --------------------
+    # Load ANPR config if present (godown-aware CSV path + proper gate parsing)
     anpr_cfg: Optional[AnprConfig] = None
     anpr_data = data.get("anpr")
+
     if isinstance(anpr_data, dict):
         try:
             classes = anpr_data.get("classes")
             if classes is not None:
                 classes = [int(x) for x in classes]
+
             plate_class_names = anpr_data.get("plate_class_names")
             if plate_class_names is not None:
                 plate_class_names = [str(x) for x in plate_class_names]
+
             ocr_lang = anpr_data.get("ocr_lang")
             if ocr_lang is not None:
                 ocr_lang = [str(x) for x in ocr_lang]
+
+            # ✅ FIX: godown-aware CSV file path if save_csv not provided
+            save_csv = anpr_data.get("save_csv")
+            if not save_csv:
+                csv_dir = anpr_data.get("csv_dir", "data/anpr_csv")
+                save_csv = str((Path(csv_dir) / godown_id / "anpr_events.csv").resolve())
+
             anpr_cfg = AnprConfig(
                 enabled=bool(anpr_data.get("enabled", False)),
-                model_path=str(anpr_data.get("model_path", "./ML_MOdel/anpr.pt")),
+                model_path=str(anpr_data.get("model_path", "./ML_Model/anpr.pt")),
                 device=str(anpr_data.get("device", "cpu")),
                 conf=float(anpr_data.get("conf", 0.25)),
                 iou=float(anpr_data.get("iou", 0.45)),
@@ -549,15 +514,16 @@ def load_settings(config_path: str) -> Settings:
                 show_invalid=bool(anpr_data.get("show_invalid", False)),
                 registered_file=anpr_data.get("registered_file"),
                 dedup_interval_sec=int(anpr_data.get("dedup_interval_sec", 30)),
-                save_csv=anpr_data.get("save_csv"),
+                save_csv=save_csv,
                 save_crops_dir=anpr_data.get("save_crops_dir"),
                 save_crops_max=anpr_data.get("save_crops_max"),
-                gate_line=anpr_data.get("gate_line"),
+                gate_line=_parse_gate_line(anpr_data.get("gate_line")),
                 inside_side=anpr_data.get("inside_side"),
                 direction_max_gap_sec=int(anpr_data.get("direction_max_gap_sec", 120)),
             )
         except Exception:
             anpr_cfg = None
+    # -----------------------------------------------------------------
 
     watchlist_cfg = _load_watchlist_config(data)
     after_hours_cfg = _load_after_hours_presence_config(data)
@@ -721,19 +687,19 @@ def _load_fire_detection_config(data: dict) -> FireDetectionConfig:
 
 
 __all__ = [
-    'ZoneConfig',
-    'CameraModules',
-    'CameraAnprConfig',
-    'CameraConfig',
-    'RuleConfig',
-    'Settings',
-    'HealthConfig',
-    'FaceRecognitionCameraConfig',
-    'FaceRecognitionConfig',
-    'TrackingConfig',
-    'AnprConfig',
-    'WatchlistConfig',
-    'AfterHoursPresenceConfig',
-    'FireDetectionConfig',
-    'load_settings',
+    "ZoneConfig",
+    "CameraModules",
+    "CameraAnprConfig",
+    "CameraConfig",
+    "RuleConfig",
+    "Settings",
+    "HealthConfig",
+    "FaceRecognitionCameraConfig",
+    "FaceRecognitionConfig",
+    "TrackingConfig",
+    "AnprConfig",
+    "WatchlistConfig",
+    "AfterHoursPresenceConfig",
+    "FireDetectionConfig",
+    "load_settings",
 ]

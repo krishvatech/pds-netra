@@ -33,7 +33,8 @@ import type {
   UpdateGodownPayload,
   AuthorizedUserItem,
   CreateAuthorizedUserPayload,
-  UpdateAuthorizedUserPayload
+  UpdateAuthorizedUserPayload,
+  AnprCsvEventsResponse
 } from './types';
 import { getToken, getUser } from './auth';
 
@@ -123,6 +124,30 @@ export async function getGodowns(params?: {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/godowns${q}`);
 }
+
+export async function getAnprCsvEvents(params: {
+  godown_id: string;
+  timezone_name?: string;
+  camera_id?: string;
+  plate_text?: string;
+  match_status?: string;
+  date_from?: string; // YYYY-MM-DD
+  date_to?: string;   // YYYY-MM-DD
+  limit?: number;
+}): Promise<AnprCsvEventsResponse> {
+  const q = buildQuery({
+    godown_id: params.godown_id,
+    timezone_name: params.timezone_name ?? 'Asia/Kolkata',
+    camera_id: params.camera_id,
+    plate_text: params.plate_text,
+    match_status: params.match_status,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    limit: params.limit ?? 200
+  });
+  return apiFetch<AnprCsvEventsResponse>(`/api/v1/anpr/csv-events${q}`);
+}
+
 
 export async function getGodownDetail(godownId: string): Promise<GodownDetail> {
   return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`);

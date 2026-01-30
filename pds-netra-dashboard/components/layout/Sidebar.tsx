@@ -25,6 +25,7 @@ const nav = [
   { href: '/dashboard/dispatch-movement', label: 'Dispatch Movement', icon: DispatchMovementIcon },
   { href: '/dashboard/dispatch', label: 'Dispatch', icon: DispatchIcon },
   { href: '/dashboard/live', label: 'Live Cameras', icon: LiveIcon },
+  { href: '/dashboard/anpr', label: 'ANPR', icon: PlateIcon },
   { href: '/dashboard/test-runs', label: 'Test Runs', icon: TestRunIcon }
 ];
 
@@ -473,6 +474,7 @@ function LiveIcon({ active }: { active: boolean }) {
   );
 }
 
+// Resolved: Added UsersIcon from upstream
 function UsersIcon({ active }: { active: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -498,6 +500,29 @@ function UsersIcon({ active }: { active: boolean }) {
       />
       <path
         d="M18 13C19.6569 13 21 14.3431 21 16V18"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// Resolved: Added PlateIcon from stashed changes
+function PlateIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="3"
+        y="7"
+        width="18"
+        height="10"
+        rx="2"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.8"
+      />
+      <path
+        d="M7 10.5H17M7 13.5H15"
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.6"
         strokeLinecap="round"

@@ -1,11 +1,47 @@
-﻿godown_id: GDN_001
+godown_id: GDN_001
+# godown_id: GDN_002
+# godown_id: DUMMY
 timezone: Asia/Kolkata
 
+# NOTE:
+# EDGE_CAMERAS_SOURCE=backend and EDGE_RULES_SOURCE=backend are set in .env,
+# so cameras and rules are fetched from the backend (dynamic godown/cameras).
+# Keep this file for global defaults only.
+
+# MQTT connection details. These values can be overridden via environment
+# variables (MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USERNAME, MQTT_PASSWORD).
 mqtt:
   host: 127.0.0.1
   port: 1883
   username: null
   password: null
+
+# ANPR Configuration Section
+anpr:
+  enabled: true
+  model_path: "./ML_Model/anpr.pt"
+  device: "cpu"
+  conf: 0.0
+  iou: 0.45
+  imgsz: 960
+  max_det: 300
+  classes: [0]
+  plate_class_names: null
+  ocr_lang: ["en"]
+  ocr_every_n: 2
+  ocr_min_conf: 0.2
+  ocr_debug: true
+  validate_india: true
+  allowed_start: "06:00"
+  allowed_end: "22:00"
+  alert_on_unauthorized: true
+  alert_on_outside_time: true
+  show_invalid: false
+  registered_file: null
+  dedup_interval_sec: 60
+  save_csv: "../pds-netra-backend/data/anpr_csv/{godown_id}/anpr_debug.csv"
+  # save_crops_dir: "./././anpr_crops"
+  # save_crops_max: 15
 
 tracking:
   tracker_name: "bytetrack.yaml"
@@ -13,14 +49,67 @@ tracking:
   conf: 0.25
   iou: 0.5
 
-cameras:
-  - id: CAM_GATE_1
+# Face recognition configuration (optional)
+face_recognition:
+  enabled: true
+  known_faces_file: "config/known_faces.json"
+  min_match_confidence: 0.6
+  unknown_event_enabled: true
+  dedup_interval_seconds: 60
+  cameras:
+    - camera_id: "*"
+      zone_id: all
+      allow_unknown: false
+      log_known_only: false
+    - camera_id: CAM_AISLE_3
+      zone_id: all
+      allow_unknown: false
+      log_known_only: false
 
-rules:
-  - id: RULE_ANIMAL_INTRUSION_GATE
-    type: ANIMAL_FORBIDDEN
-    camera_id: CAM_GATE_1
-    zone_id: all
-    animal_classes: ["dog","cat","goat","sheep","buffalo","monkey"]
-    cooldown_seconds: 30
-    severity: warning
+watchlist:
+  enabled: true
+  min_match_confidence: 0.6
+  cooldown_seconds: 120
+  sync_interval_sec: 300
+  auto_embed: false
+  http_fallback: false
+
+after_hours_presence:
+  enabled: true
+  day_start: "09:00"
+  day_end: "19:00"
+  emit_only_after_hours: true
+  person_interval_sec: 2
+  vehicle_interval_sec: 2
+  person_cooldown_sec: 10
+  vehicle_cooldown_sec: 10
+  min_confidence: 0.25
+  person_classes: ["person"]
+  vehicle_classes: ["car", "truck", "bus", "motorcycle", "bicycle", "vehicle"]
+  http_fallback: false
+
+fire_detection:
+  enabled: false
+  model_path: "models/fire.pt"
+  device: "cpu"
+  conf: 0.35
+  iou: 0.45
+  cooldown_seconds: 60
+  min_frames_confirm: 3
+  zones_enabled: false
+  interval_sec: 1.5
+  class_keywords: ["fire", "smoke"]
+  save_snapshot: true
+
+# Optional static config when not using backend sources.
+# cameras:
+#   - id: CAM_GATE_1
+#
+# rules:
+#   - id: RULE_ANIMAL_INTRUSION_GATE
+#     type: ANIMAL_FORBIDDEN
+#     camera_id: CAM_GATE_1
+#     zone_id: all
+#     animal_classes: ["dog","cat","goat","sheep","buffalo","monkey"]
+#     cooldown_seconds: 30
+#     severity: warning

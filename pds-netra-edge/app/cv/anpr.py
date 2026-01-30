@@ -5,42 +5,72 @@ This module provides classes and functions to detect and recognize
 vehicle number plates using a detection model and an OCR engine. It
 also includes a processor that evaluates ANPR-specific rules and
 emits events via MQTT.
+
+MODIFIED:
+1) ✅ Tight plate-only crop (geometry filter + crop shrink)
+2) ✅ Slightly increase crop size (configurable pad)
+3) ✅ JSON-based whitelist/blacklist verification
+4) ✅ Save crops to OUTSIDE folder
+5) ✅ Time Window Logic (Start/End time enforcement)
+
+NEW FIXES (this patch):
+A) ✅ ALWAYS run plate detection every frame (no early return)
+B) ✅ OCR is throttled per-frame (ocr_every_n) but detection is continuous
+C) ✅ OCR pipeline: light-preprocess first (fast) → strong-preprocess fallback (robust)
+D) ✅ Minimum OCR acceptance strategy: run OCR with low min_conf, then apply your threshold
 """
 
 from __future__ import annotations
 
 import csv
 import datetime
-import logging
 import os
+import csv
+import logging
 import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
+# ---------------------------------------------------------------------
+# Paddle runtime stabilization (Windows CPU)
+# ---------------------------------------------------------------------
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
+os.environ["FLAGS_enable_pir_in_executor"] = "0"
+os.environ["FLAGS_enable_new_ir"] = "0"
+
 try:
     import cv2  # type: ignore
 except ImportError:
     cv2 = None  # type: ignore
 
-try:
-    from paddleocr import PaddleOCR  # type: ignore
-except ImportError:
-    PaddleOCR = None  # type: ignore
+PaddleOCR = None  # type: ignore
+paddle = None  # type: ignore
 
+import numpy as np
 from zoneinfo import ZoneInfo
 
 from .yolo_detector import YoloDetector
 from .zones import is_bbox_in_zone
 from ..models.event import EventModel, MetaModel
 from ..events.mqtt_client import MQTTClient
-from ..rules.loader import (
-    AnprMonitorRule,
-    AnprWhitelistRule,
-    AnprBlacklistRule,
-    BaseRule,
-)
+from ..rules.loader import BaseRule
+
+
+# ---------------------------------------------------------------------
+# Helper: Time Parsing
+# ---------------------------------------------------------------------
+def _parse_time(hhmm: str) -> datetime.time:
+    """Parses 'HH:MM' string into a datetime.time object."""
+    if not hhmm:
+        return datetime.time(0, 0)
+    try:
+        parts = hhmm.split(":")
+        return datetime.time(int(parts[0]), int(parts[1]))
+    except Exception:
+        return datetime.time(0, 0)
 
 INDIA_PLATE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$")
 
@@ -48,7 +78,6 @@ INDIA_PLATE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$")
 @dataclass
 class RecognizedPlate:
     """Representation of a recognized number plate in a frame."""
-
     camera_id: str
     bbox: List[int]
     plate_text: str
@@ -58,137 +87,783 @@ class RecognizedPlate:
     det_conf: float = 0.0
     ocr_conf: float = 0.0
     match_status: str = "UNKNOWN"
-    direction: Optional[str] = None
 
 
 class PlateDetector:
     """
-    Simple wrapper around a YOLO detector for detecting license plates.
-
-    Parameters
-    ----------
-    detector: YoloDetector
-        The underlying YOLO detector instance used for inference.
-    plate_class_names: List[str]
-        Names of classes in the detector corresponding to number plates.
-        Defaults to ["license_plate"].
+    Wrapper around a YOLO detector for detecting license plates.
     """
 
     def __init__(self, detector: YoloDetector, plate_class_names: Optional[List[str]] = None) -> None:
         self.detector = detector
-        # Accept multiple names; lower-case for comparison
-        if plate_class_names is None:
-            plate_class_names = ["license_plate"]
-        self.plate_class_names = {name.lower() for name in plate_class_names}
+        if plate_class_names is None or len(plate_class_names) == 0:
+            self.plate_class_names = None
+        else:
+            self.plate_class_names = {name.lower() for name in plate_class_names}
+
+    @staticmethod
+    def _is_plate_like_bbox(bbox: List[int], frame_shape) -> bool:
+        try:
+            h, w = frame_shape[:2]
+            x1, y1, x2, y2 = bbox
+            bw = max(1, int(x2) - int(x1))
+            bh = max(1, int(y2) - int(y1))
+
+            area_ratio = (bw * bh) / float(max(1, w * h))
+            aspect = bw / float(bh)
+
+            # Plates are small and wide.
+            if area_ratio < 0.00015:   # too tiny -> noise
+                return False
+            if area_ratio > 0.05:      # too big -> truck body/board
+                return False
+            if aspect < 1.3 or aspect > 7.5:
+                return False
+            if (bh / float(max(1, h))) > 0.25:
+                return False
+
+            return True
+        except Exception:
+            return False
 
     def detect_plates(self, frame: Any) -> List[Tuple[str, float, List[int]]]:
-        """
-        Detect number plates in a frame.
-
-        Parameters
-        ----------
-        frame: numpy.ndarray
-            Image in BGR format.
-
-        Returns
-        -------
-        List of tuples (class_name, confidence, bbox) for each plate detected.
-        """
         detections = self.detector.detect(frame)
         plates: List[Tuple[str, float, List[int]]] = []
+
         for class_name, conf, bbox in detections:
-            if class_name.lower() in self.plate_class_names:
-                plates.append((class_name, conf, bbox))
+            if self.plate_class_names is not None and class_name.lower() not in self.plate_class_names:
+                continue
+            if not self._is_plate_like_bbox(bbox, frame.shape):
+                continue
+            plates.append((class_name, float(conf), bbox))
+
+        plates.sort(key=lambda x: x[1], reverse=True)
         return plates
+
+
+def _load_paddle():
+    global paddle
+    if paddle is None:
+        try:
+            import paddle as _paddle
+        except ImportError:
+            return None
+        paddle = _paddle
+    return paddle
+
+
+def _load_paddleocr():
+    global PaddleOCR
+    if PaddleOCR is None:
+        try:
+            from paddleocr import PaddleOCR as _PaddleOCR
+        except ImportError:
+            return None
+        PaddleOCR = _PaddleOCR
+    return PaddleOCR
+
+
+def _set_paddle_flags() -> None:
+    pad = _load_paddle()
+    if pad is None:
+        return
+    try:
+        pad.set_flags({
+            "FLAGS_use_mkldnn": 0,
+            "FLAGS_enable_pir_api": 0,
+            "FLAGS_enable_pir_in_executor": 0,
+            "FLAGS_enable_new_ir": 0,
+        })
+    except Exception:
+        pass
+
+
+def _paddle_gpu_available() -> bool:
+    pad = _load_paddle()
+    if pad is None:
+        return False
+    try:
+        return bool(pad.device.is_compiled_with_cuda())
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------
+# STRONG Preprocess for small/noisy plates
+# ---------------------------------------------------------------------
+def preprocess_plate_crop(bgr):
+    """Strong preprocess (slower, but robust)."""
+    if cv2 is None:
+        return bgr
+
+    try:
+        bgr = cv2.copyMakeBorder(bgr, 8, 8, 16, 16, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    except Exception:
+        pass
+
+    h, _w = bgr.shape[:2]
+    target_h = 360
+    if h > 0 and h < target_h:
+        scale = target_h / h
+        try:
+            bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        except Exception:
+            pass
+
+    try:
+        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+        l, a, bb = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        l2 = clahe.apply(l)
+        lab2 = cv2.merge((l2, a, bb))
+        bgr = cv2.cvtColor(lab2, cv2.COLOR_LAB2BGR)
+    except Exception:
+        pass
+
+    try:
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        thr = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31, 5,
+        )
+        bgr = cv2.cvtColor(thr, cv2.COLOR_GRAY2BGR)
+    except Exception:
+        pass
+
+    try:
+        bgr = cv2.bilateralFilter(bgr, 7, 60, 60)
+    except Exception:
+        pass
+
+    try:
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        kernel = np.array([[0, -1, 0],
+                           [-1, 5, -1],
+                           [0, -1, 0]])
+        sharp = cv2.filter2D(gray, -1, kernel)
+        bgr = cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)
+    except Exception:
+        pass
+
+    return bgr
+
+
+def preprocess_plate_crop_light(bgr):
+    """Light preprocess (fast)."""
+    if cv2 is None:
+        return bgr
+
+    try:
+        bgr = cv2.copyMakeBorder(bgr, 6, 6, 12, 12, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    except Exception:
+        pass
+
+    h, _w = bgr.shape[:2]
+    target_h = 360
+    if h > 0 and h < target_h:
+        scale = target_h / h
+        try:
+            bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        except Exception:
+            pass
+
+    try:
+        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+        l, a, bb = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l2 = clahe.apply(l)
+        lab2 = cv2.merge((l2, a, bb))
+        bgr = cv2.cvtColor(lab2, cv2.COLOR_LAB2BGR)
+    except Exception:
+        pass
+
+    return bgr
+
+
+def _x_overlap_ratio(a: List[int], b: List[int]) -> float:
+    ax1, _, ax2, _ = a
+    bx1, _, bx2, _ = b
+    inter = max(0, min(ax2, bx2) - max(ax1, bx1))
+    min_w = max(1, min(ax2 - ax1, bx2 - bx1))
+    return inter / float(min_w)
+
+
+def _is_stacked_pair(a: List[int], b: List[int]) -> bool:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    if ay1 > by1:
+        ax1, ay1, ax2, ay2, bx1, by1, bx2, by2 = bx1, by1, bx2, by2, ax1, ay1, ax2, ay2
+    h1, h2 = ay2 - ay1, by2 - by1
+    if h1 <= 0 or h2 <= 0:
+        return False
+    gap = max(0, by1 - ay2)
+    x_align = abs(((ax1 + ax2) / 2.0) - ((bx1 + bx2) / 2.0))
+    max_w = max(ax2 - ax1, bx2 - bx1)
+    return (
+        _x_overlap_ratio([ax1, ay1, ax2, ay2], [bx1, by1, bx2, by2]) >= 0.45
+        and gap <= 0.6 * max(h1, h2)
+        and x_align <= 0.6 * max_w
+    )
+
+
+def _merge_stacked_plates(plates: List[Tuple[str, float, List[int]]]) -> List[Tuple[str, float, List[int]]]:
+    if len(plates) < 2:
+        return plates
+    merged: List[Tuple[str, float, List[int]]] = []
+    used = set()
+    for i, (cls1, conf1, box1) in enumerate(plates):
+        if i in used:
+            continue
+        best_j = None
+        best_box = None
+        best_conf = conf1
+        for j in range(i + 1, len(plates)):
+            if j in used:
+                continue
+            cls2, conf2, box2 = plates[j]
+            if _is_stacked_pair(box1, box2):
+                x1 = min(box1[0], box2[0])
+                y1 = min(box1[1], box2[1])
+                x2 = max(box1[2], box2[2])
+                y2 = max(box1[3], box2[3])
+                best_j = j
+                best_box = [x1, y1, x2, y2]
+                best_conf = max(conf1, conf2)
+                break
+        if best_j is not None and best_box is not None:
+            used.add(i)
+            used.add(best_j)
+            merged.append((cls1, best_conf, best_box))
+        else:
+            merged.append((cls1, conf1, box1))
+    return merged
+
+
+def _init_paddle_ocr(paddleocr_cls, lang: str, use_gpu: bool):
+    configs = [
+        {
+            "lang": lang,
+            "use_angle_cls": True,
+            "enable_mkldnn": False,
+            "show_log": False,
+            "det_db_thresh": 0.10,
+            "det_db_box_thresh": 0.30,
+            "det_db_unclip_ratio": 2.0,
+        },
+        {
+            "lang": lang,
+            "use_angle_cls": True,
+            "enable_mkldnn": False,
+            "det_db_thresh": 0.10,
+            "det_db_box_thresh": 0.30,
+            "det_db_unclip_ratio": 2.0,
+        },
+        {"lang": lang, "use_angle_cls": True},
+    ]
+
+    logger = logging.getLogger("OcrEngine")
+    last_exc = None
+    for i, params in enumerate(configs):
+        if use_gpu:
+            params["use_gpu"] = use_gpu
+        try:
+            return paddleocr_cls(**params)
+        except Exception as e:
+            last_exc = e
+            logger.debug("PaddleOCR init failed config %s: %s", i, e)
+
+    logger.error("All PaddleOCR configurations failed: %s", last_exc)
+    return None
+
+
+def normalize_plate_text(text: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", text or "")
+    return cleaned.upper()
+
+
+def is_valid_india_plate(text: str) -> bool:
+    if not text:
+        return False
+    t = normalize_plate_text(text)
+    patterns = [
+        r"^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}$",
+        r"^\d{2}BH\d{4}[A-Z]{1,2}$",
+    ]
+    return any(re.match(pat, t) for pat in patterns)
+
+
+def format_indian_plate(text: str) -> str:
+    cleaned = normalize_plate_text(text)
+    if not cleaned:
+        return ""
+    m = re.match(r"^([A-Z]{2})(\d{1,2})([A-Z]{1,3})(\d{4})$", cleaned)
+    if m:
+        return f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}"
+    m = re.match(r"^(\d{2})(BH)(\d{4})([A-Z]{1,2})$", cleaned)
+    if m:
+        return f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}"
+    return cleaned
+
+
+def _maybe_swap_stacked_plate(text: str) -> Optional[str]:
+    t = normalize_plate_text(text)
+    if not t:
+        return None
+    patterns = [
+        r"^([A-Z]{1,3}\d{4})([A-Z]{2}\d{1,2})$",
+        r"^(\d{4}[A-Z]{1,3})([A-Z]{2}\d{1,2})$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, t)
+        if m:
+            return f"{m.group(2)}{m.group(1)}"
+    return None
+
+
+def _expand_series_letters(text: str) -> List[str]:
+    t = normalize_plate_text(text)
+    if not t:
+        return []
+    m = re.match(r"^([A-Z]{2}\d{1,2})([A-Z0-9]{1,3})(\d{4})$", t)
+    if not m:
+        return []
+
+    prefix, series, suffix = m.groups()
+    if series.isalpha():
+        return []
+
+    digit_map = {
+        "0": ["O", "D"],
+        "1": ["I"],
+        "2": ["Z"],
+        "5": ["S", "D"],
+        "6": ["G"],
+        "8": ["B"],
+        "9": ["G"],
+    }
+
+    choices: List[List[str]] = []
+    for ch in series:
+        if ch.isalpha():
+            choices.append([ch])
+        else:
+            choices.append(digit_map.get(ch, []))
+
+    if not all(choices):
+        return []
+
+    results: List[str] = []
+
+    def _build(idx: int, acc: List[str]) -> None:
+        if len(results) >= 20:
+            return
+        if idx >= len(choices):
+            results.append(f"{prefix}{''.join(acc)}{suffix}")
+            return
+        for opt in choices[idx]:
+            acc.append(opt)
+            _build(idx + 1, acc)
+            acc.pop()
+
+    _build(0, [])
+    return results
+
+
+def cleanup_plate_candidates(raw: str) -> List[str]:
+    base = normalize_plate_text(raw)
+    if not base:
+        return []
+    subs = {"O": "0", "I": "1", "Z": "2", "S": "5", "B": "8", "Q": "0"}
+    cands = [base]
+    fixed = "".join(subs.get(ch, ch) for ch in base)
+    if fixed != base:
+        cands.append(fixed)
+
+    rev = {"0": "O", "1": "I", "2": "Z", "5": "S", "8": "B"}
+    fixed2 = "".join(rev.get(ch, ch) for ch in base)
+    if fixed2 != base:
+        cands.append(fixed2)
+
+    swapped = []
+    for cand in cands:
+        alt = _maybe_swap_stacked_plate(cand)
+        if alt:
+            swapped.append(alt)
+
+    expanded = []
+    for cand in cands + swapped:
+        expanded.extend(_expand_series_letters(cand))
+
+    return list(set(cands + swapped + expanded))
+
+
+def _coerce_char_to_letter(ch: str) -> Tuple[Optional[str], int]:
+    if ch.isalpha():
+        return ch.upper(), 0
+    digit_to_letter = {
+        "0": "O",
+        "1": "I",
+        "2": "Z",
+        "4": "A",
+        "5": "S",
+        "6": "G",
+        "7": "T",
+        "8": "B",
+        "9": "G",
+    }
+    if ch in digit_to_letter:
+        return digit_to_letter[ch], 1
+    return None, 0
+
+
+def _coerce_char_to_digit(ch: str) -> Tuple[Optional[str], int]:
+    if ch.isdigit():
+        return ch, 0
+    letter_to_digit = {
+        "O": "0",
+        "Q": "0",
+        "D": "0",
+        "I": "1",
+        "L": "1",
+        "Z": "2",
+        "S": "5",
+        "A": "4",
+        "T": "7",
+        "G": "6",
+        "B": "8",
+    }
+    ch = ch.upper()
+    if ch in letter_to_digit:
+        return letter_to_digit[ch], 1
+    return None, 0
+
+
+def _coerce_to_pattern(text: str, pattern: str) -> Tuple[Optional[str], int]:
+    if len(text) != len(pattern):
+        return None, 0
+    out = []
+    cost = 0
+    for ch, need in zip(text, pattern):
+        if need == "L":
+            val, c = _coerce_char_to_letter(ch)
+            if val is None:
+                return None, 0
+            out.append(val)
+            cost += c
+        elif need == "D":
+            val, c = _coerce_char_to_digit(ch)
+            if val is None:
+                return None, 0
+            out.append(val)
+            cost += c
+        else:
+            if ch.upper() == need:
+                out.append(need)
+            else:
+                val, c = _coerce_char_to_letter(ch)
+                if val != need:
+                    return None, 0
+                out.append(need)
+                cost += c
+    return "".join(out), cost
+
+
+def guess_india_plate(text: str, min_len: int = 8, max_cost: int = 2) -> Optional[str]:
+    base = normalize_plate_text(text)
+    if not base:
+        return None
+    if len(base) < int(min_len):
+        return None
+    if not (
+        (len(base) >= 2 and base[0].isalpha() and base[1].isalpha())
+        or (len(base) >= 4 and base[2:4] == "BH")
+    ):
+        return None
+    if is_valid_india_plate(base):
+        return format_indian_plate(base)
+
+    patterns = []
+    for d in (1, 2):
+        for s in (1, 2, 3):
+            patterns.append("LL" + ("D" * d) + ("L" * s) + "DDDD")
+    for s in (1, 2):
+        patterns.append("DD" + "BH" + "DDDD" + ("L" * s))
+
+    best = None
+    best_cost = None
+    for pat in patterns:
+        plen = len(pat)
+        if len(base) < plen:
+            continue
+        for i in range(0, len(base) - plen + 1):
+            sub = base[i:i + plen]
+            cand, cost = _coerce_to_pattern(sub, pat)
+            if cand is None:
+                continue
+            if not is_valid_india_plate(cand):
+                continue
+            if cost > int(max_cost):
+                continue
+            if best_cost is None or cost < best_cost:
+                best_cost = cost
+                best = cand
+                if best_cost == 0:
+                    break
+        if best_cost == 0:
+            break
+
+    if best is None:
+        return None
+    return format_indian_plate(best)
+
+
+def load_registered_plates(path: Optional[str]) -> set[str]:
+    plates: set[str] = set()
+    if not path or not os.path.exists(path):
+        return plates
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if raw and not raw.startswith("#"):
+                plates.add(normalize_plate_text(raw))
+    return plates
+
+
+# ---------------- JSON RULES (VERIFIED / ALERT) ----------------
+def load_plate_rules_json(path: Optional[str]) -> Tuple[set[str], set[str]]:
+    """
+    JSON format:
+      { "whitelist": ["WB23D5690"], "blacklist": ["DL01ZZ9999"] }
+    """
+    wl: set[str] = set()
+    bl: set[str] = set()
+    if not path:
+        return wl, bl
+    try:
+        if not os.path.exists(path):
+            return wl, bl
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        wl = {normalize_plate_text(x) for x in (data.get("whitelist") or []) if str(x).strip()}
+        bl = {normalize_plate_text(x) for x in (data.get("blacklist") or []) if str(x).strip()}
+    except Exception:
+        return set(), set()
+    return wl, bl
+
+
+def decide_plate_status(norm_plate: str, whitelist: set[str], blacklist: set[str]) -> Tuple[str, str, str]:
+    """
+    Returns: (match_status, event_type, severity)
+    """
+    if norm_plate in blacklist:
+        return ("BLACKLIST", "ANPR_PLATE_ALERT", "critical")
+
+    if whitelist:
+        if norm_plate in whitelist:
+            return ("VERIFIED", "ANPR_PLATE_VERIFIED", "info")
+        return ("NOT_VERIFIED", "ANPR_PLATE_ALERT", "warning")
+
+    return ("DETECTED", "ANPR_PLATE_DETECTED", "info")
+# ----------------------------------------------------------------
+
+
+def _parse_paddle_ocr_detrec(ocr_results) -> Tuple[str, float]:
+    if not ocr_results:
+        return "", 0.0
+    texts: List[str] = []
+    confs: List[float] = []
+    for block in ocr_results:
+        if not block:
+            continue
+        for line in block:
+            if not line or len(line) < 2:
+                continue
+            payload = line[1]
+            if isinstance(payload, (list, tuple)) and len(payload) >= 2:
+                t, c = payload[0], payload[1]
+                t = normalize_plate_text(str(t))
+                try:
+                    c = float(c)
+                except Exception:
+                    c = 0.0
+                if len(t) > 1:
+                    texts.append(t)
+                    confs.append(c)
+    if not texts:
+        return "", 0.0
+    return "".join(texts), (sum(confs) / len(confs)) if confs else 0.0
+
+
+def _parse_paddle_ocr_reconly(res) -> Tuple[str, float]:
+    if not res:
+        return "", 0.0
+
+    if len(res) == 1 and isinstance(res[0], list):
+        maybe = res[0]
+        if maybe and isinstance(maybe[0], (list, tuple)):
+            res = maybe
+
+    best_t, best_c = "", 0.0
+    for item in res:
+        t, c = "", 0.0
+        if isinstance(item, list) and len(item) == 1 and isinstance(item[0], (list, tuple)) and len(item[0]) >= 2:
+            t, c = item[0][0], item[0][1]
+        elif isinstance(item, (list, tuple)) and len(item) >= 2 and isinstance(item[0], (str, int, float)):
+            t, c = item[0], item[1]
+        elif isinstance(item, tuple) and len(item) >= 2:
+            t, c = item[0], item[1]
+
+        t = normalize_plate_text(str(t))
+        try:
+            c = float(c)
+        except Exception:
+            c = 0.0
+        if not t:
+            continue
+
+        if (c > best_c) or (abs(c - best_c) < 1e-6 and len(t) > len(best_t)):
+            best_t, best_c = t, c
+
+    return best_t, best_c
+
+
+def _parse_paddle_ocr_predict(res) -> Tuple[str, float]:
+    if not res:
+        return "", 0.0
+
+    texts: List[str] = []
+    confs: List[float] = []
+    for item in res:
+        if not item or not hasattr(item, "get"):
+            continue
+        rec_texts = item.get("rec_texts", [])
+        rec_scores = item.get("rec_scores", [])
+
+        for i, t in enumerate(rec_texts):
+            t = normalize_plate_text(str(t))
+            if not t:
+                continue
+            texts.append(t)
+            try:
+                confs.append(float(rec_scores[i]))
+            except Exception:
+                confs.append(0.0)
+
+    if not texts:
+        return "", 0.0
+    return "".join(texts), (sum(confs) / len(confs)) if confs else 0.0
+
 
 
 class OcrEngine:
     """
-    Wrapper around PaddleOCR for recognizing text from image crops.
+    OCR tuned for Indian plates.
+
+    Notes:
+    - Plate crops are already localized, so rec-only often works better.
+    - We still fallback to det+rec for safety.
+    - We keep the internal `min_conf` low and apply the real threshold in AnprProcessor.
+    - Set EDGE_ANPR_OCR_DUMP=true to log raw PaddleOCR outputs (debug).
     """
 
-    def __init__(self, lang: Optional[List[str]] = None, use_gpu: bool = False) -> None:
-        if PaddleOCR is None:
-            raise RuntimeError(
-                "paddleocr package is not installed; please install paddleocr to use ANPR"
-            )
-        if isinstance(lang, list) and lang:
-            lang_value = str(lang[0])
-        elif isinstance(lang, str) and lang:
-            lang_value = lang
-        else:
-            lang_value = "en"
-        # Initialize PaddleOCR; disable angle classifier for faster inference
-        self.ocr = PaddleOCR(use_angle_cls=False, lang=lang_value)
+    def __init__(self, languages: List[str], gpu: bool) -> None:
+        self.logger = logging.getLogger(self.__class__.__name__)
+        paddleocr_cls = _load_paddleocr()
+        if paddleocr_cls is None:
+            raise RuntimeError("paddleocr package is not installed.")
 
-    def recognize(self, image: Any) -> Tuple[str, float]:
-        """
-        Recognize text from an image crop.
+        _set_paddle_flags()
+        use_gpu = bool(gpu) and _paddle_gpu_available()
+        lang = languages[0] if languages else "en"
 
-        Parameters
-        ----------
-        image: numpy.ndarray
-            The cropped license plate image in BGR format.
+        self.ocr = _init_paddle_ocr(paddleocr_cls, lang=lang, use_gpu=use_gpu)
+        if self.ocr is None:
+            raise RuntimeError("Failed to initialize PaddleOCR.")
 
-        Returns
-        -------
-        Tuple[str, float]
-            The recognized plate string and a confidence score between 0 and 1.
-        """
-        # Convert BGR to RGB for OCR
-        if cv2 is None:
-            raise RuntimeError("cv2 is not installed; cannot perform OCR")
-        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # PaddleOCR expects image as ndarray
-        results = self.ocr.ocr(img_rgb, cls=False)
-        if not results:
+    def recognize(self, image_bgr: Any, min_conf: float = 0.05) -> Tuple[str, float]:
+        if cv2 is None or image_bgr is None:
             return "", 0.0
-        # Flatten results and pick the line with highest confidence
-        best_text = ""
-        best_conf = 0.0
-        for line in results:
-            # Each line: list of (text region, (str, confidence))
-            for (_, (text, conf)) in line:
-                if conf is not None and conf > best_conf:
-                    best_text = text
-                    best_conf = conf
-        return best_text, float(best_conf)
 
+        # Ensure uint8 + contiguous
+        try:
+            if getattr(image_bgr, "dtype", None) != np.uint8:
+                image_bgr = np.clip(image_bgr, 0, 255).astype(np.uint8)
+            image_bgr = np.ascontiguousarray(image_bgr)
+        except Exception:
+            pass
 
-def normalize_plate_text(text: str) -> str:
-    """
-    Normalize a plate string by removing spaces and hyphens and converting
-    to uppercase. Non-alphanumeric characters are stripped.
+        # Upscale small crops (helps a lot for CCTV plates)
+        try:
+            h, _w = image_bgr.shape[:2]
+            scale = 1.0
+            if h < 90:
+                scale = 3.0
+            elif h < 160:
+                scale = 2.5
+            elif h < 260:
+                scale = 2.0
+            elif h < 340:
+                scale = 1.6
+            if scale > 1.0:
+                image_bgr = cv2.resize(image_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        except Exception:
+            pass
 
-    Parameters
-    ----------
-    text: str
-        The raw plate string from OCR.
+        # Paddle expects RGB
+        try:
+            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        except Exception:
+            image_rgb = image_bgr
 
-    Returns
-    -------
-    str
-        The normalized plate string.
-    """
-    # Remove whitespace and hyphens
-    cleaned = text.replace(" ", "").replace("-", "")
-    # Filter alphanumeric characters only
-    filtered = "".join(ch for ch in cleaned if ch.isalnum())
-    return filtered.upper()
+        dump_raw = os.getenv("EDGE_ANPR_OCR_DUMP", "false").lower() in {"1", "true", "yes", "y"}
 
+        # Helper: choose best combined string & mean conf
+        def _best(texts: List[str], confs: List[float]) -> Tuple[str, float]:
+            if not texts:
+                return "", 0.0
+            text = "".join(texts)
+            conf = (sum(confs) / len(confs)) if confs else 0.0
+            return text, float(conf)
 
-def _is_valid_india_plate(plate: str) -> bool:
-    return bool(INDIA_PLATE_REGEX.match(plate))
+        # 1) Newer API: predict()
+        if hasattr(self.ocr, "predict"):
+            try:
+                res = self.ocr.predict(image_rgb)
+                if dump_raw:
+                    self.logger.info("ANPR OCR raw predict: %s", str(res)[:800])
+                text, conf = _parse_paddle_ocr_predict(res)
+                if text and conf >= float(min_conf):
+                    return text, float(conf)
+            except Exception as exc:
+                self.logger.debug("PaddleOCR predict failed: %s", exc)
 
+        # 2) Classic API: ocr(det=False) rec-only first
+        try:
+            res = self.ocr.ocr(image_rgb, det=False, rec=True, cls=True)
+            if dump_raw:
+                self.logger.info("ANPR OCR raw rec-only: %s", str(res)[:800])
+            text, conf = _parse_paddle_ocr_reconly(res)
+            if text and conf >= float(min_conf):
+                return text, float(conf)
+        except Exception as exc:
+            self.logger.debug("PaddleOCR rec-only failed: %s", exc)
 
+        # 3) Fallback: det+rec
+        try:
+            res2 = self.ocr.ocr(image_rgb, det=True, cls=True)
+            if dump_raw:
+                self.logger.info("ANPR OCR raw det+rec: %s", str(res2)[:800])
+            text2, conf2 = _parse_paddle_ocr_detrec(res2)
+            if text2 and conf2 >= float(min_conf):
+                return text2, float(conf2)
+        except Exception as exc:
+            self.logger.debug("PaddleOCR det+rec failed: %s", exc)
+
+        return "", 0.0
 class AnprProcessor:
-    """
-    Processor for ANPR logic. This class handles number plate recognition
-    and rule evaluation for a single camera. It maintains an internal
-    cache to avoid emitting duplicate events for the same plate within a
-    configurable time window.
-    """
-
     def __init__(
         self,
         camera_id: str,
@@ -198,9 +873,8 @@ class AnprProcessor:
         timezone: str,
         plate_detector: PlateDetector,
         ocr_engine: Optional[OcrEngine] = None,
-        dedup_interval_sec: int = 30,
         ocr_lang: Optional[List[str]] = None,
-        ocr_gpu: bool = False,
+        ocr_gpu: Optional[bool] = None,
         ocr_every_n: int = 1,
         ocr_min_conf: float = 0.3,
         ocr_debug: bool = False,
@@ -210,79 +884,112 @@ class AnprProcessor:
         save_csv: Optional[str] = None,
         save_crops_dir: Optional[str] = None,
         save_crops_max: Optional[int] = None,
+        dedup_interval_sec: int = 30,
         plate_rules_json: Optional[str] = None,
-        gate_line: Optional[List[List[int]]] = None,
-        inside_side: Optional[str] = None,
-        direction_max_gap_sec: int = 120,
+        allowed_start: str = "00:00",
+        allowed_end: str = "23:59",
     ) -> None:
         self.logger = logging.getLogger(f"AnprProcessor-{camera_id}")
         self.camera_id = camera_id
         self.godown_id = godown_id
+
+        self.require_zone = os.getenv("EDGE_ANPR_REQUIRE_ZONE", "false").lower() in {"1", "true", "yes"}
+
         self.rules_by_zone: Dict[str, List[BaseRule]] = {}
         for rule in rules:
-            self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
+            zid = getattr(rule, "zone_id", None) or "__GLOBAL__"
+            self.rules_by_zone.setdefault(zid, []).append(rule)
+
         self.zone_polygons = zone_polygons
         try:
             self.tz = ZoneInfo(timezone)
         except Exception:
             self.tz = ZoneInfo("UTC")
+
+        self.allowed_start = _parse_time(allowed_start)
+        self.allowed_end = _parse_time(allowed_end)
+
         self.plate_detector = plate_detector
-        # Instantiate OCR engine lazily if not provided
+
         if ocr_engine is None:
             try:
-                self.ocr_engine = OcrEngine(lang=ocr_lang, use_gpu=ocr_gpu)
+                self.ocr_engine = OcrEngine(ocr_lang or ["en"], ocr_gpu or False)
+                self.logger.info("ANPR OCR engine initialized (PaddleOCR)")
             except Exception as exc:
                 self.logger.error("Failed to initialize OCR engine: %s", exc)
-                self.ocr_engine = None  # type: ignore
+                self.ocr_engine = None
         else:
             self.ocr_engine = ocr_engine
-        self.dedup_interval_sec = int(dedup_interval_sec)
-        self.ocr_every_n = max(1, int(ocr_every_n))
+
+        self.ocr_every_n = max(int(ocr_every_n), 1)
         self.ocr_min_conf = float(ocr_min_conf)
         self.ocr_debug = bool(ocr_debug)
+
         self.validate_india = bool(validate_india)
         self.show_invalid = bool(show_invalid)
-        self.plate_rules_json = plate_rules_json
 
-        self.save_csv = save_csv
+        self.registered_plates = load_registered_plates(registered_file)
+
+        self.plate_rules_json = plate_rules_json or os.getenv("EDGE_ANPR_RULES_JSON", "")
+        self.whitelist_plates, self.blacklist_plates = load_plate_rules_json(self.plate_rules_json)
+        if self.whitelist_plates or self.blacklist_plates:
+            self.logger.info(
+                "ANPR JSON rules loaded: whitelist=%d blacklist=%d path=%s window=%s-%s",
+                len(self.whitelist_plates), len(self.blacklist_plates),
+                self.plate_rules_json, self.allowed_start, self.allowed_end
+            )
+
+        # Always bind CSV path to runtime godown_id
+        if save_csv:
+    # allow template paths like .../anpr_csv/{godown_id}/anpr.csv
+         self.save_csv = save_csv.format(godown_id=self.godown_id)
+        else:
+            self.save_csv = None
+
+        if self.save_csv:
+            try:
+                os.makedirs(os.path.dirname(self.save_csv), exist_ok=True)
+            except Exception:
+                pass
+
+        self.save_crops_dir = os.getenv("EDGE_ANPR_CROPS_DIR", "") or save_crops_dir
+        if self.save_crops_dir:
+            os.makedirs(self.save_crops_dir, exist_ok=True)
+
+        self.save_crops_max = save_crops_max
+        self._crop_save_count = 0
+
         self._csv_ready = False
-        self.save_crops_dir = Path(save_crops_dir).expanduser() if save_crops_dir else None
-        self.save_crops_max = save_crops_max if save_crops_max is None else int(save_crops_max)
-        self._saved_crops = 0
-        self.registered_plates = self._load_registered_plates(registered_file)
+        if self.save_csv:
+            try:
+                if os.path.exists(self.save_csv) and os.path.getsize(self.save_csv) > 0:
+                    self._csv_ready = True
+            except Exception:
+                pass
 
-        # Cache mapping (plate_text, zone_id) to last event time
+        self.dedup_interval_sec = int(dedup_interval_sec)
         self.plate_cache: Dict[Tuple[str, str], datetime.datetime] = {}
 
         self.vote_window_sec = 20.0
         self.vote_history: Dict[str, List[Tuple[str, float, datetime.datetime]]] = {}
 
         self.frame_index = 0
-        self.gate_line = self._parse_gate_line(gate_line)
-        self.inside_side = (inside_side or "POSITIVE").strip().upper()
-        self.direction_max_gap_sec = max(1, int(direction_max_gap_sec))
-        self.plate_tracks: Dict[str, Tuple[int, datetime.datetime]] = {}
 
         # Crop tuning
-        # shrink removes edges/background; pad adds a small border back
         self.crop_shrink_x = float(os.getenv("EDGE_ANPR_CROP_SHRINK_X", "0.04"))
         self.crop_shrink_y = float(os.getenv("EDGE_ANPR_CROP_SHRINK_Y", "0.12"))
         self.crop_pad_x = float(os.getenv("EDGE_ANPR_CROP_PAD_X", "0.06"))
         self.crop_pad_y = float(os.getenv("EDGE_ANPR_CROP_PAD_Y", "0.10"))
 
-    def update_rules(self, rules: List[BaseRule]) -> None:
-        """Replace rules for dynamic updates."""
-        self.rules_by_zone = {}
-        for rule in rules:
-            self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
-
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
-        """Return the zone ID for a given bounding box center or None."""
         if not self.zone_polygons:
-            return "all"
+            return "__GLOBAL__"
         for zone_id, polygon in self.zone_polygons.items():
-            if is_bbox_in_zone(bbox, polygon):
-                return zone_id
+            try:
+                if is_bbox_in_zone(bbox, polygon):
+                    return zone_id
+            except Exception:
+                continue
         return None
 
     def _parse_gate_line(self, gate_line: Optional[List[List[int]]]) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
@@ -327,23 +1034,13 @@ class AnprProcessor:
         return direction
 
     def _should_emit(self, plate_text: str, zone_id: str, now_utc: datetime.datetime) -> bool:
-        """
-        Determine whether an event should be emitted based on the last
-        time this plate was seen in the same zone. Implements a simple
-        time-based deduplication using ``dedup_interval_sec``.
-        """
         key = (plate_text, zone_id)
         last_time = self.plate_cache.get(key)
         if last_time is None:
             return True
-        if (now_utc - last_time).total_seconds() >= self.dedup_interval_sec:
-            return True
-        return False
+        return (now_utc - last_time).total_seconds() >= self.dedup_interval_sec
 
     def _update_cache(self, plate_text: str, zone_id: str, now_utc: datetime.datetime) -> None:
-        """
-        Update the cache with the current time for the given plate and zone.
-        """
         self.plate_cache[(plate_text, zone_id)] = now_utc
 
     def _vote_plate(
@@ -353,17 +1050,14 @@ class AnprProcessor:
         combined_conf: float,
         now_utc: datetime.datetime,
     ) -> Tuple[str, float]:
-        history = self.vote_history.get(zone_id, [])
-        fresh_history: List[Tuple[str, float, datetime.datetime]] = []
-        for p, c, ts in history:
-            if (now_utc - ts).total_seconds() <= self.vote_window_sec:
-                fresh_history.append((p, c, ts))
-        fresh_history.append((plate_text, float(combined_conf), now_utc))
-        self.vote_history[zone_id] = fresh_history
+        history = self.vote_history.setdefault(zone_id, [])
+        history.append((plate_text, combined_conf, now_utc))
+        cutoff = now_utc - datetime.timedelta(seconds=self.vote_window_sec)
+        history[:] = [h for h in history if h[2] >= cutoff]
 
         scores: Dict[str, float] = {}
         max_conf: Dict[str, float] = {}
-        for p, c, _ in fresh_history:
+        for p, c, _ in history:
             scores[p] = scores.get(p, 0.0) + float(c)
             max_conf[p] = max(max_conf.get(p, 0.0), float(c))
 
@@ -383,161 +1077,170 @@ class AnprProcessor:
 
         return best_plate, best_conf
 
-    def _load_registered_plates(self, registered_file: Optional[str]) -> Optional[set[str]]:
-        if not registered_file:
-            return None
-        try:
-            path = Path(registered_file).expanduser()
-            if not path.exists():
-                self.logger.warning("Registered plates file not found: %s", path)
-                return None
-            data = path.read_text(encoding="utf-8").strip()
-            if not data:
-                return None
-            if data.startswith("["):
-                import json
-                items = json.loads(data)
-                if isinstance(items, list):
-                    return {normalize_plate_text(str(x)) for x in items if x}
-                if isinstance(items, dict):
-                    values = items.get("plates") or items.get("registered") or []
-                    if isinstance(values, list):
-                        return {normalize_plate_text(str(x)) for x in values if x}
-            # CSV/plain text
-            plates = []
-            for line in data.splitlines():
-                line = line.strip()
-                if line:
-                    plates.append(normalize_plate_text(line))
-            return set(plates)
-        except Exception as exc:
-            self.logger.warning("Failed to load registered plates: %s", exc)
-            return None
+    def _inside_time_window(self, now_t: datetime.time) -> bool:
+        if self.allowed_start <= self.allowed_end:
+            return self.allowed_start <= now_t <= self.allowed_end
+        return now_t >= self.allowed_start or now_t <= self.allowed_end
 
-    def _save_crop(self, crop: Any, plate_text: str, now_utc: datetime.datetime) -> None:
-        if self.save_crops_dir is None:
-            return
-        if cv2 is None:
-            return
-        if self.save_crops_max is not None and self._saved_crops >= self.save_crops_max:
-            return
-        try:
-            self.save_crops_dir.mkdir(parents=True, exist_ok=True)
-            ts = now_utc.strftime("%Y%m%dT%H%M%S")
-            safe_plate = re.sub(r"[^A-Za-z0-9]", "", plate_text) or "plate"
-            filename = f"{safe_plate}_{ts}_{self._saved_crops}.jpg"
-            out_path = self.save_crops_dir / filename
-            cv2.imwrite(str(out_path), crop)
-            self._saved_crops += 1
-        except Exception:
-            return
-
-    def process_frame(
-        self,
-        frame: Any,
-        now_utc: datetime.datetime,
-        mqtt_client: MQTTClient,
-        snapshotter=None,
-    ) -> List[RecognizedPlate]:
-        """
-        Perform plate detection, OCR and rule evaluation on a single frame.
-
-        Parameters
-        ----------
-        frame: numpy.ndarray
-            The current frame in BGR format.
-        now_utc: datetime.datetime
-            Current UTC timestamp (naive or aware).
-        mqtt_client: MQTTClient
-            MQTT client used to publish events.
-        """
+    def process_frame(self, frame: Any, now_utc: datetime.datetime, mqtt_client: MQTTClient) -> List[RecognizedPlate]:
         results_out: List[RecognizedPlate] = []
         if frame is None:
             return results_out
+
         self.frame_index += 1
-        if self.ocr_every_n > 1 and (self.frame_index % self.ocr_every_n != 0):
-            return results_out
+
+        # IMPORTANT FIX:
+        # - Do NOT return early here.
+        # - Always detect plates every frame.
+        do_ocr_this_frame = (self.frame_index % self.ocr_every_n == 0)
+
         if now_utc.tzinfo is None:
             now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
         timestamp_iso = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        # Detect plates
+
+        local_now = now_utc.astimezone(self.tz)
+        inside_time = self._inside_time_window(local_now.time())
+
         try:
             plates = self.plate_detector.detect_plates(frame)
         except Exception as exc:
-            self.logger.error("Plate detection failed: %s", exc)
+            self.logger.debug("ANPR detect_plates failed: %s", exc)
             return results_out
-        # Iterate over detected plates
-        for (_, det_conf, bbox) in plates:
-            # Determine zone
-            zone_id = self._determine_zone(bbox)
-            if zone_id is None:
-                continue  # Only evaluate plates in defined zones
-            # Crop plate region
-            if cv2 is None:
-                self.logger.error("cv2 is not installed; cannot crop plate for OCR")
-                continue
-            x1, y1, x2, y2 = bbox
-            # Clip coordinates to frame bounds
-            h, w = frame.shape[:2]
-            x1 = max(0, min(int(x1), w - 1))
-            y1 = max(0, min(int(y1), h - 1))
-            x2 = max(0, min(int(x2), w - 1))
-            y2 = max(0, min(int(y2), h - 1))
 
-            # Apply shrink/pad to improve OCR
-            bw = max(1, x2 - x1)
-            bh = max(1, y2 - y1)
-            shrink_x = int(bw * self.crop_shrink_x)
-            shrink_y = int(bh * self.crop_shrink_y)
-            x1 = min(w - 1, max(0, x1 + shrink_x))
-            y1 = min(h - 1, max(0, y1 + shrink_y))
-            x2 = min(w - 1, max(0, x2 - shrink_x))
-            y2 = min(h - 1, max(0, y2 - shrink_y))
-            pad_x = int(bw * self.crop_pad_x)
-            pad_y = int(bh * self.crop_pad_y)
-            x1 = max(0, x1 - pad_x)
-            y1 = max(0, y1 - pad_y)
-            x2 = min(w - 1, x2 + pad_x)
-            y2 = min(h - 1, y2 + pad_y)
-
-            if x2 <= x1 or y2 <= y1:
-                continue
-            crop = frame[y1:y2, x1:x2]
-            if crop.size == 0:
-                continue
-            # Run OCR
-            plate_text_raw = ""
-            ocr_conf = 0.0
-            if self.ocr_engine is not None:
-                try:
-                    plate_text_raw, ocr_conf = self.ocr_engine.recognize(crop)
-                except Exception as exc:
-                    self.logger.error("OCR failed: %s", exc)
-                    continue
+        if not plates:
             if self.ocr_debug:
-                self.logger.info("OCR raw: %s (conf=%.3f)", plate_text_raw, float(ocr_conf))
-            if float(ocr_conf) < self.ocr_min_conf:
+                self.logger.info("ANPR: no plate detections (frame=%d)", self.frame_index)
+            return results_out
+
+        plates = _merge_stacked_plates(plates)
+
+        for (_, det_conf, bbox) in plates:
+            zone_id = self._determine_zone(bbox)
+
+            if zone_id is None and self.require_zone:
                 continue
-            # Normalize plate text
-            norm_plate = normalize_plate_text(plate_text_raw)
-            if not norm_plate:
+            if zone_id is None:
+                zone_id = "__GLOBAL__"
+
+            if cv2 is None:
                 continue
-            plate_text_display = plate_text_raw.strip() or norm_plate
-            # Combined confidence: multiply detection and OCR confidences
+
+            # ---- CROP (tight + slight pad) ----
+            try:
+                x1, y1, x2, y2 = bbox
+                h, w = frame.shape[:2]
+
+                box_w = max(1, x2 - x1)
+                box_h = max(1, y2 - y1)
+
+                dx = int(box_w * self.crop_shrink_x)
+                dy = int(box_h * self.crop_shrink_y)
+
+                x1s = x1 + dx
+                y1s = y1 + dy
+                x2s = x2 - dx
+                y2s = y2 - dy
+
+                px = int(box_w * self.crop_pad_x)
+                py = int(box_h * self.crop_pad_y)
+
+                x1c = max(0, x1s - px)
+                y1c = max(0, y1s - py)
+                x2c = min(w, x2s + px)
+                y2c = min(h, y2s + py)
+
+                if x2c <= x1c or y2c <= y1c:
+                    continue
+
+                crop = frame[y1c:y2c, x1c:x2c]
+                if crop.size == 0:
+                    continue
+            except Exception:
+                continue
+
+            # Save crops (debug)
+            if self.save_crops_dir:
+                if self.save_crops_max is None or self._crop_save_count < self.save_crops_max:
+                    try:
+                        f_name = os.path.join(
+                            self.save_crops_dir,
+                            f"crop_{self.frame_index}_{float(det_conf):.2f}_{uuid.uuid4().hex[:4]}.jpg",
+                        )
+                        crop_out = crop
+                        try:
+                            crop_out = cv2.resize(crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                        except Exception:
+                            pass
+                        cv2.imwrite(f_name, crop_out)
+                        self._crop_save_count += 1
+                    except Exception:
+                        pass
+
+            # If OCR is throttled off this frame, just skip OCR but keep loop alive
+            if not do_ocr_this_frame:
+                if self.ocr_debug:
+                    self.logger.info("ANPR: OCR skipped (frame=%d) det=%.3f zone=%s", self.frame_index, det_conf, zone_id)
+                continue
+
+            plate_text_raw, ocr_conf = "", 0.0
+            if self.ocr_engine:
+                try:
+                    # FAST PATH FIRST
+                    crop_light = preprocess_plate_crop_light(crop)
+                    plate_text_raw, ocr_conf = self.ocr_engine.recognize(crop_light, min_conf=0.05)
+
+                    # If weak/empty, use STRONG preprocessing
+                    if not plate_text_raw or float(ocr_conf) < 0.10:
+                        crop_strong = preprocess_plate_crop(crop)
+                        plate_text_raw, ocr_conf = self.ocr_engine.recognize(crop_strong, min_conf=0.05)
+
+                except Exception as exc:
+                    self.logger.debug("ANPR OCR failed: %s", exc)
+                    continue
+
+            # Enforce your threshold here (not inside PaddleOCR)
+            if not plate_text_raw or float(ocr_conf) < float(self.ocr_min_conf):
+                if self.ocr_debug:
+                    self.logger.info(
+                        "ANPR: OCR low/empty (frame=%d) det=%.3f ocr=%.3f raw=%s",
+                        self.frame_index, det_conf, ocr_conf, plate_text_raw
+                    )
+                continue
+
+            candidates = cleanup_plate_candidates(plate_text_raw)
+            if not candidates:
+                continue
+
+            plate_text_display = ""
+            guessed_plate = False
+
+            for cand in candidates:
+                cand_norm = normalize_plate_text(cand)
+                if is_valid_india_plate(cand_norm):
+                    plate_text_display = format_indian_plate(cand_norm)
+                    break
+
+            if not plate_text_display:
+                guessed = guess_india_plate(plate_text_raw)
+                if not guessed:
+                    for cand in candidates:
+                        guessed = guess_india_plate(cand)
+                        if guessed:
+                            break
+                if guessed:
+                    plate_text_display = guessed
+                    guessed_plate = True
+
+            if not plate_text_display:
+                continue
+
+            norm_plate = normalize_plate_text(plate_text_display)
             combined_conf = float(det_conf) * float(ocr_conf)
 
-            plate_text_display, voted_conf = self._vote_plate(zone_id, plate_text_display, combined_conf, now_utc)
+            voted_plate, voted_conf = self._vote_plate(zone_id, plate_text_display, combined_conf, now_utc)
+            plate_text_display = voted_plate
             norm_plate = normalize_plate_text(plate_text_display)
             combined_conf = float(voted_conf)
-            if not norm_plate:
-                continue
-            direction = self._infer_direction(norm_plate, bbox, now_utc)
-
-            valid_plate = True
-            if self.validate_india:
-                valid_plate = _is_valid_india_plate(norm_plate)
-                if not valid_plate and not self.show_invalid:
-                    continue
 
             # Dedup
             if not self._should_emit(norm_plate, zone_id, now_utc):
@@ -552,95 +1255,47 @@ class AnprProcessor:
                         det_conf=float(det_conf),
                         ocr_conf=float(ocr_conf),
                         match_status="DEDUP",
-                        direction=direction,
                     )
                 )
                 continue
 
-            registered = None
-            if self.registered_plates is not None:
-                registered = norm_plate in self.registered_plates
-
-            extra: Dict[str, str] = {
-                "det_conf": f"{float(det_conf):.4f}",
-                "ocr_conf": f"{float(ocr_conf):.4f}",
-            }
-            if registered is not None:
-                extra["registered"] = "true" if registered else "false"
-            if not valid_plate:
-                extra["valid_plate"] = "false"
-
-            # Evaluate rules to determine match status and event type
-            rules = self.rules_by_zone.get(zone_id, [])
-            match_status = "UNKNOWN"
-            event_type = "ANPR_PLATE_DETECTED"
-            severity = "info"
+            # --- STATUS DECISION ---
             rule_id = None
-            # Determine plate status relative to blacklist/whitelist
-            in_whitelist = False
-            in_blacklist = False
-            # Evaluate lists from rules
-            for r in rules:
-                if isinstance(r, AnprWhitelistRule):
-                    # Normalise allowed list strings
-                    allowed_norm = {normalize_plate_text(p) for p in r.allowed_plates}
-                    if norm_plate in allowed_norm:
-                        in_whitelist = True
-                        rule_id = r.id
-                    else:
-                        # Plate not in whitelist; potential mismatch depending on rule
-                        rule_id = r.id
-                elif isinstance(r, AnprBlacklistRule):
-                    blocked_norm = {normalize_plate_text(p) for p in r.blocked_plates}
-                    if norm_plate in blocked_norm:
-                        in_blacklist = True
-                        rule_id = r.id
-                elif isinstance(r, AnprMonitorRule):
-                    if rule_id is None:
-                        rule_id = r.id
-                    # Monitor rule has no plate lists
-                    pass
-            # Determine match status and event type
-            if in_blacklist:
-                match_status = "BLACKLIST"
-                event_type = "ANPR_PLATE_MISMATCH"
-                severity = "warning"
-            elif any(isinstance(r, AnprWhitelistRule) for r in rules):
-                # Whitelist rule present
-                if in_whitelist:
-                    match_status = "WHITELIST"
-                    event_type = "ANPR_PLATE_DETECTED"
-                    severity = "info"
-                else:
-                    match_status = "UNKNOWN"
-                    event_type = "ANPR_PLATE_MISMATCH"
-                    severity = "warning"
+            if guessed_plate:
+                match_status, event_type, severity = ("GUESSED", "ANPR_PLATE_DETECTED", "info")
             else:
-                # No whitelist/blacklist rules; simple monitor
-                match_status = "UNKNOWN"
-                event_type = "ANPR_PLATE_DETECTED"
-                severity = "info"
+                match_status, event_type, severity = decide_plate_status(
+                    norm_plate,
+                    self.whitelist_plates,
+                    self.blacklist_plates,
+                )
 
-            if not valid_plate and match_status != "BLACKLIST":
-                match_status = "INVALID"
-                event_type = "ANPR_PLATE_MISMATCH"
+            # Time Window overrides event type
+            if not inside_time:
+                event_type = "ANPR_TIME_VIOLATION"
                 severity = "warning"
 
-            self._save_crop(crop, norm_plate, now_utc)
-            self._append_csv_row(
-                timestamp_iso,
-                zone_id,
-                norm_plate,
-                det_conf,
-                ocr_conf,
-                combined_conf,
-                valid_plate,
-                "1" if registered else "0" if registered is not None else "",
-                bbox=bbox,
-                match_status=match_status,
-            )
+            extra = {
+                "ocr_conf": f"{float(ocr_conf):.4f}",
+                "det_conf": f"{float(det_conf):.4f}",
+                "rules_json": "1" if (self.whitelist_plates or self.blacklist_plates) else "0",
+                "inside_time": "1" if inside_time else "0",
+                "frame_index": str(self.frame_index),
+            }
+            if guessed_plate:
+                extra["guessed"] = "1"
+            if self.registered_plates:
+                extra["registered"] = "1" if norm_plate in self.registered_plates else "0"
 
-            # Build and publish event
+            if self.save_csv:
+                self._append_csv_row(
+                    timestamp_iso, zone_id, plate_text_display,
+                    float(det_conf), float(ocr_conf), float(combined_conf), True,
+                    extra.get("registered", ""),
+                    bbox=bbox,
+                    match_status=match_status,
+                )
+
             event = EventModel(
                 godown_id=self.godown_id,
                 camera_id=self.camera_id,
@@ -653,55 +1308,16 @@ class AnprProcessor:
                 image_url=None,
                 clip_url=None,
                 meta=MetaModel(
-                    zone_id=zone_id,
+                    zone_id=zone_id if zone_id != "__GLOBAL__" else None,
                     rule_id=rule_id or "",
                     confidence=combined_conf,
                     plate_text=plate_text_display,
-                    plate_norm=norm_plate,
-                    direction=direction,
                     match_status=match_status,
                     extra=extra,
                 ),
             )
             mqtt_client.publish_event(event)
             self._update_cache(norm_plate, zone_id, now_utc)
-
-            snapshot_url = None
-            if snapshotter is not None:
-                try:
-                    snapshot_url = snapshotter(
-                        frame,
-                        f"anpr-{uuid.uuid4()}",
-                        now_utc,
-                        bbox=bbox,
-                        label=f"ANPR {plate_text_display}",
-                    )
-                except Exception:
-                    snapshot_url = None
-
-            hit_event = EventModel(
-                godown_id=self.godown_id,
-                camera_id=self.camera_id,
-                event_id=str(uuid.uuid4()),
-                event_type="ANPR_HIT",
-                severity="info",
-                timestamp_utc=timestamp_iso,
-                bbox=bbox,
-                track_id=0,
-                image_url=snapshot_url,
-                clip_url=None,
-                meta=MetaModel(
-                    zone_id=zone_id if zone_id != "__GLOBAL__" else None,
-                    rule_id=rule_id or "",
-                    confidence=combined_conf,
-                    plate_text=plate_text_display,
-                    plate_norm=norm_plate,
-                    direction=direction,
-                    match_status=match_status,
-                    extra=extra,
-                ),
-            )
-            mqtt_client.publish_event(hit_event)
 
             results_out.append(
                 RecognizedPlate(
@@ -714,19 +1330,13 @@ class AnprProcessor:
                     det_conf=float(det_conf),
                     ocr_conf=float(ocr_conf),
                     match_status=match_status,
-                    direction=direction,
                 )
             )
 
             self.logger.info(
-                "ANPR: plate=%s zone=%s det=%.3f ocr=%.3f conf=%.3f status=%s event=%s",
-                plate_text_display,
-                zone_id,
-                float(det_conf),
-                float(ocr_conf),
-                float(combined_conf),
-                match_status,
-                event_type,
+                "ANPR: plate=%s zone=%s time_ok=%s status=%s event=%s",
+                plate_text_display, zone_id, inside_time,
+                match_status, event_type
             )
 
         return results_out
@@ -745,36 +1355,17 @@ class AnprProcessor:
             with open(self.save_csv, "a", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
                 if (not self._csv_ready) and (f.tell() == 0):
-                    writer.writerow(
-                        [
-                            "timestamp_utc",
-                            "camera_id",
-                            "zone_id",
-                            "plate_text",
-                            "det_conf",
-                            "ocr_conf",
-                            "combined_conf",
-                            "valid",
-                            "registered",
-                            "match_status",
-                            "bbox",
-                        ]
-                    )
+                    writer.writerow([
+                        "timestamp_utc", "camera_id", "zone_id", "plate_text",
+                        "det_conf", "ocr_conf", "combined_conf", "valid",
+                        "registered", "match_status", "bbox"
+                    ])
                     self._csv_ready = True
-                writer.writerow(
-                    [
-                        ts,
-                        self.camera_id,
-                        zone,
-                        text,
-                        f"{float(det):.4f}",
-                        f"{float(ocr):.4f}",
-                        f"{float(comb):.4f}",
-                        "1" if valid else "0",
-                        reg,
-                        match_status,
-                        "" if bbox is None else str(list(bbox)),
-                    ]
-                )
+                writer.writerow([
+                    ts, self.camera_id, zone, text,
+                    f"{float(det):.4f}", f"{float(ocr):.4f}", f"{float(comb):.4f}",
+                    "1" if valid else "0", reg, match_status,
+                    "" if bbox is None else str(list(bbox)),
+                ])
         except Exception as exc:
             self.logger.warning("ANPR CSV write failed (%s): %s", self.save_csv, exc)

@@ -4,8 +4,9 @@ Wrapper around the Ultralytics YOLO model for object detection.
 
 from __future__ import annotations
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import logging
+import os
 
 try:
     from ultralytics import YOLO  # type: ignore
@@ -36,6 +37,7 @@ class YoloDetector:
         if YOLO is None:
             raise RuntimeError("ultralytics is not installed; please install ultralytics")
 
+        self.model_name = model_name
         self.device = device
         self.tracker_name = tracker_name
         self.track_persist = track_persist
@@ -46,9 +48,11 @@ class YoloDetector:
         self.imgsz = imgsz
         self.classes = classes
         self.max_det = max_det
-        # Load the model. We defer device placement until inference time.
+
+        # Load model
         self.model = YOLO(model_name)
         self.names = self.model.names
+
         self.logger.info(
             "Loaded YOLO model=%s device=%s conf=%s iou=%s imgsz=%s classes=%s max_det=%s",
             model_name,
@@ -60,28 +64,54 @@ class YoloDetector:
             self.max_det,
         )
 
+    def _default_imgsz(self) -> int:
+        """
+        Never return None.
+        Use higher default for anpr/plate models.
+        """
+        name = (self.model_name or "").lower()
+        if ("anpr" in name) or ("plate" in name) or ("platemodel" in name):
+            # Plates are small -> higher imgsz helps a lot
+            try:
+                return int(os.getenv("EDGE_ANPR_IMGSZ", "960"))
+            except Exception:
+                return 960
+        try:
+            return int(os.getenv("EDGE_YOLO_IMGSZ", "640"))
+        except Exception:
+            return 640
+
     def detect(self, frame) -> List[Tuple[str, float, List[int]]]:
         """
         Returns list of (class_name, confidence, [x1,y1,x2,y2])
         """
-        # Use predict() so kwargs are consistently supported
-        results = self.model.predict(
-            source=frame,
-            device=self.device,
-            conf=self.conf,
-            iou=self.iou,
-            imgsz=self.imgsz,
-            classes=self.classes,
-            max_det=self.max_det,
-            verbose=False,
-        )[0]
+        # Build kwargs safely: do NOT pass imgsz=None, conf=None, iou=None etc
+        predict_kwargs = {
+            "source": frame,
+            "device": self.device,
+            "verbose": False,
+        }
+
+        if self.conf is not None:
+            predict_kwargs["conf"] = float(self.conf)
+        if self.iou is not None:
+            predict_kwargs["iou"] = float(self.iou)
+        if self.classes is not None:
+            predict_kwargs["classes"] = self.classes
+        if self.max_det is not None:
+            predict_kwargs["max_det"] = int(self.max_det)
+
+        # imgsz must be int or [h,w], never None
+        predict_kwargs["imgsz"] = self.imgsz if self.imgsz is not None else self._default_imgsz()
+
+        results0 = self.model.predict(**predict_kwargs)[0]
 
         detections: List[Tuple[str, float, List[int]]] = []
-        for box in results.boxes:
+        for box in results0.boxes:
             class_id = int(box.cls.item())
             class_name = self.names.get(class_id, str(class_id))
             confidence = float(box.conf.item())
-            xyxy = box.xyxy.tolist()[0] 
+            xyxy = box.xyxy.tolist()[0]
             bbox = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])]
             detections.append((class_name, confidence, bbox))
 
@@ -91,11 +121,8 @@ class YoloDetector:
         """
         Run ByteTrack-based tracking on a single frame.
 
-        Returns
-        -------
-        List[Tuple[int, Tuple[str, float, List[int]]]]
-            A list of tuples containing (track_id, (class_name, confidence, bbox))
-            where ``bbox`` is in [x1, y1, x2, y2] pixel coordinates.
+        Returns:
+            [(track_id, (class_name, confidence, [x1,y1,x2,y2]))]
         """
         track_kwargs = {
             "device": self.device,
@@ -104,24 +131,20 @@ class YoloDetector:
             "verbose": False,
         }
         if self.track_conf is not None:
-            track_kwargs["conf"] = self.track_conf
+            track_kwargs["conf"] = float(self.track_conf)
         if self.track_iou is not None:
-            track_kwargs["iou"] = self.track_iou
-        results = self.model.track(
-            frame,
-            **track_kwargs,
-        )[0]
+            track_kwargs["iou"] = float(self.track_iou)
+
+        results0 = self.model.track(frame, **track_kwargs)[0]
+
         tracked: List[Tuple[int, Tuple[str, float, List[int]]]] = []
-        for box in results.boxes:
+        for box in results0.boxes:
             class_id = int(box.cls.item())
             class_name = self.names.get(class_id, str(class_id))
             confidence = float(box.conf.item()) if box.conf is not None else 0.0
-            xyxy = box.xyxy.tolist()[0]  # type: ignore
+            xyxy = box.xyxy.tolist()[0]
             bbox = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])]
-            if box.id is None:
-                track_id = -1
-            else:
-                track_id = int(box.id.item())
+            track_id = int(box.id.item()) if box.id is not None else -1
             tracked.append((track_id, (class_name, confidence, bbox)))
-        return tracked
 
+        return tracked

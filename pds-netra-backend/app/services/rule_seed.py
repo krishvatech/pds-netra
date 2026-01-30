@@ -74,8 +74,16 @@ def _seed_rules_for_camera(db: Session, cam: Camera) -> int:
         )
         created += 1
 
-    # Animal and ANPR rules for gate/perimeter cameras
-    if "GATE" in role or "PERIMETER" in role or "GATE" in cam_id.upper():
+    # Animal and ANPR rules for gate/perimeter/ANPR cameras
+    # (Your ANPR camera IDs are like CAM_ANPR_1, so include "ANPR" as well.)
+    cam_id_u = cam_id.upper()
+    if (
+        "GATE" in role
+        or "PERIMETER" in role
+        or "ANPR" in role
+        or "GATE" in cam_id_u
+        or "ANPR" in cam_id_u
+    ):
         for zone_id in zone_targets:
             for rtype, params in [
                 ("ANIMAL_FORBIDDEN", {}),
