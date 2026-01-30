@@ -373,6 +373,9 @@ class FaceRecognitionProcessor:
                 )
                 self._last_face_log = now_utc
         overlays: List[FaceOverlay] = []
+        # Do not emit unknown-person events if no faces detected in this frame
+        if not faces:
+            return []
         for bbox, embedding in faces:
             # Skip tiny faces that produce unreliable embeddings.
             min_face_size = int(os.getenv("PDS_FACE_MIN_SIZE", "60"))

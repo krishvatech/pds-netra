@@ -17,6 +17,7 @@ import logging
 import os
 import datetime
 import cv2  # type: ignore
+import time
 
 from .yolo_detector import YoloDetector
 
@@ -85,14 +86,54 @@ class Pipeline:
         debug_out = os.getenv("PDS_DEBUG_VIDEO_PATH", f"logs/debug_{self.camera_id}.mp4")
         writer = None
         try:
+            self._rtsp_retry = 0
+            
             while True:
                 if self.stop_check and self.stop_check():
                     self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
                     break
+                # Initialize retry counter once
+                if not hasattr(self, "_rtsp_retry"):
+                    self._rtsp_retry = 0
+
                 ret, frame = cap.read()
-                if not ret or frame is None:
-                    self.logger.info("End of stream for camera %s", self.camera_id)
-                    break
+
+                if not ret:
+                    self._rtsp_retry += 1
+
+                    # Backoff strategy
+                    if self._rtsp_retry == 1:
+                        delay = 2
+                    elif self._rtsp_retry == 2:
+                        delay = 5
+                    elif self._rtsp_retry == 3:
+                        delay = 10
+                    else:
+                        delay = 30
+
+                    self.logger.warning(
+                        "RTSP stream ended for camera %s (attempt=%d, retry in %ds)",
+                        self.camera_id,
+                        self._rtsp_retry,
+                        delay,
+                    )
+
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+
+                    time.sleep(delay)
+
+                    cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+                    if not cap.isOpened():
+                        self.logger.warning("Reconnect failed (still offline): camera=%s", self.camera_id)
+                        continue
+
+                    continue
+
+                # ✅ If frame received successfully, reset retry counter
+                self._rtsp_retry = 0
                 # Perform tracking using the detector's built-in tracker.
                 tracked = self.detector.track(frame)
                 # Convert to DetectedObject instances
