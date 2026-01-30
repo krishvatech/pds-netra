@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getAlerts } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import type { AlertItem, AlertStatus, Severity } from '@/lib/types';
 import { AlertsTable } from '@/components/tables/AlertsTable';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -33,6 +34,13 @@ export default function AlertsPage() {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!godownId) {
+      const user = getUser();
+      if (user?.godown_id) setGodownId(String(user.godown_id));
+    }
+  }, [godownId]);
 
   const tickerItems = useMemo(() => {
     const slice = alerts.slice(0, 8);
@@ -154,7 +162,7 @@ export default function AlertsPage() {
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
             <div className="md:col-span-2">
               <Label>Godown ID</Label>
-              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
+              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div className="md:col-span-2">
               <Label>District</Label>

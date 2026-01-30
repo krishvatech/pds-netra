@@ -52,7 +52,7 @@ Alerts are sent to Godown Manager + HQ via WhatsApp and Email using the existing
 ```
 python pds-netra-edge/tools/simulate_anpr_hit.py \
   --backend-url http://localhost:8000 \
-  --godown-id GDN_001 \
+  --godown-id GDN_SAMPLE \
   --camera-id CAM_GATE_1 \
   --plate GJ01AB1234 \
   --direction ENTRY

@@ -25,7 +25,7 @@ def _make_session():
 
 def _build_event(ts: datetime, direction: str) -> EventIn:
     return EventIn(
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         camera_id="CAM_GATE_1",
         event_id=str(uuid.uuid4()),
         event_type="ANPR_HIT",

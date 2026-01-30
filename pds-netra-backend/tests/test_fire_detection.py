@@ -19,7 +19,7 @@ def _make_session():
 
 def _build_event(event_id: str) -> EventIn:
     return EventIn(
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         camera_id="CAM_FIRE_1",
         event_id=event_id,
         event_type="FIRE_DETECTED",

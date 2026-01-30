@@ -30,7 +30,7 @@ These use `FaceMatchEvent` (`schema_version=1.0`).
 
 ```json
 {
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "camera_id": "CAM_GATE_1",
   "event_id": "550e8400-e29b-41d4-a716-446655440000",
   "event_type": "ANPR_HIT",
@@ -38,7 +38,7 @@ These use `FaceMatchEvent` (`schema_version=1.0`).
   "timestamp_utc": "2026-01-29T03:15:00Z",
   "bbox": [120, 300, 420, 480],
   "track_id": 12,
-  "image_url": "http://127.0.0.1:8001/media/snapshots/GDN_001/....jpg",
+  "image_url": "http://127.0.0.1:8001/media/snapshots/GDN_SAMPLE/....jpg",
   "clip_url": null,
   "meta": {
     "zone_id": "gate_outer",
@@ -64,7 +64,7 @@ These use `FaceMatchEvent` (`schema_version=1.0`).
   "event_id": "1b2c3d4e-1111-2222-3333-444455556666",
   "occurred_at": "2026-01-29T14:12:00Z",
   "timezone": "Asia/Kolkata",
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "camera_id": "CAM_AISLE_3",
   "event_type": "PERSON_DETECTED",
   "payload": {
@@ -73,7 +73,7 @@ These use `FaceMatchEvent` (`schema_version=1.0`).
     "confidence": 0.72,
     "is_after_hours": true,
     "evidence": {
-      "snapshot_url": "http://127.0.0.1:8001/media/snapshots/GDN_001/....jpg",
+      "snapshot_url": "http://127.0.0.1:8001/media/snapshots/GDN_SAMPLE/....jpg",
       "local_path": null,
       "frame_ts": "2026-01-29T14:12:00Z"
     }
@@ -90,7 +90,7 @@ Same as `PERSON_DETECTED` with `event_type = VEHICLE_DETECTED` and vehicle bbox 
 
 ```json
 {
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "camera_id": "CAM_AISLE_3",
   "event_id": "fdb2d3e4-aaaa-bbbb-cccc-ddddeeeeffff",
   "event_type": "ANIMAL_INTRUSION",
@@ -98,7 +98,7 @@ Same as `PERSON_DETECTED` with `event_type = VEHICLE_DETECTED` and vehicle bbox 
   "timestamp_utc": "2026-01-29T02:45:00Z",
   "bbox": [120, 250, 360, 520],
   "track_id": 7,
-  "image_url": "http://127.0.0.1:8001/media/snapshots/GDN_001/....jpg",
+  "image_url": "http://127.0.0.1:8001/media/snapshots/GDN_SAMPLE/....jpg",
   "meta": {
     "zone_id": "aisle_zone3",
     "rule_id": "RULE_ANIMAL_INTRUSION",
@@ -116,7 +116,7 @@ Same as `PERSON_DETECTED` with `event_type = VEHICLE_DETECTED` and vehicle bbox 
 
 ```json
 {
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "camera_id": "CAM_AISLE_3",
   "event_id": "3a1b0c9d-1234-4567-89ab-cdef12345678",
   "event_type": "FIRE_DETECTED",
@@ -149,7 +149,7 @@ Same as `PERSON_DETECTED` with `event_type = VEHICLE_DETECTED` and vehicle bbox 
   "schema_version": "1.0",
   "event_id": "9c1d2e3f-aaaa-bbbb-cccc-ddddeeeeffff",
   "occurred_at": "2026-01-29T05:05:00Z",
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "camera_id": "CAM_AISLE_3",
   "event_type": "FACE_MATCH",
   "payload": {
@@ -160,7 +160,7 @@ Same as `PERSON_DETECTED` with `event_type = VEHICLE_DETECTED` and vehicle bbox 
       "blacklist_person_id": "WLP-0001"
     },
     "evidence": {
-      "snapshot_url": "http://127.0.0.1:8001/media/snapshots/GDN_001/....jpg",
+      "snapshot_url": "http://127.0.0.1:8001/media/snapshots/GDN_SAMPLE/....jpg",
       "local_snapshot_path": null,
       "bbox": [120, 60, 210, 170],
       "frame_ts": "2026-01-29T05:05:00Z"

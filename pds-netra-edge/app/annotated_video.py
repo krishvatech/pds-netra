@@ -88,7 +88,8 @@ class AnnotatedVideoWriter:
         self._size = (width, height)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        for codec in ("avc1", "mp4v"):
+        # Prefer mp4v first to avoid avc1 encoder warnings on systems without H.264.
+        for codec in ("mp4v", "avc1"):
             try:
                 fourcc = cv2.VideoWriter_fourcc(*codec)
                 writer = cv2.VideoWriter(str(self.output_path), fourcc, self.fps, self._size)

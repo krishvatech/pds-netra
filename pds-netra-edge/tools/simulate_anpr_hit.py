@@ -49,7 +49,7 @@ def build_event(args: argparse.Namespace) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Simulate ANPR_HIT event")
     parser.add_argument("--backend-url", default=os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8000"))
-    parser.add_argument("--godown-id", default="GDN_001")
+    parser.add_argument("--godown-id", default="GDN_SAMPLE")
     parser.add_argument("--camera-id", default="CAM_GATE_1")
     parser.add_argument("--plate", required=True)
     parser.add_argument("--direction", choices=["ENTRY", "EXIT", "UNKNOWN"], default="ENTRY")

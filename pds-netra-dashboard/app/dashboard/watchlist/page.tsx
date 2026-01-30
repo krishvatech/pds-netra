@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AlertItem, WatchlistPerson } from '@/lib/types';
 import { createWatchlistPerson, getAlerts, getWatchlistPersons } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,7 +30,7 @@ const mockPersons: WatchlistPerson[] = [
 const mockMatches: AlertItem[] = [
   {
     id: 'ALERT-001',
-    godown_id: 'GDN_001',
+    godown_id: 'GDN_SAMPLE',
     godown_name: 'Pethapur',
     district: 'Gandhinagar',
     camera_id: 'CAM_GATE_1',
@@ -63,6 +64,13 @@ export default function WatchlistPage() {
   const [minScore, setMinScore] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  useEffect(() => {
+    if (!matchGodown) {
+      const user = getUser();
+      if (user?.godown_id) setMatchGodown(String(user.godown_id));
+    }
+  }, [matchGodown]);
 
   const matchParams = useMemo(() => ({
     alert_type: 'BLACKLIST_PERSON_MATCH',
@@ -245,7 +253,7 @@ export default function WatchlistPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
               <div>
                 <Label>Godown</Label>
-                <Input value={matchGodown} onChange={(e) => setMatchGodown(e.target.value)} placeholder="GDN_001" />
+                <Input value={matchGodown} onChange={(e) => setMatchGodown(e.target.value)} placeholder="Auto (from login)" />
               </div>
               <div>
                 <Label>Min score</Label>

@@ -51,7 +51,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-export EDGE_OVERRIDE_PATH=/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/edge_overrides/GDN_001.json
+export EDGE_OVERRIDE_PATH=/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pds-netra-backend/data/edge_overrides/GDN_SAMPLE.json
 python -m app.main --config config/pds_netra_config.yaml --device cpu --log-level INFO
 ```
 

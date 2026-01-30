@@ -57,7 +57,7 @@ You can also POST a mock event to the backend:
 curl -X POST http://localhost:8000/api/v1/edge/events \
   -H "Content-Type: application/json" \
   -d '{
-    "godown_id": "GDN_001",
+    "godown_id": "GDN_SAMPLE",
     "camera_id": "CAM_GATE_1",
     "event_id": "evt-animal-001",
     "event_type": "ANIMAL_INTRUSION",

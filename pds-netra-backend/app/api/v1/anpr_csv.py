@@ -179,7 +179,7 @@ def _event_type_from_status(status: str) -> str:
 
 @router.get("/csv-events")
 def anpr_csv_events(
-    godown_id: str = Query(..., description="Godown ID, e.g. GDN_001"),
+    godown_id: str = Query(..., description="Godown ID, e.g. GDN_SAMPLE"),
     timezone_name: str = Query("Asia/Kolkata", description="IANA timezone for local time rendering"),
     camera_id: Optional[str] = Query(None),
     plate_text: Optional[str] = Query(None),
@@ -195,7 +195,28 @@ def anpr_csv_events(
 
     base = _resolve_csv_dir()
     godown_dir = _safe_join(base, godown_id)
-    csv_path = _pick_latest_csv(godown_dir)
+    try:
+        csv_path = _pick_latest_csv(godown_dir)
+    except HTTPException as exc:
+        # Dynamic godowns may not have any CSVs yet; return an empty payload.
+        if exc.status_code == 404:
+            try:
+                godown_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+            return {
+                "source": {"csv_path": "", "csv_mtime_utc": ""},
+                "summary": {
+                    "total": 0,
+                    "verified": 0,
+                    "not_verified": 0,
+                    "blacklist": 0,
+                    "dedup": 0,
+                    "last_seen_local": None,
+                },
+                "events": [],
+            }
+        raise
 
     events = _read_events(csv_path)
 

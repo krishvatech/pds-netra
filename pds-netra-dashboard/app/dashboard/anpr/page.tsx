@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getAnprCsvEvents } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import type { AnprCsvEventsResponse } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,7 +38,7 @@ function formatDuration(ms: number) {
 }
 
 export default function AnprDashboardPage() {
-  const [godownId, setGodownId] = useState('GDN_001');
+  const [godownId, setGodownId] = useState('');
   const [cameraId, setCameraId] = useState('');
   const [matchStatus, setMatchStatus] = useState('');
   const [limit, setLimit] = useState(500);
@@ -47,10 +48,18 @@ export default function AnprDashboardPage() {
 
   // 🔁 Background refresh (no flicker)
   useEffect(() => {
+    if (!godownId) {
+      const user = getUser();
+      if (user?.godown_id) setGodownId(String(user.godown_id));
+    }
+  }, [godownId]);
+
+  useEffect(() => {
     let alive = true;
 
     async function load() {
       try {
+        if (!godownId) return;
         const resp = await getAnprCsvEvents({
           godown_id: godownId,
           camera_id: cameraId || undefined,

@@ -888,6 +888,9 @@ class AnprProcessor:
         plate_rules_json: Optional[str] = None,
         allowed_start: str = "00:00",
         allowed_end: str = "23:59",
+        gate_line: Optional[List[List[int]]] = None,
+        inside_side: Optional[str] = None,
+        direction_max_gap_sec: int = 120,
     ) -> None:
         self.logger = logging.getLogger(f"AnprProcessor-{camera_id}")
         self.camera_id = camera_id
@@ -908,6 +911,14 @@ class AnprProcessor:
 
         self.allowed_start = _parse_time(allowed_start)
         self.allowed_end = _parse_time(allowed_end)
+
+        self.gate_line = self._parse_gate_line(gate_line)
+        inside_side_norm = str(inside_side).strip().upper() if inside_side else None
+        if inside_side_norm not in {"POSITIVE", "NEGATIVE"}:
+            inside_side_norm = "POSITIVE" if self.gate_line else None
+        self.inside_side = inside_side_norm
+        self.direction_max_gap_sec = max(1, int(direction_max_gap_sec))
+        self.plate_tracks: Dict[str, Tuple[int, datetime.datetime]] = {}
 
         self.plate_detector = plate_detector
 
@@ -1082,7 +1093,13 @@ class AnprProcessor:
             return self.allowed_start <= now_t <= self.allowed_end
         return now_t >= self.allowed_start or now_t <= self.allowed_end
 
-    def process_frame(self, frame: Any, now_utc: datetime.datetime, mqtt_client: MQTTClient) -> List[RecognizedPlate]:
+    def process_frame(
+        self,
+        frame: Any,
+        now_utc: datetime.datetime,
+        mqtt_client: MQTTClient,
+        snapshotter=None,
+    ) -> List[RecognizedPlate]:
         results_out: List[RecognizedPlate] = []
         if frame is None:
             return results_out

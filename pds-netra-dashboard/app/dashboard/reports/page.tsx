@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect, Fragment } from 'react';
 import { exportAlertsCsvUrl, exportMovementCsvUrl, generateHqReport, getHqReportDeliveries, getHqReports } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import type { AlertDelivery, AlertReport } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,13 @@ export default function ReportsPage() {
   const [hqError, setHqError] = useState<string | null>(null);
   const [hqLoading, setHqLoading] = useState(false);
   const [hqGenerating, setHqGenerating] = useState(false);
+
+  useEffect(() => {
+    if (!godownId) {
+      const user = getUser();
+      if (user?.godown_id) setGodownId(String(user.godown_id));
+    }
+  }, [godownId]);
 
   const urls = useMemo(() => {
     const params = {
@@ -107,7 +115,7 @@ export default function ReportsPage() {
             </div>
             <div>
               <div className="text-xs text-slate-600 mb-1">Godown ID (optional)</div>
-              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
+              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="Auto (from login)" />
             </div>
           </div>
         </CardContent>

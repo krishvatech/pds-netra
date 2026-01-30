@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { AlertItem } from '@/lib/types';
 import { getAlerts } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +18,7 @@ const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
 const mockAlerts: AlertItem[] = [
   {
     id: 'AN-001',
-    godown_id: 'GDN_001',
+    godown_id: 'GDN_SAMPLE',
     godown_name: 'Pethapur',
     district: 'Gandhinagar',
     camera_id: 'CAM_GATE_1',
@@ -46,6 +47,13 @@ export default function AnimalsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!godownId) {
+      const user = getUser();
+      if (user?.godown_id) setGodownId(String(user.godown_id));
+    }
+  }, [godownId]);
 
   const params = useMemo(() => {
     const p: Record<string, any> = {
@@ -115,7 +123,7 @@ export default function AnimalsPage() {
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <div>
               <Label>Godown</Label>
-              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
+              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div>
               <Label>Species</Label>

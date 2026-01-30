@@ -4,7 +4,7 @@ from app.models.event import EventModel, MetaModel, HealthModel
 def test_event_model_serialisation():
     meta = MetaModel(zone_id='z1', rule_id='r1', confidence=0.9)
     event = EventModel(
-        godown_id='GDN_001',
+        godown_id='GDN_SAMPLE',
         camera_id='CAM1',
         event_id='uuid',
         event_type='TEST',
@@ -17,14 +17,14 @@ def test_event_model_serialisation():
         meta=meta,
     )
     json_str = event.json()
-    assert 'GDN_001' in json_str
+    assert 'GDN_SAMPLE' in json_str
     assert 'bbox' in json_str
     assert 'meta' in json_str
 
 
 def test_health_model_serialisation():
     health = HealthModel(
-        godown_id='GDN_001',
+        godown_id='GDN_SAMPLE',
         device_id='DEV1',
         status='OK',
         online_cameras=2,

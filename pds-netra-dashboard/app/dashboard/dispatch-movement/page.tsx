@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { AlertItem, VehicleGateSession } from '@/lib/types';
 import { getAlerts, getVehicleGateSessions } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +24,7 @@ const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
 const mockSessions: VehicleGateSession[] = [
   {
     id: 'VGS-001',
-    godown_id: 'GDN_001',
+    godown_id: 'GDN_SAMPLE',
     anpr_camera_id: 'CAM_GATE_1',
     plate_raw: 'GJ01AB1234',
     plate_norm: 'GJ01AB1234',
@@ -40,7 +41,7 @@ const mockSessions: VehicleGateSession[] = [
 const mockAlerts: AlertItem[] = [
   {
     id: 'AL-001',
-    godown_id: 'GDN_001',
+    godown_id: 'GDN_SAMPLE',
     godown_name: 'Pethapur',
     district: 'Gandhinagar',
     camera_id: 'CAM_GATE_1',
@@ -70,6 +71,13 @@ export default function DispatchMovementPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!godownId) {
+      const user = getUser();
+      if (user?.godown_id) setGodownId(String(user.godown_id));
+    }
+  }, [godownId]);
 
   const sessionsParams = useMemo(() => {
     const p: Record<string, any> = {
@@ -166,7 +174,7 @@ export default function DispatchMovementPage() {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
               <Label>Godown</Label>
-              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="GDN_001" />
+              <Input value={godownId} onChange={(e) => setGodownId(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div>
               <Label>Plate</Label>

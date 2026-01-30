@@ -47,7 +47,7 @@ Backend
 Edge
   cd d:\pds-netra\pds-netra\pds-netra-edge
   .\.venv\Scripts\Activate.ps1
-  $env:EDGE_OVERRIDE_PATH="d:\pds-netra\pds-netra\pds-netra-backend\data\edge_overrides\GDN_001.json"
+  $env:EDGE_OVERRIDE_PATH="d:\pds-netra\pds-netra\pds-netra-backend\data\edge_overrides\GDN_SAMPLE.json"
   python -m app.main --config config/pds_netra_config.yaml --device cpu --log-level INFO
 
 Dashboard

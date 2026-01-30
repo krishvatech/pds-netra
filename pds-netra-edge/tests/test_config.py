@@ -5,7 +5,7 @@ def test_load_settings(tmp_path):
     # Copy the sample config into a temporary directory
     import shutil
     import os
-    os.environ["GODOWN_ID"] = "GDN_001"
+    os.environ["GODOWN_ID"] = "GDN_SAMPLE"
     # Use package file path relative to this test file
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     sample_config = os.path.join(project_root, 'config', 'pds_netra_config.yaml')
@@ -13,7 +13,7 @@ def test_load_settings(tmp_path):
     try:
         shutil.copy(sample_config, tmp_config)
         settings = load_settings(str(tmp_config))
-        assert settings.godown_id == 'GDN_001'
+        assert settings.godown_id == 'GDN_SAMPLE'
         assert settings.timezone == 'Asia/Kolkata'
         assert len(settings.cameras) >= 1
         assert len(settings.rules) == 0

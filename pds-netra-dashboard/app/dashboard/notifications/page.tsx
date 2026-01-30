@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { NotificationEndpoint } from '@/lib/types';
 import { createNotificationEndpoint, deleteNotificationEndpoint, getNotificationEndpoints, updateNotificationEndpoint } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,7 +30,7 @@ const mockEndpoints: NotificationEndpoint[] = [
   {
     id: 'ENDPOINT-002',
     scope: 'GODOWN_MANAGER',
-    godown_id: 'GDN_001',
+    godown_id: 'GDN_SAMPLE',
     channel: 'WHATSAPP',
     target: '+91XXXXXXXXXX',
     is_enabled: true,
@@ -64,6 +65,16 @@ export default function NotificationsPage() {
     target: '',
     is_enabled: true
   });
+
+  useEffect(() => {
+    const user = getUser();
+    if (!filterGodown && user?.godown_id) {
+      setFilterGodown(String(user.godown_id));
+    }
+    if (form.scope === 'GODOWN_MANAGER' && !form.godown_id && user?.godown_id) {
+      setForm((prev) => ({ ...prev, godown_id: String(user.godown_id) }));
+    }
+  }, [filterGodown, form.scope, form.godown_id]);
 
   const targetValidation = useMemo(() => {
     const trimmed = form.target.trim();
@@ -306,7 +317,7 @@ export default function NotificationsPage() {
               <Input
                 value={form.godown_id}
                 onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
-                placeholder="GDN_001"
+                placeholder="Auto (from login)"
                 disabled={form.scope !== 'GODOWN_MANAGER'}
               />
               {godownValidation && form.scope === 'GODOWN_MANAGER' && (
@@ -408,7 +419,7 @@ export default function NotificationsPage() {
             </div>
             <div>
               <Label>Godown</Label>
-              <Input value={filterGodown} onChange={(e) => setFilterGodown(e.target.value)} placeholder="GDN_001" />
+              <Input value={filterGodown} onChange={(e) => setFilterGodown(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div className="flex items-end">
               <Button variant="outline" onClick={() => loadEndpoints({ showToast: true })}>Refresh</Button>

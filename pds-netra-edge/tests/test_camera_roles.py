@@ -80,7 +80,7 @@ def test_module_override_enables_anpr():
 def test_camera_anpr_overrides_parse(tmp_path):
     config_text = textwrap.dedent(
         """
-        godown_id: GDN_001
+        godown_id: GDN_SAMPLE
         timezone: Asia/Kolkata
         mqtt:
           host: 127.0.0.1

@@ -43,7 +43,7 @@ def test_face_match_idempotency_and_alert():
     event_payload = FaceMatchEventIn(
         event_id="evt-1",
         occurred_at=datetime.utcnow(),
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         camera_id="CAM_1",
         payload=FaceMatchPayload(
             person_candidate=FaceMatchCandidate(

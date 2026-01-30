@@ -34,8 +34,8 @@ Notification recipients are resolved in this order:
 2. Env fallback
    - `WATCHLIST_NOTIFY_HQ_EMAILS`
    - `WATCHLIST_NOTIFY_HQ_WHATSAPP`
-   - `WATCHLIST_NOTIFY_GODOWN_EMAILS=GDN_001:gm@example.com;GDN_002:...`
-   - `WATCHLIST_NOTIFY_GODOWN_WHATSAPP=GDN_001:+91...`
+   - `WATCHLIST_NOTIFY_GODOWN_EMAILS=GDN_SAMPLE:gm@example.com;GDN_002:...`
+   - `WATCHLIST_NOTIFY_GODOWN_WHATSAPP=GDN_SAMPLE:+91...`
 
 Providers:
 - **Mock provider** (default, logs to stdout)

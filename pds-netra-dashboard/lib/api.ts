@@ -23,6 +23,7 @@ import type {
   AfterHoursPolicyAudit,
   WatchlistPerson,
   WatchlistMatchEvent,
+  AnprCsvEventsResponse,
   VehicleGateSession,
   AlertDelivery,
   NotificationEndpoint,
@@ -315,6 +316,16 @@ export async function getVehicleGateSessions(params?: {
 }): Promise<Paginated<VehicleGateSession>> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/vehicle-gate-sessions${q}`);
+}
+
+export async function getAnprCsvEvents(params?: {
+  godown_id?: string;
+  camera_id?: string;
+  match_status?: string;
+  limit?: number;
+}): Promise<AnprCsvEventsResponse> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/anpr/csv-events${q}`);
 }
 
 export async function createAlertAction(alertId: string, payload: { action_type: string; actor?: string; note?: string }): Promise<AlertActionItem> {

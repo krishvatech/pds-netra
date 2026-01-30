@@ -25,7 +25,7 @@ def _make_session():
 
 def _create_alert(db) -> Alert:
     alert = Alert(
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         camera_id="CAM_1",
         alert_type="FIRE_DETECTED",
         severity_final="critical",
@@ -53,7 +53,7 @@ def test_enqueue_alert_notifications_idempotent():
     )
     endpoint_godown = NotificationEndpoint(
         scope="GODOWN_MANAGER",
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         channel="WHATSAPP",
         target="+910000000000",
         is_enabled=True,
@@ -150,7 +150,7 @@ def test_hq_report_enqueues_to_hq_only():
     )
     endpoint_godown = NotificationEndpoint(
         scope="GODOWN_MANAGER",
-        godown_id="GDN_001",
+        godown_id="GDN_SAMPLE",
         channel="WHATSAPP",
         target="+910000000000",
         is_enabled=True,

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CameraInfo, CameraModules } from '@/lib/types';
 import { getCameras } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -104,6 +105,13 @@ export default function CamerasPage() {
   const [query, setQuery] = useState('');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
+  useEffect(() => {
+    if (!filterGodown) {
+      const user = getUser();
+      if (user?.godown_id) setFilterGodown(String(user.godown_id));
+    }
+  }, [filterGodown]);
+
   const roleOptions = useMemo(
     () => [
       { label: 'All roles', value: '' },
@@ -196,7 +204,7 @@ export default function CamerasPage() {
           <div className="grid gap-3 md:grid-cols-4">
             <div>
               <Label>Godown ID</Label>
-              <Input value={filterGodown} onChange={(e) => setFilterGodown(e.target.value)} placeholder="GDN_001" />
+              <Input value={filterGodown} onChange={(e) => setFilterGodown(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div>
               <Label>Role</Label>

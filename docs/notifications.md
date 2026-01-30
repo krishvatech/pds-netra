@@ -61,7 +61,7 @@ POST /api/v1/notification/endpoints
 POST /api/v1/notification/endpoints
 {
   "scope": "GODOWN_MANAGER",
-  "godown_id": "GDN_001",
+  "godown_id": "GDN_SAMPLE",
   "channel": "WHATSAPP",
   "target": "+91XXXXXXXXXX",
   "is_enabled": true
