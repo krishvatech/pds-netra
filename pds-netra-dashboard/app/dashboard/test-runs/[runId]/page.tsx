@@ -356,7 +356,9 @@ export default function TestRunDetailPage() {
                 const eventLabel =
                   event.event_type === 'UNAUTH_PERSON' && event.meta?.movement_type
                     ? `Detected: ${event.meta.movement_type}`
-                    : event.event_type;
+                    : event.event_type === 'ANIMAL_INTRUSION' && (event.meta?.animal_species || event.meta?.animal_label)
+                      ? `Animal Intrusion: ${event.meta?.animal_label ?? event.meta?.animal_species}`
+                      : event.event_type;
                 return (
                   <div key={key} className="incident-card p-3">
                     <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Event</div>

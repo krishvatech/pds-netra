@@ -32,7 +32,9 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
               <TD className="font-medium">
                 {e.event_type === 'UNAUTH_PERSON' && e.meta?.movement_type
                   ? `Detected: ${e.meta.movement_type}`
-                  : humanEventType(e.event_type)}
+                  : e.event_type === 'ANIMAL_INTRUSION' && (e.meta?.animal_species || e.meta?.animal_label)
+                    ? `Animal Intrusion: ${e.meta?.animal_label ?? e.meta?.animal_species}`
+                    : humanEventType(e.event_type)}
                 {e.event_type === 'FACE_IDENTIFIED' && (e.meta?.person_id || e.meta?.person_name) ? (
                   <div className="text-xs text-slate-500 mt-1">
                     Authorized: {e.meta.person_name ?? 'Unknown'}{e.meta.person_id ? ` (${e.meta.person_id})` : ''}

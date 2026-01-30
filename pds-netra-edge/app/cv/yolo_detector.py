@@ -49,9 +49,10 @@ class YoloDetector:
         self.classes = classes
         self.max_det = max_det
 
-        # Load model
+        # Load the model. We defer device placement until inference time.
         self.model = YOLO(model_name)
         self.names = self.model.names
+        self.label_overrides = self._load_label_overrides()
 
         self.logger.info(
             "Loaded YOLO model=%s device=%s conf=%s iou=%s imgsz=%s classes=%s max_det=%s",
@@ -63,6 +64,33 @@ class YoloDetector:
             self.classes,
             self.max_det,
         )
+
+    @staticmethod
+    def _load_label_overrides() -> dict[str, str]:
+        """
+        Load optional label overrides from EDGE_CLASS_LABEL_OVERRIDES.
+        Format: "bull:Buffalo,cattle:Buffalo"
+        """
+        raw = os.getenv("EDGE_CLASS_LABEL_OVERRIDES", "").strip()
+        overrides: dict[str, str] = {}
+        if not raw:
+            return overrides
+        for item in raw.split(","):
+            item = item.strip()
+            if not item or ":" not in item:
+                continue
+            src, dst = item.split(":", 1)
+            src = src.strip().lower()
+            dst = dst.strip()
+            if not src or not dst:
+                continue
+            overrides[src] = dst
+        return overrides
+
+    def _apply_label_override(self, class_name: str) -> str:
+        if not self.label_overrides:
+            return class_name
+        return self.label_overrides.get(class_name.lower(), class_name)
 
     def _default_imgsz(self) -> int:
         """
@@ -109,7 +137,7 @@ class YoloDetector:
         detections: List[Tuple[str, float, List[int]]] = []
         for box in results0.boxes:
             class_id = int(box.cls.item())
-            class_name = self.names.get(class_id, str(class_id))
+            class_name = self._apply_label_override(self.names.get(class_id, str(class_id)))
             confidence = float(box.conf.item())
             xyxy = box.xyxy.tolist()[0]
             bbox = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])]
@@ -140,7 +168,7 @@ class YoloDetector:
         tracked: List[Tuple[int, Tuple[str, float, List[int]]]] = []
         for box in results0.boxes:
             class_id = int(box.cls.item())
-            class_name = self.names.get(class_id, str(class_id))
+            class_name = self._apply_label_override(self.names.get(class_id, str(class_id)))
             confidence = float(box.conf.item()) if box.conf is not None else 0.0
             xyxy = box.xyxy.tolist()[0]
             bbox = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])]

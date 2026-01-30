@@ -4,12 +4,26 @@ import { Badge } from '../ui/badge';
 import type { AlertItem } from '@/lib/types';
 import { formatUtc, humanAlertType, severityBadgeClass } from '@/lib/formatters';
 
+function formatAnimalLabel(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
 export function AlertSummaryCard({ alert }: { alert: AlertItem }) {
+  const animalLabel =
+    alert.alert_type === 'ANIMAL_INTRUSION'
+      ? formatAnimalLabel(alert.key_meta?.animal_label ?? alert.key_meta?.animal_species ?? null)
+      : null;
   return (
     <Card className="hover:shadow-lg transition animate-fade-up">
       <CardHeader className="flex items-start justify-between">
         <div>
-          <div className="text-sm font-semibold font-display">{humanAlertType(alert.alert_type)}</div>
+          <div className="text-sm font-semibold font-display">
+            {humanAlertType(alert.alert_type)}
+            {animalLabel ? ` \u2022 ${animalLabel}` : ''}
+          </div>
           <div className="text-xs text-slate-500">{alert.godown_name ?? alert.godown_id}</div>
         </div>
         <Badge className={severityBadgeClass(alert.severity_final)}>{alert.severity_final.toUpperCase()}</Badge>

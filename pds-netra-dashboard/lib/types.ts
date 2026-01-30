@@ -99,6 +99,7 @@ export interface EventMeta {
   person_role?: string | null;
   match_score?: number | null;
   animal_species?: string | null;
+  animal_label?: string | null;
   animal_count?: number | null;
   animal_confidence?: number | null;
   animal_is_night?: boolean | null;
@@ -157,6 +158,7 @@ export interface AlertItem {
     occurred_at?: string | null;
     last_seen_at?: string | null;
     animal_species?: string | null;
+    animal_label?: string | null;
     animal_count?: number | null;
     animal_confidence?: number | null;
     animal_is_night?: boolean | null;

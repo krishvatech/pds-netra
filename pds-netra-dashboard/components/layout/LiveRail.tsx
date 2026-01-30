@@ -56,6 +56,20 @@ function playBeep(sev: Severity) {
   }
 }
 
+function formatAnimalLabel(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function alertTitle(alert: AlertItem): string {
+  const base = humanAlertType(alert.alert_type);
+  if (alert.alert_type !== 'ANIMAL_INTRUSION') return base;
+  const animal = formatAnimalLabel(alert.key_meta?.animal_label ?? alert.key_meta?.animal_species ?? null);
+  return animal ? `${base} • ${animal}` : base;
+}
+
 function alertEpoch(alert: AlertItem): number | null {
   const ts = alert.end_time ?? alert.start_time;
   if (!ts) return null;
@@ -285,7 +299,7 @@ export function LiveRail() {
               <span className={`pulse-dot ${alert.severity_final === 'critical' ? 'pulse-critical' : alert.severity_final === 'warning' ? 'pulse-warning' : 'pulse-info'}`} />
             </div>
             <div className="mt-1 text-sm font-semibold text-white">
-              {humanAlertType(alert.alert_type)}
+              {alertTitle(alert)}
             </div>
             {alert.key_meta?.reason ? (
               <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
@@ -339,7 +353,7 @@ export function MobileRail() {
           {quietActive && <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Quiet</div>}
         </div>
         <div className="text-sm font-semibold text-white truncate">
-          {humanAlertType(latest.alert_type)}
+          {alertTitle(latest)}
         </div>
         {latest.key_meta?.reason ? (
           <div className="text-xs text-slate-300 truncate">Reason: {latest.key_meta.reason}</div>

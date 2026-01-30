@@ -104,11 +104,101 @@ fire_detection:
 # Optional static config when not using backend sources.
 # cameras:
 #   - id: CAM_GATE_1
+#     role: GATE_ANPR
+#     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
+#     # test_video: "./data/truck_road.mp4"
+#     # test_video: "./data/gate_1.mp4"
+#     modules:
+#       anpr_enabled: true
+#       gate_entry_exit_enabled: true
+#       person_after_hours_enabled: false
+#       animal_detection_enabled: true
+#       fire_detection_enabled: false
+#       health_monitoring_enabled: true
+#     anpr:
+#       gate_line:
+#         - [960, 0]
+#         - [960, 1080]
+#       inside_side: "POSITIVE"
+#       direction_inference: "LINE_CROSSING"
+#       anpr_event_cooldown_seconds: 10
+#     # Zones required for ANPR
+#     zones:
+#       - id: gate_outer
+#         polygon:
+#           - [0, 0]
+#           - [1920, 0]
+#           - [1920, 1080]
+#           - [0, 1080]
+#       - id: gate_inner
+#         polygon:
+#           - [0, 0]
+#           - [640, 0]
+#           - [640, 384]
+#           - [0, 384]
+#     health:
+#       enabled: true
+#       no_frame_timeout_seconds: 15
+#       min_fps: 3.0
+#       low_light_threshold: 25
+#       black_frame_threshold: 10
+#       low_light_consecutive_frames: 30
+#       uniform_std_threshold: 8
+#       blur_threshold: 50.0
+#       blackout_drop_ratio: 0.55
+#       blackout_min_baseline: 25.0
+#       moved_diff_threshold: 0.35
+#       moved_consecutive_frames: 10
+#       cooldown_seconds: 60
+#       snapshot_on_tamper: true
+#       blocked_consecutive_frames: 3
+#
+#   - id: CAM_AISLE_3
+#     role: SECURITY
+#     rtsp_url: "rtsp://krishva:krishva1234@192.168.1.85:554/stream1?tcp"
+#     # test_video: "./data/truck_road.mp4"
+#     # test_video: "./data/aisle_3.mp4"
+#     modules:
+#       anpr_enabled: false
+#       gate_entry_exit_enabled: false
+#       person_after_hours_enabled: true
+#       animal_detection_enabled: true
+#       fire_detection_enabled: false
+#       health_monitoring_enabled: true
+#     zones:
+#       - id: aisle_zone3
+#         polygon:
+#           - [50, 50]
+#           - [500, 50]
+#           - [500, 350]
+#           - [50, 350]
+#     health:
+#       enabled: true
+#       no_frame_timeout_seconds: 15
+#       min_fps: 3.0
+#       low_light_threshold: 25
+#       black_frame_threshold: 5.0
+#       low_light_consecutive_frames: 10
+#       uniform_std_threshold: 6.0
+#       blur_threshold: 50.0
+#       blackout_drop_ratio: 0.55
+#       blackout_min_baseline: 25.0
+#       moved_diff_threshold: 0.35
+#       moved_consecutive_frames: 10
+#       cooldown_seconds: 60
+#       snapshot_on_tamper: false
 #
 # rules:
 #   - id: RULE_ANIMAL_INTRUSION_GATE
 #     type: ANIMAL_FORBIDDEN
 #     camera_id: CAM_GATE_1
+#     zone_id: all
+#     animal_classes: ["dog","cat","goat","sheep","buffalo","monkey"]
+#     cooldown_seconds: 30
+#     severity: warning
+#   - id: RULE_ANIMAL_INTRUSION_AISLE_3
+#     type: ANIMAL_FORBIDDEN
+#     camera_id: CAM_AISLE_3
 #     zone_id: all
 #     animal_classes: ["dog","cat","goat","sheep","buffalo","monkey"]
 #     cooldown_seconds: 30
