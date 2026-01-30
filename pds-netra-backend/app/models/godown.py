@@ -30,7 +30,7 @@ class Camera(Base):
     __tablename__ = "cameras"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
-    godown_id: Mapped[str] = mapped_column(String(64), ForeignKey("godowns.id"), index=True)
+    godown_id: Mapped[str] = mapped_column(String(64), ForeignKey("godowns.id"), primary_key=True, index=True)
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)  # e.g. GATE, AISLE, PERIMETER
     rtsp_url: Mapped[str | None] = mapped_column(String(512), nullable=True)

@@ -4,9 +4,6 @@ Camera loop for processing individual video sources.
 This module defines a function that starts a dedicated thread for each
 camera configured in the system. Each thread runs a ``Pipeline``
 instance that performs detection and invokes a user-defined callback.
-
-Merged version: combines both variants you shared, with safe fallbacks
-for repo-to-repo signature differences (RulesEvaluator / ANPR / snapshots / watchlist).
 """
 
 from __future__ import annotations
@@ -20,72 +17,9 @@ from pathlib import Path
 import time
 import json
 import datetime
-import inspect
+import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List, Tuple
-
-
-# ---------------------------------------------------------------------
-# Compatibility helpers (different repos may have different ctor signatures)
-# ---------------------------------------------------------------------
-
-def _safe_kw(obj: Any, key: str, default: Any = None) -> Any:
-    return getattr(obj, key, default) if obj is not None else default
-
-
-def _init_watchlist_processor(
-    camera_id: str,
-    godown_id: str,
-    mqtt_client: MQTTClient,
-    watchlist_manager: WatchlistManager,
-    watchlist_cfg: Any,
-    logger: logging.Logger,
-) -> Optional[WatchlistProcessor]:
-    """Create WatchlistProcessor across differing signatures."""
-    try:
-        sig = inspect.signature(WatchlistProcessor)  # type: ignore[arg-type]
-        params = sig.parameters
-
-        kwargs: Dict[str, Any] = {}
-        if "camera_id" in params:
-            kwargs["camera_id"] = camera_id
-        if "godown_id" in params:
-            kwargs["godown_id"] = godown_id
-        if "manager" in params:
-            kwargs["manager"] = watchlist_manager
-        if "mqtt_client" in params or "mqtt" in params:
-            kwargs["mqtt_client" if "mqtt_client" in params else "mqtt"] = mqtt_client
-
-        # config knobs
-        min_conf = _safe_kw(watchlist_cfg, "min_confidence", _safe_kw(watchlist_cfg, "min_conf", 0.75))
-        cooldown = _safe_kw(watchlist_cfg, "cooldown_seconds", _safe_kw(watchlist_cfg, "cooldown", 10))
-        if "min_confidence" in params:
-            kwargs["min_confidence"] = min_conf
-        if "cooldown_seconds" in params:
-            kwargs["cooldown_seconds"] = cooldown
-
-        return WatchlistProcessor(**kwargs)  # type: ignore[misc]
-    except TypeError as e:
-        # Signature mismatch; don't crash the whole camera loop
-        logger.exception("Failed to init WatchlistProcessor (signature mismatch): %s", e)
-        return None
-    except Exception:
-        logger.exception("Failed to init WatchlistProcessor")
-        return None
-
-
-def _safe_call(fn, *args, **kwargs):
-    """Call a function that may accept different param sets."""
-    try:
-        return fn(*args, **kwargs)
-    except TypeError:
-        # Try dropping unexpected kwargs
-        if kwargs:
-            sig = inspect.signature(fn)
-            allowed = set(sig.parameters.keys())
-            filtered = {k: v for k, v in kwargs.items() if k in allowed}
-            return fn(*args, **filtered)
-        raise
+from typing import Optional, Dict, Tuple, Any
 
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.bag_movement import BagMovementProcessor
@@ -103,7 +37,7 @@ from ..rules.loader import (
     BaseRule,
 )
 from ..rules.evaluator import RulesEvaluator
-from ..cv.anpr import AnprProcessor, PlateDetector, RecognizedPlate
+from ..cv.anpr import AnprProcessor, PlateDetector
 from ..rules.remote import fetch_rule_configs
 from ..cv.tamper import analyze_frame_for_tamper, CameraTamperState
 from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig, CameraConfig, ZoneConfig, CameraModules
@@ -122,22 +56,36 @@ from .pipeline_router import select_pipeline
 @dataclass
 class CameraHealthState:
     """Mutable state for camera health and tamper monitoring."""
+
+    # Time when the camera loop was started
     started_at_utc: Optional[datetime.datetime] = None
+    # Last UTC time when a frame was successfully processed
     last_frame_utc: Optional[datetime.datetime] = None
+    # Monotonic timestamp for FPS estimation
     last_frame_monotonic: Optional[float] = None
+    # Smoothed FPS estimate
     fps_estimate: Optional[float] = None
+    # Track if FPS is currently below minimum threshold
     fps_degraded: bool = False
+    # Flag indicating whether the camera is currently considered online
     is_online: bool = False
+    # Flag indicating whether offline event was emitted for current outage
     offline_reported: bool = False
+    # Last tamper reason emitted (e.g., "LOW_LIGHT", "LENS_BLOCKED").
     last_tamper_reason: Optional[str] = None
+    # Time when the last tamper event was emitted
     last_tamper_time: Optional[datetime.datetime] = None
+    # Per-reason cooldown cache
     last_event_by_reason: Dict[str, datetime.datetime] = field(default_factory=dict)
+    # Underlying state used by tamper analysis heuristics
     tamper_state: CameraTamperState = field(default_factory=CameraTamperState)
+    # Suppress offline events after test run completion
     suppress_offline_events: bool = False
 
 
 class NullDetector:
     """Lightweight detector that yields no detections (used for ANPR/health-only cameras)."""
+
     def track(self, frame):  # type: ignore[no-untyped-def]
         return []
 
@@ -149,15 +97,29 @@ def start_camera_loops(
 ) -> Tuple[list[threading.Thread], Dict[str, CameraHealthState]]:
     """
     Start processing threads for each configured camera.
+
+    Parameters
+    ----------
+    settings: Settings
+        Loaded application settings containing camera definitions.
+    mqtt_client: MQTTClient
+        Connected MQTT client used to publish events.
+    device: str
+        Device specifier for YOLO detector ("cpu" or "cuda").
+
+    Returns
+    -------
+    List[threading.Thread]
+        A list of threads running the pipeline for each camera.
     """
     logger = logging.getLogger("camera_loop")
     threads: list[threading.Thread] = []
+    # Dictionary storing mutable health state per camera
     camera_states: Dict[str, CameraHealthState] = {}
     camera_lock = threading.Lock()
     rules_lock = threading.Lock()
     started_cameras: set[str] = set()
-
-    # ---------- Override source (test vs live) ----------
+    restart_tokens: Dict[str, int] = {}
     override_path = os.getenv("EDGE_OVERRIDE_PATH")
     if not override_path:
         override_dir = os.getenv(
@@ -168,11 +130,9 @@ def start_camera_loops(
     override_manager = EdgeOverrideManager(override_path, refresh_interval=5)
     if override_path and Path(override_path).exists():
         logger.info("Edge override path: %s", override_path)
-
-    # ---------- Watchlist Manager ----------
     watchlist_manager: Optional[WatchlistManager] = None
     watchlist_subscriber: Optional[WatchlistSyncSubscriber] = None
-    if getattr(settings, "watchlist", None) and settings.watchlist.enabled:
+    if settings.watchlist and settings.watchlist.enabled:
         backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
         cache_dir = Path(
             os.getenv(
@@ -190,8 +150,7 @@ def start_camera_loops(
         watchlist_manager.start()
         watchlist_subscriber = WatchlistSyncSubscriber(settings, watchlist_manager)
         watchlist_subscriber.start()
-
-    # Load all rules once
+    # Load all rules once and convert into typed objects
     all_rules = load_rules(settings)
 
     @dataclass
@@ -200,690 +159,870 @@ def start_camera_loops(
         bag_processor: Optional[BagMovementProcessor]
         anpr_processor: Optional[AnprProcessor]
         detector: Any
-        anpr_detector: Optional[YoloDetector]
         zone_polygons: dict[str, list[tuple[int, int]]]
 
     processors: Dict[str, CameraProcessors] = {}
 
-    # -------------------- Helpers --------------------
-    def _read_bool_env(name: str, default: str = "false") -> bool:
-        return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y"}
-
-    def _read_int_env(name: str, default: int) -> int:
-        try:
-            return int(os.getenv(name, str(default)))
-        except Exception:
-            return default
-
-    def _read_float_env(name: str, default: float) -> float:
-        try:
-            return float(os.getenv(name, str(default)))
-        except Exception:
-            return default
-
-    def _read_str_env(name: str) -> Optional[str]:
-        val = os.getenv(name)
-        if val and val.strip():
-            return val.strip()
-        return None
-
-    def _call_default_snapshot_writer(godown_id: str, camera_id: str):
-        """
-        Different repos have different signatures:
-        - default_snapshot_writer() -> callable
-        - default_snapshot_writer(godown_id, camera_id) -> callable
-        """
-        try:
-            sig = inspect.signature(default_snapshot_writer)
-            params = list(sig.parameters.values())
-            non_self = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-            if len(non_self) == 0:
-                return default_snapshot_writer()
-            if len(non_self) >= 2:
-                return default_snapshot_writer(godown_id, camera_id)
-            return default_snapshot_writer()
-        except Exception:
-            try:
-                return default_snapshot_writer(godown_id, camera_id)
-            except Exception:
-                return default_snapshot_writer()
-
-    def _is_file_source(src: str) -> bool:
-        """Return True if the pipeline source looks like a local video file path."""
-        if not src:
-            return False
-        s = str(src).strip()
-        if not s:
-            return False
-        s_lower = s.lower()
-        if s_lower.startswith(("rtsp://", "rtsps://", "http://", "https://")):
-            return False
-        if (len(s) >= 2 and s[1] == ":") or s.startswith("\\\\"):
-            return True
-        if s.startswith("/"):
-            return True
-        media_exts = (".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts", ".webm", ".mjpeg")
-        if s_lower.endswith(media_exts):
-            return True
-        try:
-            if Path(s).expanduser().exists():
-                return True
-        except Exception:
-            pass
-        return False
-
-    def _resolve_anpr_model_path() -> str:
-        env_path = _read_str_env("EDGE_ANPR_MODEL")
-        if env_path:
-            return env_path
-        candidates = [
-            str(Path("ML_Model") / "anpr.pt"),
-            str(Path(".") / "ML_Model" / "anpr.pt"),
-            "anpr.pt",
-            "platemodel.pt",
-            "platemodel",
-        ]
-        for p in candidates:
-            try:
-                if Path(p).exists():
-                    return p
-            except Exception:
-                continue
-        return "ML_Model/anpr.pt"
-
-    def _build_anpr_detector() -> YoloDetector:
-        anpr_model_path = _resolve_anpr_model_path()
-        anpr_imgsz = _read_int_env("EDGE_ANPR_IMGSZ", 960)
-        anpr_conf = _read_float_env("EDGE_ANPR_CONF", 0.35)
-        anpr_iou = _read_float_env("EDGE_ANPR_IOU", 0.45)
-        anpr_max_det = _read_int_env("EDGE_ANPR_MAX_DET", 300)
-
-        anpr_classes_raw = os.getenv("EDGE_ANPR_CLASSES", "0").strip()
-        anpr_classes = None
-        if anpr_classes_raw:
-            try:
-                anpr_classes = [int(x.strip()) for x in anpr_classes_raw.split(",") if x.strip() != ""]
-            except Exception:
-                anpr_classes = [0]
-
-        return YoloDetector(
-            model_name=anpr_model_path,
-            device=device,
-            tracker_name=settings.tracking.tracker_name,
-            track_persist=settings.tracking.track_persist,
-            track_conf=settings.tracking.conf,
-            track_iou=settings.tracking.iou,
-            conf=anpr_conf,
-            iou=anpr_iou,
-            imgsz=anpr_imgsz,
-            classes=anpr_classes,
-            max_det=anpr_max_det,
-        )
-
-    def _resolve_general_model_cfg() -> tuple[str, Optional[float], Optional[float], Optional[int], Any, Optional[int]]:
-        model_name = (
-            getattr(settings, "model_path", None)
-            or getattr(settings, "yolo_model_path", None)
-            or getattr(getattr(settings, "yolo", None), "model_path", None)
-            or getattr(getattr(settings, "model", None), "path", None)
-            or os.getenv("EDGE_MODEL_PATH")
-            or os.getenv("EDGE_MODEL")
-            or "./animal.pt"
-        )
-        model_conf = (
-            getattr(settings, "model_conf", None)
-            or getattr(settings, "conf", None)
-            or getattr(getattr(settings, "yolo", None), "conf", None)
-            or _read_float_env("EDGE_MODEL_CONF", 0.35)
-        )
-        model_iou = (
-            getattr(settings, "model_iou", None)
-            or getattr(settings, "iou", None)
-            or getattr(getattr(settings, "yolo", None), "iou", None)
-            or _read_float_env("EDGE_MODEL_IOU", 0.45)
-        )
-        model_imgsz = (
-            getattr(settings, "model_imgsz", None)
-            or getattr(settings, "imgsz", None)
-            or getattr(getattr(settings, "yolo", None), "imgsz", None)
-            or _read_int_env("EDGE_MODEL_IMGSZ", 640)
-        )
-        model_classes = (
-            getattr(settings, "model_classes", None)
-            or getattr(settings, "classes", None)
-            or getattr(getattr(settings, "yolo", None), "classes", None)
-        )
-        model_max_det = (
-            getattr(settings, "model_max_det", None)
-            or getattr(settings, "max_det", None)
-            or getattr(getattr(settings, "yolo", None), "max_det", None)
-        )
-        try:
-            if model_max_det is not None:
-                model_max_det = int(model_max_det)
-        except Exception:
-            model_max_det = None
-        return (
-            str(model_name),
-            float(model_conf) if model_conf is not None else None,
-            float(model_iou) if model_iou is not None else None,
-            int(model_imgsz) if model_imgsz is not None else None,
-            model_classes,
-            model_max_det,
-        )
-
-    def _build_rules_evaluator(camera_id: str, zone_polygons: dict[str, list[tuple[int, int]]], rules: List[BaseRule]) -> Optional[RulesEvaluator]:
-        # Try "new" evaluator signature (rich params), else fallback to "old" signature.
-        try:
-            return RulesEvaluator(
-                camera_id=camera_id,
-                godown_id=settings.godown_id,
-                rules=rules,
-                zone_polygons=zone_polygons,
-                timezone=settings.timezone,
-                alert_on_person=_read_bool_env("EDGE_ALERT_ON_PERSON", "false"),
-                person_alert_cooldown_sec=_read_int_env("EDGE_ALERT_PERSON_COOLDOWN", 10),
-                alert_classes=[c.strip() for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",") if c.strip()],
-                alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
-                alert_min_conf=_read_float_env("EDGE_ALERT_MIN_CONF", 0.0),
-                zone_enforce=_read_bool_env("EDGE_ZONE_ENFORCE", "true"),
-            )
-        except TypeError:
-            try:
-                return RulesEvaluator(camera_id, settings.godown_id, settings.timezone, mqtt_client, rules)  # type: ignore[arg-type]
-            except Exception:
-                return None
-        except Exception:
-            return None
-
-    def _run_rules_evaluator(evaluator: RulesEvaluator, objects: List[DetectedObject], frame, now_utc: datetime.datetime, meta_extra: dict[str, str]) -> None:
-        # Prefer new method if present
-        if hasattr(evaluator, "process_detections"):
-            evaluator.process_detections(  # type: ignore[attr-defined]
-                objects=objects,
-                now_utc=now_utc,
-                mqtt_client=mqtt_client,
-                frame=frame,
-                snapshotter=None,
-                instant_only=False,
-                meta_extra=meta_extra,
-            )
-            return
-        # Fallback older method
-        if hasattr(evaluator, "process"):
-            try:
-                evaluator.process(objects, frame=frame)  # type: ignore[misc]
-            except TypeError:
-                evaluator.process(objects)  # type: ignore[misc]
-
-    def _update_rules_evaluator(evaluator: RulesEvaluator, rules: List[BaseRule]) -> None:
-        if hasattr(evaluator, "update_rules"):
-            evaluator.update_rules(rules)  # type: ignore[misc]
-
-    def _build_anpr_processor(
-        camera_id: str,
-        zone_polygons: dict[str, list[tuple[int, int]]],
-        anpr_rules: List[BaseRule],
-        anpr_detector: YoloDetector,
-    ) -> Optional[AnprProcessor]:
-        plate_detector = PlateDetector(
-            anpr_detector,
-            plate_class_names=getattr(getattr(settings, "anpr", None), "plate_class_names", None),
-        )
-        # Try most common variants
-        try:
-            return AnprProcessor(
-                camera_id=camera_id,
-                godown_id=settings.godown_id,
-                rules=anpr_rules,
-                zone_polygons=zone_polygons,
-                timezone=settings.timezone,
-                plate_detector=plate_detector,
-                ocr_lang=getattr(getattr(settings, "anpr", None), "ocr_lang", None),
-                ocr_every_n=getattr(getattr(settings, "anpr", None), "ocr_every_n", 1),
-                ocr_min_conf=getattr(getattr(settings, "anpr", None), "ocr_min_conf", 0.3),
-                ocr_debug=getattr(getattr(settings, "anpr", None), "ocr_debug", False),
-                validate_india=getattr(getattr(settings, "anpr", None), "validate_india", False),
-                show_invalid=getattr(getattr(settings, "anpr", None), "show_invalid", False),
-                registered_file=getattr(getattr(settings, "anpr", None), "registered_file", None),
-                save_csv=getattr(getattr(settings, "anpr", None), "save_csv", None),
-                save_crops_dir=getattr(getattr(settings, "anpr", None), "save_crops_dir", None),
-                save_crops_max=getattr(getattr(settings, "anpr", None), "save_crops_max", None),
-                dedup_interval_sec=getattr(getattr(settings, "anpr", None), "dedup_interval_sec", 30),
-            )
-        except TypeError:
-            try:
-                return AnprProcessor(camera_id, settings.godown_id, settings.timezone, anpr_rules, plate_detector, zone_polygons)
-            except TypeError:
-                try:
-                    return AnprProcessor(
-                        camera_id=camera_id,
-                        godown_id=settings.godown_id,
-                        mqtt_client=mqtt_client,
-                        timezone=settings.timezone,
-                        rules=anpr_rules,
-                        plate_detector=plate_detector,
-                    )
-                except Exception:
-                    return None
-
-    def _update_anpr_processor(proc: AnprProcessor, rules: List[BaseRule]) -> None:
-        if hasattr(proc, "update_rules"):
-            try:
-                proc.update_rules(rules)  # type: ignore[misc]
-            except Exception:
-                pass
+    def _request_restart(camera_id: str) -> None:
+        with camera_lock:
+            restart_tokens[camera_id] = restart_tokens.get(camera_id, 0) + 1
+            if camera_id in started_cameras:
+                started_cameras.remove(camera_id)
 
     def _start_camera(camera: CameraConfig) -> None:
         with camera_lock:
             if camera.id in started_cameras:
                 return
             started_cameras.add(camera.id)
-
         default_source = camera.rtsp_url
-        if getattr(camera, "test_video", None):
+        if camera.test_video:
             test_path = Path(camera.test_video).expanduser()
-            resolved_test = test_path if test_path.is_absolute() else (Path.cwd() / test_path).resolve()
+            if test_path.is_absolute():
+                resolved_test = test_path
+            else:
+                resolved_test = (Path.cwd() / test_path).resolve()
             if resolved_test.exists():
                 default_source = str(resolved_test)
             else:
-                logger.warning("Test video not found for camera %s: %s (falling back to rtsp)", camera.id, resolved_test)
+                logger.warning(
+                    "Test video not found for camera %s: %s (falling back to rtsp)",
+                    camera.id,
+                    resolved_test,
+                )
 
         pipeline_spec = select_pipeline(camera, settings)
         modules = pipeline_spec.modules
         logger.info("Camera routing: camera=%s role=%s modules=%s", camera.id, pipeline_spec.role, modules)
 
-        # Main detector
+        # Main detector (animal / general)
         detector: Any
         need_general_detector = modules.animal_detection_enabled or modules.person_after_hours_enabled
         if need_general_detector:
             try:
-                model_name, model_conf, model_iou, model_imgsz, model_classes, model_max_det = _resolve_general_model_cfg()
+                model_path = os.getenv("EDGE_YOLO_MODEL", "animal.pt")
                 detector = YoloDetector(
-                    model_name=model_name,
+                    model_name=model_path,
                     device=device,
                     tracker_name=settings.tracking.tracker_name,
                     track_persist=settings.tracking.track_persist,
                     track_conf=settings.tracking.conf,
                     track_iou=settings.tracking.iou,
-                    conf=model_conf,
-                    iou=model_iou,
-                    imgsz=model_imgsz,
-                    classes=model_classes,
-                    max_det=model_max_det,
                 )
-            except Exception:
-                logger.exception("Failed to init YoloDetector for %s, using NullDetector", camera.id)
-                detector = NullDetector()
+            except Exception as exc:
+                logger.error("Error loading YOLO detector: %s", exc)
+                return
         else:
             detector = NullDetector()
-
-        # Per-camera health state
-        state = CameraHealthState(
-            started_at_utc=datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),
-            is_online=False,
-            offline_reported=False,
-        )
-        camera_states[camera.id] = state
-
-        # Zones
+        # Prepare rules and zone polygons for this camera
+        camera_rules = [r for r in all_rules if r.camera_id == camera.id]
         zone_polygons: dict[str, list[tuple[int, int]]] = {}
-        if getattr(camera, "zones", None):
-            for z in camera.zones:
-                if z and z.id and isinstance(z.polygon, list):
-                    try:
-                        zone_polygons[z.id] = [(int(p[0]), int(p[1])) for p in z.polygon]
-                    except Exception:
-                        pass
-
-        # Rules evaluator / bag processor
+        for zone in camera.zones:
+            # Convert lists to tuples for point-in-polygon checks
+            zone_polygons[zone.id] = [tuple(pt) for pt in zone.polygon]
+        try:
+            alert_min_conf = float(os.getenv("EDGE_ALERT_MIN_CONF", "0.5"))
+        except ValueError:
+            alert_min_conf = 0.5
+        detect_classes = {
+            c.strip().lower()
+            for c in os.getenv("EDGE_DETECT_CLASSES", "").split(",")
+            if c.strip()
+        }
         evaluator: Optional[RulesEvaluator] = None
-        bag_processor: Optional[BagMovementProcessor] = None
-
-        typed_rules: List[BaseRule] = [r for r in all_rules if isinstance(r, BaseRule)]
-        cam_rules: List[BaseRule] = [r for r in typed_rules if r.camera_id == camera.id]
-
-        bag_rules = [r for r in cam_rules if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))]
-        if cam_rules and need_general_detector:
-            evaluator = _build_rules_evaluator(camera.id, zone_polygons, cam_rules)
-
+        if modules.animal_detection_enabled:
+            evaluator = RulesEvaluator(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                rules=camera_rules,
+                zone_polygons=zone_polygons,
+                timezone=settings.timezone,
+                alert_on_person=os.getenv("EDGE_ALERT_ON_PERSON", "false").lower() in {"1", "true", "yes"},
+                person_alert_cooldown_sec=int(os.getenv("EDGE_ALERT_PERSON_COOLDOWN", "10")),
+                alert_classes=[c.strip() for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",") if c.strip()],
+                alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
+                alert_min_conf=alert_min_conf,
+                zone_enforce=os.getenv("EDGE_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
+            )
+        bag_rules = [
+            r
+            for r in camera_rules
+            if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))
+        ]
+        bag_processor = None
         if bag_rules and modules.animal_detection_enabled:
-            try:
-                bag_processor = BagMovementProcessor(
-                    camera.id,
-                    settings.godown_id,
-                    zone_polygons,
-                    bag_rules,
-                    settings.timezone,
-                    settings.dispatch_plan_path,
-                    settings.dispatch_plan_reload_sec,
-                    settings.bag_class_keywords,
-                )
-            except TypeError:
-                bag_processor = BagMovementProcessor(camera.id, settings.godown_id, zone_polygons, bag_rules, settings.timezone)
-
-        # ANPR
-        anpr_detector: Optional[YoloDetector] = None
+            bag_processor = BagMovementProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                zone_polygons=zone_polygons,
+                rules=bag_rules,
+                timezone=settings.timezone,
+                dispatch_plan_path=settings.dispatch_plan_path,
+                dispatch_plan_reload_sec=settings.dispatch_plan_reload_sec,
+                bag_class_keywords=settings.bag_class_keywords,
+                movement_px_threshold=settings.bag_movement_px_threshold,
+                movement_time_window_sec=settings.bag_movement_time_window_sec,
+            )
+        # Determine if ANPR rules apply for this camera
+        anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
         anpr_processor: Optional[AnprProcessor] = None
-        if modules.anpr_enabled or modules.gate_entry_exit_enabled:
+        if settings.anpr is not None and settings.anpr.enabled and modules.anpr_enabled:
+            anpr_cfg = settings.anpr
             try:
-                anpr_detector = _build_anpr_detector()
-                anpr_rules = [r for r in cam_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
-                anpr_processor = _build_anpr_processor(camera.id, zone_polygons, anpr_rules, anpr_detector)
-            except Exception:
-                logger.exception("Failed to init ANPR for camera %s", camera.id)
-                anpr_detector = None
+                gate_line = anpr_cfg.gate_line
+                inside_side = anpr_cfg.inside_side
+                dedup_interval = anpr_cfg.dedup_interval_sec
+                direction_inference = "LINE_CROSSING"
+                if camera.anpr is not None:
+                    if camera.anpr.gate_line is not None:
+                        gate_line = camera.anpr.gate_line
+                    if camera.anpr.inside_side is not None:
+                        inside_side = camera.anpr.inside_side
+                    if camera.anpr.direction_inference:
+                        direction_inference = camera.anpr.direction_inference.strip().upper()
+                    if camera.anpr.anpr_event_cooldown_seconds is not None:
+                        dedup_interval = camera.anpr.anpr_event_cooldown_seconds
+                    elif camera.anpr.anpr_event_cooldown_seconds is None:
+                        dedup_interval = 10
+                if camera.role_explicit and str(camera.role).strip().upper() == "GATE_ANPR" and camera.anpr is None:
+                    dedup_interval = 10
+                if not modules.gate_entry_exit_enabled:
+                    direction_inference = "SESSION_HEURISTIC"
+                if direction_inference not in {"LINE_CROSSING", "SESSION_HEURISTIC"}:
+                    direction_inference = "LINE_CROSSING"
+                if direction_inference == "SESSION_HEURISTIC":
+                    gate_line = None
+
+                plate_detector = PlateDetector(
+                    YoloDetector(
+                        model_name=anpr_cfg.model_path,
+                        device=anpr_cfg.device or device,
+                        conf=anpr_cfg.conf,
+                        iou=anpr_cfg.iou,
+                        imgsz=anpr_cfg.imgsz,
+                        classes=anpr_cfg.classes,
+                        max_det=anpr_cfg.max_det,
+                    ),
+                    plate_class_names=anpr_cfg.plate_class_names,
+                )
+                anpr_processor = AnprProcessor(
+                    camera_id=camera.id,
+                    godown_id=settings.godown_id,
+                    rules=anpr_rules,
+                    zone_polygons=zone_polygons,
+                    timezone=settings.timezone,
+                    plate_detector=plate_detector,
+                    ocr_engine=None,
+                    ocr_lang=anpr_cfg.ocr_lang,
+                    ocr_gpu=str(anpr_cfg.device).lower() != "cpu",
+                    ocr_every_n=anpr_cfg.ocr_every_n,
+                    ocr_min_conf=anpr_cfg.ocr_min_conf,
+                    ocr_debug=anpr_cfg.ocr_debug,
+                    validate_india=anpr_cfg.validate_india,
+                    show_invalid=anpr_cfg.show_invalid,
+                    registered_file=anpr_cfg.registered_file,
+                    save_csv=anpr_cfg.save_csv,
+                    save_crops_dir=anpr_cfg.save_crops_dir,
+                    save_crops_max=anpr_cfg.save_crops_max,
+                    dedup_interval_sec=dedup_interval,
+                    gate_line=gate_line,
+                    inside_side=inside_side,
+                    direction_max_gap_sec=anpr_cfg.direction_max_gap_sec,
+                )
+            except Exception as exc:
+                logger.error("Failed to initialize ANPR processor for camera %s: %s", camera.id, exc)
                 anpr_processor = None
+    
+        # Initialise health state for this camera
+        # Use provided health configuration or a default instance
+        health_cfg: HealthConfig
+        if camera.health is not None:
+            health_cfg = camera.health
+        else:
+            # Default values will be applied by HealthConfig dataclass
+            health_cfg = HealthConfig()
+        state = CameraHealthState()
+        camera_states[camera.id] = state
+        face_watchlist_enabled = modules.animal_detection_enabled or modules.person_after_hours_enabled
+
+        # Face recognition (optional)
+        face_processor: Optional[FaceRecognitionProcessor] = None
+        fr_cfg = settings.face_recognition
+        if fr_cfg is not None and fr_cfg.enabled and face_watchlist_enabled:
+            fr_cam_cfg: Optional[FaceRecognitionCameraConfig] = None
+            for cam_cfg in fr_cfg.cameras:
+                if cam_cfg.camera_id == camera.id:
+                    fr_cam_cfg = cam_cfg
+                    break
+            if fr_cam_cfg is None:
+                for cam_cfg in fr_cfg.cameras:
+                    if cam_cfg.camera_id in {"*", "all"}:
+                        fr_cam_cfg = FaceRecognitionCameraConfig(
+                            camera_id=camera.id,
+                            zone_id=cam_cfg.zone_id,
+                            allow_unknown=cam_cfg.allow_unknown,
+                            log_known_only=cam_cfg.log_known_only,
+                        )
+                        break
+            if fr_cam_cfg is None and not fr_cfg.cameras:
+                fr_cam_cfg = FaceRecognitionCameraConfig(camera_id=camera.id, zone_id="all")
+            if fr_cam_cfg is not None:
+                try:
+                    known_people = load_known_faces(fr_cfg.known_faces_file)
+                    face_processor = FaceRecognitionProcessor(
+                        camera_id=camera.id,
+                        godown_id=settings.godown_id,
+                        camera_config=fr_cam_cfg,
+                        global_config=fr_cfg,
+                        zone_polygons=zone_polygons,
+                        timezone=settings.timezone,
+                        known_people=known_people,
+                    )
+                except Exception as exc:
+                    logger.error("Failed to initialize face recognition for camera %s: %s", camera.id, exc)
+                    face_processor = None
+        watchlist_processor: Optional[WatchlistProcessor] = None
+        if watchlist_manager is not None and settings.watchlist and settings.watchlist.enabled and face_watchlist_enabled:
+            watchlist_processor = WatchlistProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                manager=watchlist_manager,
+                min_confidence=settings.watchlist.min_match_confidence,
+                cooldown_seconds=settings.watchlist.cooldown_seconds,
+                zone_polygons=zone_polygons,
+                zone_enforce=os.getenv("EDGE_WATCHLIST_ZONE_ENFORCE", "true").lower() in {"1", "true", "yes"},
+                http_fallback=settings.watchlist.http_fallback,
+            )
+
+        presence_processor: Optional[AfterHoursPresenceProcessor] = None
+        if settings.after_hours_presence and settings.after_hours_presence.enabled and modules.person_after_hours_enabled:
+            ah_cfg = settings.after_hours_presence
+            presence_processor = AfterHoursPresenceProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                config=PresenceConfig(
+                    enabled=ah_cfg.enabled,
+                    day_start=ah_cfg.day_start,
+                    day_end=ah_cfg.day_end,
+                    emit_only_after_hours=ah_cfg.emit_only_after_hours,
+                    person_interval_sec=ah_cfg.person_interval_sec,
+                    vehicle_interval_sec=ah_cfg.vehicle_interval_sec,
+                    person_cooldown_sec=ah_cfg.person_cooldown_sec,
+                    vehicle_cooldown_sec=ah_cfg.vehicle_cooldown_sec,
+                    min_confidence=ah_cfg.min_confidence,
+                    person_classes=ah_cfg.person_classes,
+                    vehicle_classes=ah_cfg.vehicle_classes,
+                    http_fallback=ah_cfg.http_fallback,
+                    timezone=settings.timezone,
+                ),
+            )
+
+        fire_processor: Optional[FireDetectionProcessor] = None
+        if settings.fire_detection and settings.fire_detection.enabled and modules.fire_detection_enabled:
+            fire_processor = FireDetectionProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                config=settings.fire_detection,
+                zone_polygons=zone_polygons,
+            )
+        snapshot_writer = default_snapshot_writer()
 
         processors[camera.id] = CameraProcessors(
             evaluator=evaluator,
             bag_processor=bag_processor,
             anpr_processor=anpr_processor,
             detector=detector,
-            anpr_detector=anpr_detector,
             zone_polygons=zone_polygons,
         )
-
-        # Optional processors
-        face_processor: Optional[FaceRecognitionProcessor] = None
-        watchlist_processor: Optional[WatchlistProcessor] = None
-        presence_processor: Optional[AfterHoursPresenceProcessor] = None
-        fire_processor: Optional[FireDetectionProcessor] = None
-
-        # Face recognition
-        if hasattr(camera, "face_recognition") and camera.face_recognition and camera.face_recognition.enabled:
-            try:
-                fr_cfg: FaceRecognitionCameraConfig = camera.face_recognition
-                known_faces = load_known_faces(fr_cfg.known_faces_dir)
-                face_processor = FaceRecognitionProcessor(camera.id, settings.godown_id, mqtt_client, known_faces, fr_cfg)
-            except Exception:
-                logger.exception("Failed to init FaceRecognitionProcessor for %s", camera.id)
-
-        # WatchlistProcessor signature differs across repos
-        if watchlist_manager and getattr(settings, "watchlist", None) and settings.watchlist.enabled:
-            watchlist_processor = _init_watchlist_processor(
-                camera_id=camera.id,
-                godown_id=settings.godown_id,
-                mqtt_client=mqtt_client,
-                watchlist_manager=watchlist_manager,
-                watchlist_cfg=settings.watchlist,
-                logger=logger,
+    
+        def _is_file_source(source_val: str) -> bool:
+            return not (
+                source_val.startswith("rtsp://")
+                or source_val.startswith("http://")
+                or source_val.startswith("https://")
             )
-
-        # Presence processor (may be absent)
-        if modules.person_after_hours_enabled and hasattr(settings, "after_hours") and settings.after_hours:
-            try:
-                pcfg = PresenceConfig(
-                    start_time=settings.after_hours.start_time,
-                    end_time=settings.after_hours.end_time,
-                    cooldown_sec=settings.after_hours.cooldown_sec,
-                    min_confidence=settings.after_hours.min_confidence,
-                )
-                presence_processor = AfterHoursPresenceProcessor(camera.id, settings.godown_id, mqtt_client, pcfg, settings.timezone)
-            except Exception:
-                logger.exception("Failed to init AfterHoursPresenceProcessor for %s", camera.id)
-                presence_processor = None
-
-        if modules.fire_detection_enabled:
-            try:
-                fire_processor = FireDetectionProcessor(camera.id, settings.godown_id, mqtt_client, settings.fire_detection)
-            except Exception:
-                logger.exception("Failed to init FireDetectionProcessor for %s", camera.id)
-                fire_processor = None
-
-        # Snapshot writer (signature differs)
-        try:
-            snapshot_writer = _call_default_snapshot_writer(settings.godown_id, camera.id)
-        except Exception:
-            snapshot_writer = None
-
-        detect_classes = getattr(settings, "model_class_names", None) or None
-        health_cfg: Optional[HealthConfig] = (getattr(settings, 'health', None) if modules.health_monitoring_enabled else None)
-
+    
         def camera_runner(
-            camera_obj: CameraConfig,
-            default_src: str,
+            camera_obj,
+            default_source_local: str,
             processors_local: CameraProcessors,
-            face_proc: Optional[FaceRecognitionProcessor],
-            watch_proc: Optional[WatchlistProcessor],
-            presence_proc: Optional[AfterHoursPresenceProcessor],
-            fire_proc: Optional[FireDetectionProcessor],
-            health_config: Optional[HealthConfig],
+            face_processor_local: Optional[FaceRecognitionProcessor],
+            watchlist_processor_local: Optional[WatchlistProcessor],
+            presence_processor_local: Optional[AfterHoursPresenceProcessor],
+            fire_processor_local: Optional[FireDetectionProcessor],
+            health_cfg_local: HealthConfig,
             state_local: CameraHealthState,
-            detector_local: Any,
+            detector_local,
             snapshot_writer_local,
-            class_filter: Optional[List[str]],
+            detect_classes_local: set[str],
             health_enabled_local: bool,
-        ):
-            current_state = {"mode": "live", "run_id": None}
-
+        ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
             live_writer: Optional[LiveFrameWriter] = None
-            if os.getenv("EDGE_LIVE_FRAMES", "true").lower() == "true":
-                try:
-                    live_dir = os.getenv("EDGE_LIVE_ANNOTATED_DIR") or os.getenv("EDGE_LIVE_DIR")
-                    if not live_dir:
-                        live_dir = str(
-                            Path(__file__).resolve().parents[3]
-                            / "pds-netra-backend"
-                            / "data"
-                            / "live"
-                        )
-                    live_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
-                    live_writer = LiveFrameWriter(str(live_path))
-                except Exception:
-                    live_writer = None
+            current_state = {"mode": "live", "run_id": None, "last_snapshot_ts": 0.0}
+            last_zone_sync = 0.0
+            zone_sync_interval = float(os.getenv("EDGE_ZONES_SYNC_INTERVAL_SEC", "15"))
+            backend_url = os.getenv(
+                "EDGE_BACKEND_URL",
+                os.getenv("BACKEND_URL", "http://127.0.0.1:8001"),
+            ).rstrip("/")
+            last_test_video: dict[str, Optional[str]] = {"path": None}
 
             def _resolve_source_local() -> tuple[str, str, Optional[str]]:
-                return override_manager.get_camera_source(camera_obj.id, default_src)
+                nonlocal default_source_local
+                # Determine "live" fallback dynamically from latest camera_obj state
+                live_fallback = camera_obj.rtsp_url or default_source_local
+                if camera_obj.test_video:
+                    test_path = Path(camera_obj.test_video).expanduser()
+                    if test_path.is_absolute():
+                        resolved_test = test_path
+                    else:
+                        resolved_test = (Path.cwd() / test_path).resolve()
+                    if resolved_test.exists():
+                        live_fallback = str(resolved_test)
+                        default_source_local = live_fallback
+                    else:
+                        if last_test_video["path"] != str(resolved_test):
+                            logger.warning(
+                                "Test video not found for camera %s: %s (falling back to rtsp)",
+                                camera_obj.id,
+                                resolved_test,
+                            )
+                            last_test_video["path"] = str(resolved_test)
 
-            def callback(objects: List[DetectedObject], frame=None):
-                now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-                state_local.last_frame_utc = now_utc
-                state_local.last_frame_monotonic = time.monotonic()
-                state_local.is_online = True
+                return override_manager.get_camera_source(camera_obj.id, live_fallback)
 
-                face_overlays: list[FaceOverlay] = []
-                if face_proc:
+            if state_local.started_at_utc is None:
+                state_local.started_at_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+            live_dir = os.getenv(
+                "EDGE_LIVE_ANNOTATED_DIR",
+                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "live"),
+            )
+            live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
+            live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
+    
+            def _sync_zones(width: int, height: int) -> None:
+                nonlocal last_zone_sync
+                now_ts = time.monotonic()
+                if now_ts - last_zone_sync < zone_sync_interval:
+                    return
+                last_zone_sync = now_ts
+                url = f"{backend_url}/api/v1/cameras/{camera_obj.id}/zones?godown_id={settings.godown_id}"
+                try:
+                    with urllib.request.urlopen(url, timeout=2) as resp:
+                        payload = json.loads(resp.read().decode("utf-8"))
+                    zones = payload.get("zones", [])
+                    if isinstance(zones, list):
+                        new_normalized = {}
+                        for zone in zones:
+                            zone_id = zone.get("id")
+                            polygon = zone.get("polygon")
+                            if not zone_id or not isinstance(polygon, list):
+                                continue
+                            new_normalized[zone_id] = [tuple(pt) for pt in polygon]
+                        
+                        # Update the evaluator with normalized polygons and current resolution
+                        evaluator_local.update_zone_polygons(new_normalized, width, height)
+                        
+                        # Also sync back to the local dict used by other processors
+                        zone_polygons.clear()
+                        zone_polygons.update(evaluator_local.zone_polygons)
+                except Exception:
+                    pass
+    
+            def snapshotter(img, event_id: str, event_time: datetime.datetime, bbox=None, label=None):
+                if snapshot_writer_local is None:
+                    return None
+                timestamp_utc = event_time.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                canvas = img
+                if bbox:
                     try:
-                        face_overlays = detect_faces(frame, face_proc)
+                        import cv2  # type: ignore
+                        canvas = img.copy()
+                        x1, y1, x2, y2 = bbox
+                        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                        if label:
+                            cv2.putText(
+                                canvas,
+                                str(label),
+                                (x1, max(y1 - 6, 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5,
+                                (0, 200, 255),
+                                1,
+                                cv2.LINE_AA,
+                            )
                     except Exception:
-                        pass
-
-                if presence_proc:
-                    try:
-                        presence_proc.process(frame, objects)
-                    except Exception:
-                        pass
-
-                if watch_proc and hasattr(watch_proc, "process"):
-                    try:
-                        watch_proc.process(frame, objects, face_overlays)  # type: ignore[misc]
-                    except TypeError:
-                        try:
-                            watch_proc.process(frame, objects)  # type: ignore[misc]
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-
-                if fire_proc:
-                    try:
-                        fire_proc.process(frame)
-                    except Exception:
-                        pass
-
-                if processors_local.evaluator:
-                    try:
-                        _run_rules_evaluator(
-                            processors_local.evaluator,
-                            objects=objects,
-                            frame=frame,
-                            now_utc=now_utc,
-                            meta_extra={
-                                "mode": str(current_state.get("mode") or ""),
-                                "run_id": str(current_state.get("run_id") or ""),
-                            },
-                        )
-                    except Exception:
-                        logger.exception("RulesEvaluator failed for camera=%s", camera_obj.id)
-
-                last_anpr: list[RecognizedPlate] = []
-                if processors_local.anpr_processor and processors_local.anpr_detector:
-                    try:
-                        if hasattr(processors_local.anpr_processor, "process_frame"):
-                            last_anpr = processors_local.anpr_processor.process_frame(frame, now_utc, mqtt_client)
+                        canvas = img
+                return snapshot_writer_local.save(
+                    canvas,
+                    godown_id=settings.godown_id,
+                    camera_id=camera_obj.id,
+                    event_id=event_id,
+                    timestamp_utc=timestamp_utc,
+                )
+    
+            def bag_handler(objects: list[DetectedObject], now_utc: datetime.datetime, frame=None) -> None:
+                if processors_local.bag_processor is None:
+                    return
+                try:
+                    processors_local.bag_processor.process(
+                        objects,
+                        now_utc,
+                        mqtt_client,
+                        frame=frame,
+                        snapshotter=snapshotter,
+                    )
+                except Exception as exc:
+                    logging.getLogger("camera_loop").exception(
+                        "Bag movement processing failed for camera %s: %s", camera_obj.id, exc
+                    )
+    
+            def callback(
+                objects: list[DetectedObject],
+                frame=None,
+            ) -> None:
+                """Composite callback handling rule evaluation, ANPR and tamper detection."""
+                now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+    
+                if frame is not None:
+                    h, w = frame.shape[:2]
+                    _sync_zones(w, h)
+                else:
+                    # Fallback to a default resolution if no frame is available yet
+                    _sync_zones(1280, 720)
+    
+                if detect_classes_local:
+                    objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
+    
+                # Log per-frame counts for people and face recognition results.
+                person_count = sum(1 for obj in objects if obj.class_name == "person")
+                known_faces = 0
+                unknown_faces = 0
+                # Update last frame time and mark camera online
+                state_local.last_frame_utc = now
+                now_mono = time.monotonic()
+                if state_local.last_frame_monotonic is not None:
+                    dt = now_mono - state_local.last_frame_monotonic
+                    if dt > 0:
+                        inst_fps = 1.0 / dt
+                        if state_local.fps_estimate is None:
+                            state_local.fps_estimate = inst_fps
                         else:
-                            last_anpr = processors_local.anpr_processor.process(frame)  # type: ignore[attr-defined]
-                    except Exception:
-                        logger.exception("ANPR processing failed for camera=%s", camera_obj.id)
-
-                if health_config and health_enabled_local:
+                            state_local.fps_estimate = (state_local.fps_estimate * 0.9) + (inst_fps * 0.1)
+                state_local.last_frame_monotonic = now_mono
+                if not state_local.is_online:
+                    logging.getLogger("camera_loop").info("Camera online: camera=%s", camera_obj.id)
+                state_local.is_online = True
+                state_local.offline_reported = False
+                # Tamper analysis (skip in test mode or when health is disabled)
+                if health_enabled_local and frame is not None and current_state["mode"] != "test":
                     try:
-                        analyze_frame_for_tamper(
-                            frame=frame,
+                        tamper_candidates = analyze_frame_for_tamper(
                             camera_id=camera_obj.id,
-                            godown_id=settings.godown_id,
-                            mqtt_client=mqtt_client,
-                            tz=settings.timezone,
-                            config=health_config,
+                            frame=frame,
+                            now_utc=now,
+                            config=health_cfg_local,
                             state=state_local.tamper_state,
-                            last_event_by_reason=state_local.last_event_by_reason,
                         )
-                    except Exception:
-                        pass
-
-                if snapshot_writer_local:
+                        # Deduplicate and publish tamper events
+                        for cand in tamper_candidates:
+                            cooldown_sec = max(1, int(health_cfg_local.cooldown_seconds))
+                            last_seen = state_local.last_event_by_reason.get(cand.reason)
+                            if last_seen and (now - last_seen).total_seconds() < cooldown_sec:
+                                continue
+                            severity = "warning"
+                            if cand.reason in {"BLACK_FRAME", "SUDDEN_BLACKOUT", "CAMERA_MOVED"}:
+                                severity = "critical"
+                            image_url = None
+                            if cand.snapshot is not None:
+                                try:
+                                    event_id = str(uuid.uuid4())
+                                    image_url = snapshotter(cand.snapshot, event_id, now)
+                                except Exception:
+                                    image_url = None
+                            else:
+                                event_id = str(uuid.uuid4())
+                            from ..models.event import EventModel, MetaModel  # local import to avoid circular
+                            event = EventModel(
+                                godown_id=settings.godown_id,
+                                camera_id=camera_obj.id,
+                                event_id=event_id,
+                                event_type=cand.event_type,
+                                severity=severity,
+                                timestamp_utc=now.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                                bbox=None,
+                                track_id=None,
+                                image_url=image_url,
+                                clip_url=None,
+                                meta=MetaModel(
+                                    zone_id=None,
+                                    rule_id="CAM_TAMPER_HEURISTIC",
+                                    confidence=cand.confidence,
+                                    reason=cand.reason,
+                                    extra={k: f"{v:.4f}" for k, v in cand.metrics.items()},
+                                ),
+                            )
+                            mqtt_client.publish_event(event)
+                            state_local.last_event_by_reason[cand.reason] = now
+                            state_local.last_tamper_reason = cand.reason
+                            state_local.last_tamper_time = now
+                            logging.getLogger("camera_loop").warning(
+                                "Tamper event camera=%s reason=%s severity=%s",
+                                camera_obj.id,
+                                cand.reason,
+                                severity,
+                            )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Tamper analysis failed for camera %s: %s", camera_obj.id, exc
+                        )
+                # Evaluate detections
+                if processors_local.evaluator is not None:
                     try:
-                        try:
-                            snapshot_writer_local(frame, objects)
-                        except TypeError:
-                            snapshot_writer_local(frame)
-                    except Exception:
-                        pass
+                        meta_extra = None
+                        if current_state["mode"] == "test" and current_state["run_id"]:
+                            meta_extra = {"run_id": str(current_state["run_id"])}
+                        processors_local.evaluator.process_detections(
+                            objects,
+                            now,
+                            mqtt_client,
+                            frame=frame,
+                            snapshotter=snapshotter,
+                            instant_only=current_state["mode"] == "test",
+                            meta_extra=meta_extra,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Rule evaluation failed for camera %s: %s", camera_obj.id, exc
+                        )
 
-                # Draw overlays and write
+                if presence_processor_local is not None:
+                    try:
+                        presence_processor_local.process(
+                            objects,
+                            now,
+                            mqtt_client,
+                            frame=frame,
+                            snapshotter=snapshotter,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "After-hours presence processing failed for camera %s: %s", camera_obj.id, exc
+                        )
+
+                if fire_processor_local is not None:
+                    try:
+                        fire_processor_local.process(
+                            frame,
+                            now,
+                            mqtt_client,
+                            snapshotter=snapshotter,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Fire detection failed for camera %s: %s", camera_obj.id, exc
+                        )
+
+                # ANPR + Face + Watchlist
+                face_overlays: list[FaceOverlay] = []
+                anpr_results: Any = []
+                faces: list[tuple[list[int], list[float]]] = []
+
+                if processors_local.anpr_processor is not None and frame is not None:
+                    try:
+                        anpr_results = processors_local.anpr_processor.process_frame(
+                            frame,
+                            now,
+                            mqtt_client,
+                            snapshotter=snapshotter,
+                        ) or []
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "ANPR processing failed for camera %s: %s", camera_obj.id, exc
+                        )
+                        anpr_results = []
+
+                if frame is not None and (face_processor_local is not None or watchlist_processor_local is not None):
+                    try:
+                        faces = detect_faces(frame)
+                    except Exception as exc:
+                        faces = []
+                        logging.getLogger("camera_loop").exception(
+                            "Face detection failed for camera %s: %s", camera_obj.id, exc
+                        )
+                    if watchlist_processor_local is not None:
+                        try:
+                            watchlist_processor_local.process_faces(
+                                faces,
+                                now,
+                                mqtt_client,
+                                snapshotter=snapshotter,
+                                frame=frame,
+                            )
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").exception(
+                                "Watchlist processing failed for camera %s: %s", camera_obj.id, exc
+                            )
+                    if face_processor_local is not None:
+                        try:
+                            face_overlays = face_processor_local.process_faces(faces, now, mqtt_client) or []
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").exception(
+                                "Face recognition failed for camera %s: %s", camera_obj.id, exc
+                            )
+                            face_overlays = []
+                        known_faces = sum(1 for face in face_overlays if face.status == "KNOWN")
+                        unknown_faces = sum(1 for face in face_overlays if face.status == "UNKNOWN")
+
+                if os.getenv("EDGE_LOG_FRAME_STATS", "true").lower() in {"1", "true", "yes"}:
+                    logging.getLogger("camera_loop").info(
+                        "Frame persons=%d faces_known=%d faces_unknown=%d anpr=%d camera=%s mode=%s",
+                        person_count,
+                        known_faces,
+                        unknown_faces,
+                        len(anpr_results) if isinstance(anpr_results, list) else 0,
+                        camera_obj.id,
+                        current_state["mode"],
+                    )
+
+                # Visualize
                 if frame is not None:
                     dets = [(o.class_name, o.confidence, o.bbox, o.track_id) for o in objects]
+
+                    # ---- IMPORTANT FIX: support BOTH ANPR return formats ----
+                    # Some AnprProcessor versions return list of objects with attrs:
+                    #   bbox/text/confidence
+                    # Others return list of tuples:
+                    #   (label, conf, bbox)
                     try:
-                        import cv2
-                        for zid, poly in processors_local.zone_polygons.items():
-                            pts = np.array([(int(x), int(y)) for x, y in poly], np.int32)
-                            cv2.polylines(frame, [pts], True, (255, 150, 0), 2)
+                        if isinstance(anpr_results, list):
+                            for res in anpr_results:
+                                if isinstance(res, tuple) and len(res) >= 3:
+                                    label = str(res[0])
+                                    conf = float(res[1])
+                                    bbox = res[2]
+                                    if bbox:
+                                        dets.append((label, conf, bbox, None))
+                                    continue
+
+                                bbox = getattr(res, "bbox", None)
+                                text = getattr(res, "text", getattr(res, "plate_text", None))
+                                conf = getattr(res, "confidence", 1.0)
+                                if bbox and text:
+                                    dets.append((f"Plate: {text}", float(conf), bbox, -1))
+                    except Exception:
+                        pass
+
+                    # Face overlays
+                    for face in face_overlays:
+                        if face.bbox:
+                            label = face.person_name if face.status == "KNOWN" and face.person_name else "Face"
+                            dets.append((label, float(face.confidence or 1.0), face.bbox, -1))
+
+                    # Draw zones
+                    try:
+                        import cv2  # type: ignore
+                        for zone_id, polygon in zone_polygons.items():
+                            if not polygon:
+                                continue
+                            pts = [(int(x), int(y)) for x, y in polygon]
+                            cv2.polylines(frame, [np.array(pts, dtype=np.int32)], True, (255, 150, 0), 2)
+                            label_pt = pts[0]
                             cv2.putText(
                                 frame,
-                                zid,
-                                (pts[0][0], max(pts[0][1] - 6, 10)),
+                                zone_id,
+                                (label_pt[0], max(label_pt[1] - 6, 10)),
                                 cv2.FONT_HERSHEY_SIMPLEX,
-                                0.6,
+                                0.5,
                                 (255, 150, 0),
-                                2,
+                                1,
+                                cv2.LINE_AA,
                             )
-
-                        for rp in last_anpr:
-                            x1, y1, x2, y2 = rp.bbox
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
-                            txt = f"{rp.plate_text} ({rp.zone_id})" if (rp.zone_id and rp.zone_id != "__GLOBAL__") else rp.plate_text
-                            cv2.putText(frame, txt or "PLATE", (x1, max(y1 - 8, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-                        for face in face_overlays:
-                            if face.bbox:
-                                lbl = face.person_name if (face.status == "KNOWN" and face.person_name) else "Face"
-                                dets.append((lbl, float(face.confidence or 1.0), face.bbox, -1))
                     except Exception:
                         pass
-
-                    if annotated_writer:
+                    if annotated_writer is not None:
                         annotated_writer.write_frame(frame, dets)
-                    if live_writer:
+                    if live_writer is not None:
                         live_writer.write_frame(frame, dets)
-
-            def bag_handler(objects, now_utc, frame):  # type: ignore[no-untyped-def]
-                if processors_local.bag_processor:
-                    try:
-                        processors_local.bag_processor.process(objects, frame=frame)
-                    except Exception:
-                        pass
-                return objects
-
+                if (
+                    frame is not None
+                    and current_state["mode"] == "test"
+                    and current_state["run_id"]
+                    and objects
+                ):
+                    now_ts = time.monotonic()
+                    if now_ts - current_state["last_snapshot_ts"] >= 0.5:
+                        snapshots_root = Path(
+                            os.getenv(
+                                "EDGE_SNAPSHOT_DIR",
+                                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "snapshots"),
+                            )
+                        )
+                        out_dir = snapshots_root / settings.godown_id / current_state["run_id"] / camera_obj.id
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        filename = f"det_{int(now_ts * 1000)}.jpg"
+                        try:
+                            import cv2  # type: ignore
+                            canvas = frame.copy()
+                            for obj in objects:
+                                x1, y1, x2, y2 = obj.bbox
+                                cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                                label = f"{obj.class_name} {obj.confidence:.2f}"
+                                cv2.putText(
+                                    canvas,
+                                    label,
+                                    (x1, max(y1 - 6, 10)),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (0, 200, 255),
+                                    1,
+                                    cv2.LINE_AA,
+                                )
+                            cv2.imwrite(str(out_dir / filename), canvas)
+                        except Exception:
+                            pass
+                        current_state["last_snapshot_ts"] = now_ts
+    
+            last_restart_token = restart_tokens.get(camera_obj.id, 0)
+            force_restart = False
             while True:
+                if restart_tokens.get(camera_obj.id, 0) != last_restart_token:
+                    logger.info("Camera restart requested: %s", camera_obj.id)
+                    return
+                # Handle deactivation
                 if not getattr(camera_obj, "is_active", True):
                     if state_local.is_online:
                         logger.info("Camera deactivated: %s", camera_obj.id)
                         state_local.is_online = False
                     time.sleep(5)
                     continue
-
-                src, mode, r_id = _resolve_source_local()
+                current_source, current_mode, current_run_id = _resolve_source_local()
                 state_local.suppress_offline_events = not health_enabled_local
-                current_state.update({"mode": mode, "run_id": r_id})
-                if mode == "test":
+                current_state["mode"] = current_mode
+                current_state["run_id"] = current_run_id
+                if current_mode == "test":
+                    # Suppress offline events during test runs
                     state_local.suppress_offline_events = True
-
-                if _is_file_source(src):
-                    res = Path(src).expanduser().resolve()
-                    if not res.exists():
-                        logger.warning("Test video missing: %s", res)
-                        src, mode, r_id = camera_obj.rtsp_url, "live", None
-                        current_state.update({"mode": mode, "run_id": r_id})
+                if _is_file_source(current_source):
+                    resolved = Path(current_source).expanduser().resolve()
+                    if not resolved.exists():
+                        logger.warning(
+                            "Test video missing for camera %s: %s -> falling back to LIVE RTSP",
+                            camera_obj.id,
+                            resolved,
+                        )
+                        # fallback to live
+                        current_source = camera_obj.rtsp_url
+                        current_mode = "live"
+                        current_run_id = None
                     else:
-                        src = str(res)
-
-                logger.info("Pipeline starting for %s (mode=%s, source=%s)", camera_obj.id, mode, src)
-
+                        current_source = str(resolved)
+                logger.info(
+                    "Creating pipeline for camera %s (mode=%s, source=%s)",
+                    camera_obj.id,
+                    current_mode,
+                    current_source,
+                )
                 annotated_writer = None
-                if mode == "test" and r_id:
-                    a_dir = Path(
+                if current_mode == "test" and current_run_id:
+                    annotated_dir = Path(
                         os.getenv(
                             "EDGE_ANNOTATED_DIR",
                             str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "annotated"),
                         )
                     )
-                    a_path = a_dir / settings.godown_id / r_id / f"{camera_obj.id}.mp4"
-                    l_path = a_dir / settings.godown_id / r_id / f"{camera_obj.id}_latest.jpg"
-                    annotated_writer = AnnotatedVideoWriter(str(a_path), latest_path=str(l_path), latest_interval=0.2)
-
+                    annotated_path = annotated_dir / settings.godown_id / current_run_id / f"{camera_obj.id}.mp4"
+                    latest_path = annotated_dir / settings.godown_id / current_run_id / f"{camera_obj.id}_latest.jpg"
+                    annotated_writer = AnnotatedVideoWriter(
+                        str(annotated_path),
+                        latest_path=str(latest_path),
+                        latest_interval=0.2,
+                    )
+                next_source: dict[str, Optional[str]] = {"value": None}
+                next_mode: dict[str, Optional[str]] = {"value": None}
+                next_run_id: dict[str, Optional[str]] = {"value": None}
+    
                 def should_stop() -> bool:
+                    nonlocal force_restart
                     if not getattr(camera_obj, "is_active", True):
                         return True
-                    d_src, _d_mode, _d_rid = _resolve_source_local()
-                    return d_src != src
-
-                Pipeline(
-                    src,
+                    if restart_tokens.get(camera_obj.id, 0) != last_restart_token:
+                        force_restart = True
+                        return True
+                    desired_source, desired_mode, desired_run_id = _resolve_source_local()
+                    if desired_source != current_source:
+                        next_source["value"] = desired_source
+                        next_mode["value"] = desired_mode
+                        next_run_id["value"] = desired_run_id
+                        return True
+                    return False
+    
+                pipeline = Pipeline(
+                    current_source,
                     camera_obj.id,
                     detector_local,
                     callback,
                     stop_check=should_stop,
                     frame_processors=[bag_handler],
-                ).run()
-
-                if annotated_writer:
+                )
+                pipeline.run()
+                if force_restart:
+                    logger.info("Camera pipeline stopping for restart: %s", camera_obj.id)
+                    return
+                if annotated_writer is not None:
                     annotated_writer.close()
-
-                if mode == "test":
+                    if annotated_writer.frames_written() == 0:
+                        logger.warning(
+                            "Annotated video has zero frames for camera %s (run_id=%s).",
+                            camera_obj.id,
+                            current_run_id,
+                        )
+    
+                if next_source["value"]:
+                    current_source = next_source["value"]
+                    current_mode = next_mode["value"] or "live"
+                    current_run_id = next_run_id["value"]
+                    continue
+                # Handle overrides that arrived while pipeline exited early (e.g., RTSP open failed)
+                desired_source, desired_mode, desired_run_id = _resolve_source_local()
+                if desired_source != current_source:
+                    current_source = desired_source
+                    current_mode = desired_mode
+                    current_run_id = desired_run_id
+                    continue
+    
+                if current_mode == "test":
                     state_local.suppress_offline_events = True
-                    logger.info("Test run completed for %s (run_id=%s)", camera_obj.id, r_id)
-                    if r_id:
+                    logger.info(
+                        "Test run completed for camera %s (run_id=%s)",
+                        camera_obj.id,
+                        current_run_id,
+                    )
+                    if current_run_id:
                         try:
-                            m_dir = Path(
+                            annotated_dir = Path(
                                 os.getenv(
                                     "EDGE_ANNOTATED_DIR",
                                     str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "annotated"),
                                 )
                             )
-                            marker = m_dir / settings.godown_id / r_id / "completed.json"
+                            marker = annotated_dir / settings.godown_id / current_run_id / "completed.json"
                             marker.parent.mkdir(parents=True, exist_ok=True)
                             marker.write_text(
                                 json.dumps(
-                                    {"run_id": r_id, "camera_id": camera_obj.id, "completed_at": datetime.datetime.utcnow().isoformat() + "Z"},
+                                    {
+                                        "run_id": current_run_id,
+                                        "camera_id": camera_obj.id,
+                                        "completed_at": datetime.datetime.utcnow().isoformat() + "Z",
+                                    },
                                     indent=2,
-                                )
+                                ),
+                                encoding="utf-8",
                             )
                         except Exception:
                             pass
                 break
-
+    
         t = threading.Thread(
             target=camera_runner,
             args=(
@@ -906,130 +1045,181 @@ def start_camera_loops(
         )
         t.start()
         threads.append(t)
+    for camera in settings.cameras:
+        _start_camera(camera)
 
-    # Initial start
-    for cam in settings.cameras:
-        _start_camera(cam)
-
-    # Dynamic Discovery
-    if os.getenv("EDGE_DYNAMIC_CAMERAS", "true").lower() == "true":
-
-        def _discover_loop():
-            b_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
+    enable_discovery = os.getenv("EDGE_DYNAMIC_CAMERAS", "true").lower() in {"1", "true", "yes"}
+    if enable_discovery:
+        def _discover_loop() -> None:
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
+            try:
+                interval = float(os.getenv("EDGE_CAMERA_DISCOVERY_INTERVAL_SEC", "20"))
+            except Exception:
+                interval = 20.0
             while True:
                 try:
-                    with urllib.request.urlopen(f"{b_url}/api/v1/godowns/{settings.godown_id}", timeout=3) as r:
-                        payload = json.loads(r.read().decode("utf-8"))
-                        for cam in payload.get("cameras", []):
-                            c_id = cam.get("camera_id")
-                            if not c_id:
+                    url = f"{backend_url}/api/v1/godowns/{settings.godown_id}"
+                    with urllib.request.urlopen(url, timeout=3) as resp:
+                        payload = json.loads(resp.read().decode("utf-8"))
+                    cameras = payload.get("cameras", []) if isinstance(payload, dict) else []
+                    for cam in cameras or []:
+                        cam_id = cam.get("camera_id")
+                        if not cam_id:
+                            continue
+                        rtsp_url = cam.get("rtsp_url") or cam.get("rtsp")
+                        if not rtsp_url:
+                            continue
+                        zones = []
+                        zones_raw = cam.get("zones_json")
+                        if zones_raw:
+                            try:
+                                if isinstance(zones_raw, str):
+                                    zones_data = json.loads(zones_raw)
+                                else:
+                                    zones_data = zones_raw
+                                if isinstance(zones_data, list):
+                                    for zone in zones_data:
+                                        zone_id = zone.get("id") if isinstance(zone, dict) else None
+                                        polygon = zone.get("polygon") if isinstance(zone, dict) else None
+                                        if zone_id and isinstance(polygon, list):
+                                            zones.append(ZoneConfig(id=zone_id, polygon=polygon))
+                            except Exception:
+                                pass
+                        with camera_lock:
+                            existing_cam = next((c for c in settings.cameras if c.id == cam_id), None)
+                            if existing_cam:
+                                # Synchronize existing camera settings
+                                restart_needed = False
+                                if existing_cam.rtsp_url != rtsp_url:
+                                    existing_cam.rtsp_url = rtsp_url
+                                    restart_needed = True
+                                new_test_video = cam.get("test_video")
+                                if existing_cam.test_video != new_test_video:
+                                    existing_cam.test_video = new_test_video
+                                    restart_needed = True
+                                new_active = cam.get("is_active", True)
+                                if getattr(existing_cam, "is_active", True) != new_active:
+                                    existing_cam.is_active = new_active
+                                    restart_needed = True
+                                role_raw = cam.get("role")
+                                if role_raw:
+                                    new_role = str(role_raw).strip().upper()
+                                    if existing_cam.role != new_role:
+                                        existing_cam.role = new_role
+                                        existing_cam.role_explicit = True
+                                        restart_needed = True
+                                modules_raw = cam.get("modules")
+                                if isinstance(modules_raw, dict):
+                                    try:
+                                        new_modules = CameraModules(**modules_raw)
+                                        if existing_cam.modules != new_modules:
+                                            existing_cam.modules = new_modules
+                                            restart_needed = True
+                                    except Exception:
+                                        pass
+                                if restart_needed:
+                                    _request_restart(existing_cam.id)
+                                    _start_camera(existing_cam)
                                 continue
-                            rtsp = cam.get("rtsp_url") or cam.get("rtsp")
-                            if not rtsp:
+                            
+                            if cam_id in started_cameras:
                                 continue
-
-                            zones: list[ZoneConfig] = []
-                            z_raw = cam.get("zones_json")
-                            if z_raw:
-                                try:
-                                    z_data = json.loads(z_raw) if isinstance(z_raw, str) else z_raw
-                                    if isinstance(z_data, list):
-                                        for z in z_data:
-                                            if z.get("id") and isinstance(z.get("polygon"), list):
-                                                zones.append(ZoneConfig(id=z["id"], polygon=z["polygon"]))
-                                except Exception:
-                                    pass
-
-                            with camera_lock:
-                                existing = next((c for c in settings.cameras if c.id == c_id), None)
-                                if existing:
-                                    existing.rtsp_url = rtsp
-                                    existing.test_video = cam.get("test_video")
-                                    existing.is_active = cam.get("is_active", True)
-                                    continue
-
-                                if c_id in started_cameras:
-                                    continue
-
-                                role = str(cam.get("role") or "SECURITY").upper()
-                                m_raw = cam.get("modules")
-                                m_cfg = CameraModules(**m_raw) if isinstance(m_raw, dict) else None
-                                n_cam = CameraConfig(
-                                    id=c_id,
-                                    rtsp_url=rtsp,
-                                    role=role,
-                                    role_explicit=bool(cam.get("role")),
-                                    modules=m_cfg,
-                                    zones=zones,
-                                    test_video=cam.get("test_video"),
-                                    is_active=cam.get("is_active", True),
-                                )
-                                settings.cameras.append(n_cam)
-                                _start_camera(n_cam)
+                        role = str(cam.get("role") or "SECURITY").strip().upper()
+                        modules_cfg = None
+                        modules_raw = cam.get("modules")
+                        if isinstance(modules_raw, dict):
+                            try:
+                                modules_cfg = CameraModules(**modules_raw)
+                            except Exception:
+                                modules_cfg = None
+                        new_camera = CameraConfig(
+                            id=cam_id,
+                            rtsp_url=rtsp_url,
+                            role=role,
+                            role_explicit=bool(cam.get("role")),
+                            modules=modules_cfg,
+                            zones=zones,
+                            test_video=cam.get("test_video"),
+                            is_active=cam.get("is_active", True)
+                        )
+                        settings.cameras.append(new_camera)
+                        _start_camera(new_camera)
                 except Exception:
                     pass
-                time.sleep(float(os.getenv("EDGE_CAMERA_DISCOVERY_INTERVAL_SEC", "20")))
+                time.sleep(interval)
 
-        threading.Thread(target=_discover_loop, name="CameraDiscovery", daemon=True).start()
+        t_discover = threading.Thread(target=_discover_loop, name="CameraDiscovery", daemon=True)
+        t_discover.start()
 
-    # Rule Sync
-    if os.getenv("EDGE_RULES_SOURCE", "backend").lower() == "backend":
-
-        def _apply_rules(upd_rules: list[BaseRule]):
-            upd_rules_typed = [r for r in upd_rules if isinstance(r, BaseRule)]
-            for c_id, bundle in processors.items():
-                c_rules = [r for r in upd_rules_typed if r.camera_id == c_id]
-                c_cfg = next((c for c in settings.cameras if c.id == c_id), None)
-                mods = select_pipeline(c_cfg, settings).modules if c_cfg else None
-
-                if bundle.evaluator and (mods is None or mods.animal_detection_enabled):
-                    _update_rules_evaluator(bundle.evaluator, c_rules)
-
-                b_rules = [r for r in c_rules if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))]
-                if b_rules and (mods is None or mods.animal_detection_enabled):
-                    if bundle.bag_processor and hasattr(bundle.bag_processor, "update_rules"):
-                        try:
-                            bundle.bag_processor.update_rules(b_rules)  # type: ignore[misc]
-                        except Exception:
-                            pass
+    rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
+    if rules_source == "backend":
+        def _apply_rules(updated_rules: list[BaseRule]) -> None:
+            for cam_id, bundle in processors.items():
+                cam_rules = [r for r in updated_rules if r.camera_id == cam_id]
+                cam_cfg = next((c for c in settings.cameras if c.id == cam_id), None)
+                modules = select_pipeline(cam_cfg, settings).modules if cam_cfg else None
+                if bundle.evaluator is not None and (modules is None or modules.animal_detection_enabled):
+                    bundle.evaluator.update_rules(cam_rules)
+                elif modules is not None and not modules.animal_detection_enabled:
+                    bundle.evaluator = None
+                bag_rules = [
+                    r for r in cam_rules
+                    if isinstance(r, (BagMonitorRule, BagOddHoursRule, BagUnplannedRule, BagTallyMismatchRule))
+                ]
+                if bag_rules and (modules is None or modules.animal_detection_enabled):
+                    if bundle.bag_processor is None:
+                        bundle.bag_processor = BagMovementProcessor(
+                            camera_id=cam_id,
+                            godown_id=settings.godown_id,
+                            zone_polygons=bundle.zone_polygons,
+                            rules=bag_rules,
+                            timezone=settings.timezone,
+                            dispatch_plan_path=settings.dispatch_plan_path,
+                            dispatch_plan_reload_sec=settings.dispatch_plan_reload_sec,
+                            bag_class_keywords=settings.bag_class_keywords,
+                            movement_px_threshold=settings.bag_movement_px_threshold,
+                            movement_time_window_sec=settings.bag_movement_time_window_sec,
+                        )
                     else:
-                        try:
-                            bundle.bag_processor = BagMovementProcessor(
-                                c_id,
-                                settings.godown_id,
-                                bundle.zone_polygons,
-                                b_rules,
-                                settings.timezone,
-                                settings.dispatch_plan_path,
-                                settings.dispatch_plan_reload_sec,
-                                settings.bag_class_keywords,
-                            )
-                        except TypeError:
-                            bundle.bag_processor = BagMovementProcessor(c_id, settings.godown_id, bundle.zone_polygons, b_rules, settings.timezone)
+                        bundle.bag_processor.update_rules(bag_rules)
                 else:
                     bundle.bag_processor = None
 
-                a_rules = [r for r in c_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
-                if bundle.anpr_processor:
-                    _update_anpr_processor(bundle.anpr_processor, a_rules)
+                anpr_rules = [r for r in cam_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
+                if modules is not None and not modules.anpr_enabled:
+                    bundle.anpr_processor = None
+                elif bundle.anpr_processor is not None:
+                    bundle.anpr_processor.update_rules(anpr_rules)
 
-        def _rules_sync_loop():
-            b_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
-            last_sig = None
+        def _rules_sync_loop() -> None:
+            backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
+            try:
+                interval = float(os.getenv("EDGE_RULES_SYNC_INTERVAL_SEC", "20"))
+            except Exception:
+                interval = 20.0
+            last_signature = None
             while True:
                 try:
-                    cfgs = fetch_rule_configs(b_url, settings.godown_id)
-                    if cfgs is not None:
-                        sig = json.dumps([getattr(r, "__dict__", {}) for r in cfgs], sort_keys=True)
-                        if sig != last_sig:
-                            with rules_lock:
-                                settings.rules = cfgs
-                                _apply_rules(load_rules(settings))
-                                last_sig = sig
+                    rule_cfgs = fetch_rule_configs(backend_url, settings.godown_id)
+                    if rule_cfgs is None:
+                        time.sleep(interval)
+                        continue
+                    signature = json.dumps([r.__dict__ for r in rule_cfgs], sort_keys=True)
+                    if signature != last_signature:
+                        with rules_lock:
+                            settings.rules = rule_cfgs
+                            updated_rules = load_rules(settings)
+                        _apply_rules(updated_rules)
+                        last_signature = signature
                 except Exception:
                     pass
-                time.sleep(float(os.getenv("EDGE_RULES_SYNC_INTERVAL_SEC", "20")))
+                time.sleep(interval)
 
-        threading.Thread(target=_rules_sync_loop, name="RulesSync", daemon=True).start()
+        t_rules = threading.Thread(target=_rules_sync_loop, name="RulesSync", daemon=True)
+        t_rules.start()
 
+    # Return threads and camera health state mapping
     return threads, camera_states
+
+
+# The previous dummy callback has been removed in favour of rule-based evaluation

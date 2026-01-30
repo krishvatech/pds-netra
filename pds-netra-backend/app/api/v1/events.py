@@ -81,7 +81,11 @@ def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
     bbox = _parse_bbox(event.bbox)
     if not bbox:
         return None
-    camera = db.get(Camera, event.camera_id)
+    camera = (
+        db.query(Camera)
+        .filter(Camera.id == event.camera_id, Camera.godown_id == event.godown_id)
+        .first()
+    )
     if not camera or not camera.zones_json:
         return None
     try:

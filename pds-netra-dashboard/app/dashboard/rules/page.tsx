@@ -272,7 +272,7 @@ export default function RulesPage() {
     }
     (async () => {
       try {
-        const zones = await getCameraZones(form.camera_id);
+        const zones = await getCameraZones(form.camera_id, form.godown_id);
         if (!mounted) return;
         const zoneIds = zones.zones.map((z) => z.id);
         setZoneOptions(zoneIds);

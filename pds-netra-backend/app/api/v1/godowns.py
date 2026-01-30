@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import List, Optional
 from pathlib import Path
+import json
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
@@ -29,6 +30,17 @@ def _status_for(open_critical: int, open_warning: int, cameras_offline: int) -> 
     if open_warning > 0 or cameras_offline > 0:
         return "ISSUES"
     return "OK"
+
+def _parse_modules(modules_json: str | None) -> Optional[dict]:
+    if not modules_json:
+        return None
+    try:
+        data = json.loads(modules_json)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
 
 @router.get("")
 def list_godowns(
@@ -141,6 +153,7 @@ def get_godown_detail(godown_id: str, db: Session = Depends(get_db)) -> dict:
                 "rtsp_url": c.rtsp_url,
                 "is_active": c.is_active,
                 "zones_json": c.zones_json,
+                "modules": _parse_modules(c.modules_json),
             }
             for c in cameras
         ],

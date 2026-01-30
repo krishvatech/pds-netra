@@ -129,7 +129,13 @@ def _dashboard_link(alert: Alert) -> Optional[str]:
 
 def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] = None) -> NotificationContent:
     godown = db.get(Godown, alert.godown_id)
-    camera = db.get(Camera, alert.camera_id) if alert.camera_id else None
+    camera = None
+    if alert.camera_id:
+        camera = (
+            db.query(Camera)
+            .filter(Camera.id == alert.camera_id, Camera.godown_id == alert.godown_id)
+            .first()
+        )
     godown_name = godown.name if godown and godown.name else alert.godown_id
     camera_name = camera.label if camera and camera.label else (alert.camera_id or "Unknown camera")
     timestamp = _to_ist(alert.start_time)

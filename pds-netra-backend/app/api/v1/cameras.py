@@ -92,12 +92,28 @@ def _parse_zones(zones_json: str | None) -> List[dict]:
         return []
     return []
 
+def _get_camera(db: Session, camera_id: str, godown_id: Optional[str]) -> Camera:
+    query = db.query(Camera).filter(Camera.id == camera_id)
+    if godown_id:
+        camera = query.filter(Camera.godown_id == godown_id).first()
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found")
+        return camera
+    cameras = query.all()
+    if not cameras:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if len(cameras) > 1:
+        raise HTTPException(status_code=409, detail="Multiple cameras share this id; specify godown_id")
+    return cameras[0]
+
 
 @router.get("/{camera_id}/zones")
-def get_camera_zones(camera_id: str, db: Session = Depends(get_db)) -> dict:
-    camera = db.get(Camera, camera_id)
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found")
+def get_camera_zones(
+    camera_id: str,
+    godown_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    camera = _get_camera(db, camera_id, godown_id)
     return {
         "camera_id": camera.id,
         "godown_id": camera.godown_id,
@@ -106,10 +122,13 @@ def get_camera_zones(camera_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.put("/{camera_id}/zones")
-def update_camera_zones(camera_id: str, payload: ZoneUpdate, db: Session = Depends(get_db)) -> dict:
-    camera = db.get(Camera, camera_id)
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found")
+def update_camera_zones(
+    camera_id: str,
+    payload: ZoneUpdate,
+    godown_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    camera = _get_camera(db, camera_id, godown_id)
     zones = [z.model_dump() for z in payload.zones]
     camera.zones_json = json.dumps(zones)
     db.add(camera)
@@ -142,7 +161,11 @@ def list_cameras(
 
 @router.post("")
 def create_camera(payload: CameraCreate, db: Session = Depends(get_db)) -> dict:
-    existing = db.get(Camera, payload.camera_id)
+    existing = (
+        db.query(Camera)
+        .filter(Camera.id == payload.camera_id, Camera.godown_id == payload.godown_id)
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=409, detail="Camera already exists")
     godown = db.get(Godown, payload.godown_id)
@@ -170,10 +193,13 @@ def create_camera(payload: CameraCreate, db: Session = Depends(get_db)) -> dict:
 
 
 @router.put("/{camera_id}")
-def update_camera(camera_id: str, payload: CameraUpdate, db: Session = Depends(get_db)) -> dict:
-    camera = db.get(Camera, camera_id)
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found")
+def update_camera(
+    camera_id: str,
+    payload: CameraUpdate,
+    godown_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    camera = _get_camera(db, camera_id, godown_id)
     if payload.label is not None:
         camera.label = payload.label
     if payload.role is not None:
@@ -192,10 +218,12 @@ def update_camera(camera_id: str, payload: CameraUpdate, db: Session = Depends(g
 
 
 @router.delete("/{camera_id}")
-def delete_camera(camera_id: str, db: Session = Depends(get_db)) -> dict:
-    camera = db.get(Camera, camera_id)
-    if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found")
+def delete_camera(
+    camera_id: str,
+    godown_id: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    camera = _get_camera(db, camera_id, godown_id)
     db.delete(camera)
     db.commit()
     return {"status": "deleted", "camera_id": camera_id}

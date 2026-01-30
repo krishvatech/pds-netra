@@ -33,8 +33,7 @@ import type {
   UpdateGodownPayload,
   AuthorizedUserItem,
   CreateAuthorizedUserPayload,
-  UpdateAuthorizedUserPayload,
-  AnprCsvEventsResponse
+  UpdateAuthorizedUserPayload
 } from './types';
 import { getToken, getUser } from './auth';
 
@@ -125,30 +124,6 @@ export async function getGodowns(params?: {
   return apiFetch(`/api/v1/godowns${q}`);
 }
 
-export async function getAnprCsvEvents(params: {
-  godown_id: string;
-  timezone_name?: string;
-  camera_id?: string;
-  plate_text?: string;
-  match_status?: string;
-  date_from?: string; // YYYY-MM-DD
-  date_to?: string;   // YYYY-MM-DD
-  limit?: number;
-}): Promise<AnprCsvEventsResponse> {
-  const q = buildQuery({
-    godown_id: params.godown_id,
-    timezone_name: params.timezone_name ?? 'Asia/Kolkata',
-    camera_id: params.camera_id,
-    plate_text: params.plate_text,
-    match_status: params.match_status,
-    date_from: params.date_from,
-    date_to: params.date_to,
-    limit: params.limit ?? 200
-  });
-  return apiFetch<AnprCsvEventsResponse>(`/api/v1/anpr/csv-events${q}`);
-}
-
-
 export async function getGodownDetail(godownId: string): Promise<GodownDetail> {
   return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`);
 }
@@ -191,15 +166,21 @@ export async function deleteGodown(godownId: string): Promise<{
   });
 }
 
-export async function getCameraZones(cameraId: string): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
-  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones`);
+export async function getCameraZones(
+  cameraId: string,
+  godownId?: string
+): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
+  const q = buildQuery({ godown_id: godownId });
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones${q}`);
 }
 
 export async function updateCameraZones(
   cameraId: string,
+  godownId: string | undefined,
   zones: Array<{ id: string; polygon: number[][] }>
 ): Promise<{ camera_id: string; godown_id: string; zones: Array<{ id: string; polygon: number[][] }> }> {
-  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones`, {
+  const q = buildQuery({ godown_id: godownId });
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}/zones${q}`, {
     method: 'PUT',
     body: JSON.stringify({ zones })
   });
@@ -222,16 +203,19 @@ export async function createCamera(payload: {
 
 export async function updateCamera(
   cameraId: string,
-  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean; modules?: CameraModules }
+  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean; modules?: CameraModules },
+  godownId?: string
 ): Promise<CameraInfo> {
-  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, {
+  const q = buildQuery({ godown_id: godownId });
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}${q}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
   });
 }
 
-export async function deleteCamera(cameraId: string): Promise<{ status: string; camera_id: string }> {
-  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}`, { method: 'DELETE' });
+export async function deleteCamera(cameraId: string, godownId?: string): Promise<{ status: string; camera_id: string }> {
+  const q = buildQuery({ godown_id: godownId });
+  return apiFetch(`/api/v1/cameras/${encodeURIComponent(cameraId)}${q}`, { method: 'DELETE' });
 }
 
 export async function acknowledgeAlert(alertId: string | number): Promise<{ status: string; alert_id: number }> {

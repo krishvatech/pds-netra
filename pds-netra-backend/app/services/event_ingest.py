@@ -105,7 +105,11 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         db.commit()
         db.refresh(godown)
     # Ensure camera exists
-    camera = db.get(Camera, event_in.camera_id)
+    camera = (
+        db.query(Camera)
+        .filter(Camera.id == event_in.camera_id, Camera.godown_id == event_in.godown_id)
+        .first()
+    )
     if camera is None:
         camera = Camera(id=event_in.camera_id, godown_id=event_in.godown_id)
         db.add(camera)

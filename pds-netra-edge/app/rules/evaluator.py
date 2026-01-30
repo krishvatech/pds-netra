@@ -144,12 +144,12 @@ class RulesEvaluator:
         self.logger = logging.getLogger(f"RulesEvaluator-{camera_id}")
         self.camera_id = camera_id
         self.godown_id = godown_id
-        self.rules_by_zone: Dict[str, List[BaseRule]] = {}
-        self.rule_zone_by_id: Dict[str, str] = {}
-        for rule in rules:
-            self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
-            self.rule_zone_by_id[rule.id] = rule.zone_id
-        self.zone_polygons = zone_polygons
+        self.rules_by_zone = {}
+        self.rule_zone_by_id = {}
+        self.update_rules(rules)
+        self.normalized_polygons = zone_polygons
+        self.zone_polygons: Dict[str, List[Tuple[int, int]]] = {}
+        self._current_resolution: Optional[Tuple[int, int]] = None
         # Use zoneinfo for accurate timezone handling
         try:
             self.tz = ZoneInfo(timezone)
@@ -190,24 +190,47 @@ class RulesEvaluator:
 
     def update_rules(self, rules: List[BaseRule]) -> None:
         """Replace the rule set for this evaluator."""
-        self.rules_by_zone = {}
-        self.rule_zone_by_id = {}
+        self.rules_by_zone.clear()
+        self.rule_zone_by_id.clear()
         for rule in rules:
             self.rules_by_zone.setdefault(rule.zone_id, []).append(rule)
             self.rule_zone_by_id[rule.id] = rule.zone_id
 
-    def _determine_zone(self, bbox: List[int]) -> Optional[str]:
+    def update_zone_polygons(self, normalized_polygons: Dict[str, List[Tuple[float, float]]], width: int, height: int) -> None:
+        """Update and scale polygons for the current frame resolution."""
+        self.normalized_polygons = normalized_polygons
+        self._current_resolution = (width, height)
+        self.zone_polygons = {}
+        for zone_id, polygon in normalized_polygons.items():
+            scaled = []
+            for px, py in polygon:
+                # Backward compatibility: if coord > 1, it's already pixels
+                x = int(px) if px > 1 else int(px * width)
+                y = int(py) if py > 1 else int(py * height)
+                scaled.append((x, y))
+            self.zone_polygons[zone_id] = scaled
+
+    def _determine_zones(self, bbox: List[int]) -> List[str]:
         """
-        Determine which zone a bounding box is in by testing its center
-        against configured polygons. Returns the first matching zone_id or None.
+        Determine which zones a bounding box is in by testing its center
+        against configured polygons. Returns all matching zone_ids.
         """
         if not self.zone_polygons:
             # If no zones are configured, treat the whole frame as a single "all" zone.
-            return "all"
+            return ["all"]
+        matched = []
         for zone_id, polygon in self.zone_polygons.items():
             if is_bbox_in_zone(bbox, polygon):
-                return zone_id
-        return None
+                matched.append(zone_id)
+        return matched
+
+    def _rules_for_zone(self, zone_id: Optional[str]) -> List[BaseRule]:
+        rules: List[BaseRule] = []
+        if zone_id is not None:
+            rules.extend(self.rules_by_zone.get(zone_id, []))
+        rules.extend(self.rules_by_zone.get("all", []))
+        rules.extend(self.rules_by_zone.get("*", []))
+        return rules
 
     def _evaluate_time_rules(
         self,
@@ -288,7 +311,36 @@ class RulesEvaluator:
         if instant_only:
             for obj in objects:
                 cls = obj.class_name.lower()
-                zone_id = self._determine_zone(obj.bbox)
+                zone_ids = self._determine_zones(obj.bbox)
+                for zone_id in (zone_ids if zone_ids else [None]):
+                    if cls in self.alert_classes:
+                        self._process_instant_class_alert(
+                            obj,
+                            zone_id,
+                            now_utc,
+                            mqtt_client,
+                            frame,
+                            snapshotter,
+                            meta_extra=meta_extra,
+                        )
+                    elif cls == 'person' and self.alert_on_person:
+                        self._process_person_instant(
+                            obj,
+                            zone_id,
+                            now_utc,
+                            mqtt_client,
+                            frame,
+                            snapshotter,
+                            meta_extra=meta_extra,
+                        )
+            self._cleanup_person_alerts(now_utc)
+            return
+        for obj in objects:
+            cls = obj.class_name.lower()
+            zone_ids = self._determine_zones(obj.bbox)
+            
+            # Handle class-based alerts (e.g. animal, vehicle)
+            for zone_id in (zone_ids if zone_ids else [None]):
                 if cls in self.alert_classes:
                     self._process_instant_class_alert(
                         obj,
@@ -299,113 +351,77 @@ class RulesEvaluator:
                         snapshotter,
                         meta_extra=meta_extra,
                     )
-                elif cls == 'person' and self.alert_on_person:
-                    self._process_person_instant(
-                        obj,
-                        zone_id,
-                        now_utc,
-                        mqtt_client,
-                        frame,
-                        snapshotter,
-                        meta_extra=meta_extra,
-                    )
-            self._cleanup_person_alerts(now_utc)
-            return
-        for obj in objects:
-            cls = obj.class_name.lower()
-            zone_id = self._determine_zone(obj.bbox)
-            if cls in self.alert_classes:
-                self._process_instant_class_alert(
-                    obj,
-                    zone_id,
-                    now_utc,
-                    mqtt_client,
-                    frame,
-                    snapshotter,
-                    meta_extra=meta_extra,
-                )
+
             # Handle person-related rules (unauthorized presence and loitering)
             if cls == 'person':
-                if self.alert_on_person:
-                    self._process_person_instant(
-                        obj,
-                        zone_id,
-                        now_utc,
-                        mqtt_client,
-                        frame,
-                        snapshotter,
-                        meta_extra=meta_extra,
-                    )
-                    self.logger.debug(
-                        "Person detected: track_id=%s conf=%.3f zone=%s bbox=%s",
-                        obj.track_id,
-                        obj.confidence,
-                        zone_id,
-                        obj.bbox,
-                    )
-                if zone_id is None:
-                    continue
-                self.person_last_seen[(zone_id, obj.track_id)] = now_utc
-                # Unauthorized person rules
-                rules_for_zone = (
-                    self.rules_by_zone.get(zone_id, [])
-                    + self.rules_by_zone.get("all", [])
-                    + self.rules_by_zone.get("*", [])
-                )
-                for rule in rules_for_zone:
-                    if isinstance(rule, (UnauthPersonAfterHoursRule, NoPersonDuringRule)):
-                        if self._evaluate_time_rules(rule, now_local_time):
-                            entry_key = (rule.id, obj.track_id)
-                            if entry_key not in self.person_active:
-                                # Emit only once per entry; track until exit threshold expires.
-                                severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
-                                event = EventModel(
-                                    godown_id=self.godown_id,
-                                    camera_id=self.camera_id,
-                                    event_id=str(uuid.uuid4()),
-                                    event_type="UNAUTH_PERSON",
-                                    severity=severity,
-                                    timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-                                    bbox=obj.bbox,
-                                    track_id=obj.track_id,
-                                    image_url=None,
-                                    clip_url=None,
-                                    meta=MetaModel(
-                                        zone_id=zone_id,
-                                        rule_id=rule.id,
-                                        confidence=obj.confidence,
-                                        extra={},
-                                    ),
-                                )
-                                mqtt_client.publish_event(event)
-                                self.person_active.add(entry_key)
-                # Loitering rules
-                for rule in rules_for_zone:
-                    if isinstance(rule, LoiteringRule):
-                        self._process_loitering(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
-                continue  # person handled
+                for zone_id in (zone_ids if zone_ids else [None]):
+                    if self.alert_on_person:
+                        self._process_person_instant(
+                            obj,
+                            zone_id,
+                            now_utc,
+                            mqtt_client,
+                            frame,
+                            snapshotter,
+                            meta_extra=meta_extra,
+                        )
+                    
+                    if zone_id is None:
+                        continue
+                        
+                    self.person_last_seen[(zone_id, obj.track_id)] = now_utc
+                    # Unauthorized person rules
+                    rules_for_zone = self._rules_for_zone(zone_id)
+                    for rule in rules_for_zone:
+                        if isinstance(rule, (UnauthPersonAfterHoursRule, NoPersonDuringRule)):
+                            if self._evaluate_time_rules(rule, now_local_time):
+                                entry_key = (rule.id, obj.track_id)
+                                if entry_key not in self.person_active:
+                                    # Emit only once per entry; track until exit threshold expires.
+                                    severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
+                                    event = EventModel(
+                                        godown_id=self.godown_id,
+                                        camera_id=self.camera_id,
+                                        event_id=str(uuid.uuid4()),
+                                        event_type="UNAUTH_PERSON",
+                                        severity=severity,
+                                        timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+                                        bbox=obj.bbox,
+                                        track_id=obj.track_id,
+                                        image_url=None,
+                                        clip_url=None,
+                                        meta=MetaModel(
+                                            zone_id=zone_id,
+                                            rule_id=rule.id,
+                                            confidence=obj.confidence,
+                                            extra={},
+                                        ),
+                                    )
+                                    mqtt_client.publish_event(event)
+                                    self.person_active.add(entry_key)
+                    # Loitering rules
+                    for rule in rules_for_zone:
+                        if isinstance(rule, LoiteringRule):
+                            self._process_loitering(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
 
             # Handle animal intrusion
-            if cls in ANIMAL_CLASSES:
-                if zone_id is None:
-                    continue
-                rules_for_zone = (
-                    self.rules_by_zone.get(zone_id, [])
-                    + self.rules_by_zone.get("all", [])
-                    + self.rules_by_zone.get("*", [])
-                )
-                for rule in rules_for_zone:
-                    if isinstance(rule, AnimalForbiddenRule):
-                        self._process_animal(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
-                continue
+            elif cls in ANIMAL_CLASSES:
+                for zone_id in zone_ids:
+                    rules_for_zone = self._rules_for_zone(zone_id)
+                    for rule in rules_for_zone:
+                        if isinstance(rule, AnimalForbiddenRule):
+                            self._process_animal(rule, obj, zone_id, now_utc, mqtt_client, frame, snapshotter)
 
             # Handle bag movement (legacy rules optional)
-            if cls in BAG_CLASSES:
+            elif cls in BAG_CLASSES:
                 legacy_enabled = os.getenv("EDGE_LEGACY_BAG_RULES", "false").lower() in {"1", "true", "yes"}
                 if legacy_enabled:
                     # zone_id may be None when bag is outside defined zones
-                    self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client, frame, snapshotter)
-                continue
+                    if not zone_ids:
+                        self._process_bag(obj, None, now_utc, now_local_time, mqtt_client, frame, snapshotter)
+                    else:
+                        for zone_id in zone_ids:
+                            self._process_bag(obj, zone_id, now_utc, now_local_time, mqtt_client, frame, snapshotter)
 
             # Other classes are ignored
             continue
@@ -737,7 +753,7 @@ class RulesEvaluator:
         distance_moved = math.hypot(dx, dy)
         # Determine applicable rules for current zone (if any) and previous zone
         # Bag movement events are emitted only when the object is within a defined zone.
-        rules_current_zone = self.rules_by_zone.get(zone_id, []) if zone_id is not None else []
+        rules_current_zone = self._rules_for_zone(zone_id)
         # Determine whether movement has occurred based on zone or distance
         movement_occurred = zone_changed or (distance_moved > 0)
         # Only emit a new event if movement occurred and we haven't reported before

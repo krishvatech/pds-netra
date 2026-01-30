@@ -111,7 +111,11 @@ def seed_cameras_from_edge_config(db: Session, config_path: Path) -> int:
                 modules_json = json.dumps(cam.get("modules"))
             except Exception:
                 modules_json = None
-        existing = db.get(Camera, cam_id)
+        existing = (
+            db.query(Camera)
+            .filter(Camera.id == cam_id, Camera.godown_id == godown_id)
+            .first()
+        )
         if existing:
             updated = False
             if zones_json is not None and existing.zones_json != zones_json:

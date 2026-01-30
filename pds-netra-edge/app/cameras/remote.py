@@ -24,7 +24,7 @@ import logging
 import urllib.request
 from typing import List, Optional
 
-from ..config import CameraConfig, ZoneConfig
+from ..config import CameraConfig, ZoneConfig, CameraModules
 
 
 def _parse_zones(zones_json) -> List[ZoneConfig]:
@@ -101,6 +101,16 @@ def fetch_camera_configs(
             continue
 
         zones = _parse_zones(c.get("zones_json"))
+        role_raw = c.get("role")
+        role_explicit = role_raw is not None
+        role = str(role_raw or "SECURITY").strip().upper()
+        modules_cfg = None
+        modules_raw = c.get("modules")
+        if isinstance(modules_raw, dict):
+            try:
+                modules_cfg = CameraModules(**modules_raw)
+            except Exception:
+                modules_cfg = None
 
         # IMPORTANT: do NOT change your health logic.
         # Keep health=None, so your existing code uses HealthConfig() defaults.
@@ -108,9 +118,13 @@ def fetch_camera_configs(
             CameraConfig(
                 id=str(cam_id),
                 rtsp_url=str(rtsp),
-                test_video=None,
+                test_video=c.get("test_video"),
+                role=role,
+                role_explicit=role_explicit,
+                modules=modules_cfg,
                 zones=zones,
                 health=None,
+                is_active=bool(c.get("is_active", True)),
             )
         )
 

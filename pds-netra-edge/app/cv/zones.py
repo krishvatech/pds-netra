@@ -69,11 +69,6 @@ def is_bbox_in_zone(bbox: List[int], polygon: List[Tuple[float, float]]) -> bool
     corners = [(x1, y1), (x1, y2), (x2, y1), (x2, y2)]
     if any(point_in_polygon(x, y, polygon) for x, y in corners):
         return True
-    # Fallback: overlap with the polygon's bounding box (tolerant match).
-    xs = [pt[0] for pt in polygon]
-    ys = [pt[1] for pt in polygon]
-    if not xs or not ys:
-        return False
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    return not (x2 < min_x or x1 > max_x or y2 < min_y or y1 > max_y)
+    # Remove fallback: relying on points (center/corners) ensures the object is actually
+    # within or touching the polygon boundary, reducing false positives for diagonal zones.
+    return False

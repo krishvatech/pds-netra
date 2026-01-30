@@ -140,7 +140,7 @@ export default function LiveCamerasPage() {
     setZonesError(null);
     (async () => {
       try {
-        const resp = await getCameraZones(zoneCameraId);
+        const resp = await getCameraZones(zoneCameraId, selectedGodown);
         if (!mounted) return;
         setZones(resp.zones ?? []);
       } catch (e) {
@@ -153,7 +153,7 @@ export default function LiveCamerasPage() {
     return () => {
       mounted = false;
     };
-  }, [zoneCameraId]);
+  }, [zoneCameraId, selectedGodown]);
   const streamUrl = useMemo(() => {
     if (!selectedGodown || !selectedCamera) return '';
     return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(selectedCamera)}?ts=${streamNonce}`;
@@ -225,10 +225,7 @@ export default function LiveCamerasPage() {
       setZonesError('Add at least 3 points to save a zone.');
       return;
     }
-    const polygon = zonePoints.map((p) => [
-      Math.round(p.x * zoneImageSize.w),
-      Math.round(p.y * zoneImageSize.h)
-    ]);
+    const polygon = zonePoints.map((p) => [p.x, p.y]);
     const nextZones = [
       ...zones.filter((z) => z.id !== zoneName.trim()),
       { id: zoneName.trim(), polygon }
@@ -236,7 +233,7 @@ export default function LiveCamerasPage() {
     setZonesLoading(true);
     setZonesError(null);
     try {
-      const resp = await updateCameraZones(zoneCameraId, nextZones);
+      const resp = await updateCameraZones(zoneCameraId, selectedGodown, nextZones);
       setZones(resp.zones ?? []);
     } catch (e) {
       setZonesError(e instanceof Error ? e.message : 'Failed to save zone');
@@ -248,10 +245,13 @@ export default function LiveCamerasPage() {
   const loadZone = (zoneId: string) => {
     const z = zones.find((zone) => zone.id === zoneId);
     if (!z || !zoneImageSize) return;
-    const points = z.polygon.map(([x, y]) => ({
-      x: x / zoneImageSize.w,
-      y: y / zoneImageSize.h
-    }));
+    const points = z.polygon.map(([px, py]) => {
+      // Backward compatibility: if value > 1, assume it's absolute pixels and normalize it.
+      // New zones are saved as normalized (0-1).
+      const x = px > 1 ? px / zoneImageSize.w : px;
+      const y = py > 1 ? py / zoneImageSize.h : py;
+      return { x, y };
+    });
     setZoneName(zoneId);
     setZonePoints(points);
   };
@@ -262,7 +262,7 @@ export default function LiveCamerasPage() {
     setZonesLoading(true);
     setZonesError(null);
     try {
-      const resp = await updateCameraZones(zoneCameraId, nextZones);
+      const resp = await updateCameraZones(zoneCameraId, selectedGodown, nextZones);
       setZones(resp.zones ?? []);
       if (zoneName === zoneId) {
         setZoneName('zone_1');
@@ -339,11 +339,15 @@ export default function LiveCamerasPage() {
     setEditLoading(true);
     setEditError(null);
     try {
-      await updateCamera(editingCameraId, {
-        label: editLabel.trim() || undefined,
-        role: editRole.trim() || undefined,
-        rtsp_url: editRtsp.trim()
-      });
+      await updateCamera(
+        editingCameraId,
+        {
+          label: editLabel.trim() || undefined,
+          role: editRole.trim() || undefined,
+          rtsp_url: editRtsp.trim()
+        },
+        selectedGodown
+      );
       if (selectedGodown) {
         const detail = await getGodownDetail(selectedGodown);
         setGodownDetail(detail);
@@ -363,7 +367,7 @@ export default function LiveCamerasPage() {
     setEditLoading(true);
     setEditError(null);
     try {
-      await deleteCamera(cameraId);
+      await deleteCamera(cameraId, selectedGodown);
       const detail = await getGodownDetail(selectedGodown);
       setGodownDetail(detail);
       if (selectedCamera === cameraId) {
@@ -762,23 +766,23 @@ export default function LiveCamerasPage() {
 
       {fullscreenCameraId
         ? createPortal(
-            <div className="fixed inset-0 z-[9999] h-screen w-screen bg-black/95 overflow-hidden">
-              <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 py-4">
-                <div className="text-sm font-semibold text-white">{fullscreenCameraId}</div>
-                <Button variant="outline" onClick={handleCloseFullscreen}>
-                  Close
-                </Button>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
-                <img
-                  src={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
-                  alt={`Live ${fullscreenCameraId}`}
-                  className="max-h-full w-auto max-w-full object-contain"
-                />
-              </div>
-            </div>,
-            document.body
-          )
+          <div className="fixed inset-0 z-[9999] h-screen w-screen bg-black/95 overflow-hidden">
+            <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 py-4">
+              <div className="text-sm font-semibold text-white">{fullscreenCameraId}</div>
+              <Button variant="outline" onClick={handleCloseFullscreen}>
+                Close
+              </Button>
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
+              <img
+                src={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
+                alt={`Live ${fullscreenCameraId}`}
+                className="max-h-full w-auto max-w-full object-contain"
+              />
+            </div>
+          </div>,
+          document.body
+        )
         : null}
 
 
