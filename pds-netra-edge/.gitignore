@@ -30,3 +30,5 @@ pds-netra-edge/data/rules_cache.json
 
 data/watchlist/authorized_cache.json    
 data/watchlist/watchlist_cache.json
+# TypeScript incremental build info
+*.tsbuildinfo

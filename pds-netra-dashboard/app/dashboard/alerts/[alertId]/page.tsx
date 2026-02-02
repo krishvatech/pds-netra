@@ -57,6 +57,9 @@ function humanAlertType(alertType: string) {
     AFTER_HOURS_PERSON_PRESENCE: "After-hours Person Presence",
     AFTER_HOURS_VEHICLE_PRESENCE: "After-hours Vehicle Presence",
     ANPR_MISMATCH_VEHICLE: "ANPR Mismatch",
+    ANPR_PLATE_NOT_VERIFIED: "Not Verified Plate Detected",
+    ANPR_PLATE_BLACKLIST: "Blacklisted Plate Detected",
+    ANPR_PLATE_ALERT: "ANPR Plate Alert",
   };
   return map[alertType] ?? alertType.replaceAll("_", " ");
 }

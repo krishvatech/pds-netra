@@ -24,7 +24,12 @@ from zoneinfo import ZoneInfo
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
 from .after_hours import get_after_hours_policy, is_after_hours
-from .notifications import notify_alert, notify_after_hours_alert, notify_animal_intrusion, notify_fire_detected
+from .notifications import (
+    notify_alert,
+    notify_after_hours_alert,
+    notify_animal_intrusion,
+    notify_fire_detected,
+)
 
 
 def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
@@ -135,7 +140,8 @@ def _animal_extra_from_event(event: Event) -> dict:
         "occurred_at": event.timestamp_utc.isoformat() if event.timestamp_utc else None,
         "last_seen_at": event.timestamp_utc.isoformat() if event.timestamp_utc else None,
     }
-    
+
+
 def _animal_extra_from_meta(meta: dict, event: Event) -> dict:
     """
     Build alert.extra payload for ANIMAL_INTRUSION alerts.
@@ -236,7 +242,7 @@ def apply_rules(db: Session, event: Event) -> None:
         if _severity_rank(severity_final) > _severity_rank(existing_alert.severity_final):
             existing_alert.severity_final = severity_final
 
-        # ✅ IMPORTANT: keep animal class in alert.extra even when the source event is UNAUTH_PERSON
+        # Keep animal class in alert.extra even when the source event is UNAUTH_PERSON
         if existing_alert.alert_type == "ANIMAL_INTRUSION":
             extra = dict(existing_alert.extra or {})
             upd = _animal_extra_from_event(event)
@@ -252,8 +258,15 @@ def apply_rules(db: Session, event: Event) -> None:
                 extra["occurred_at"] = upd.get("occurred_at")
             existing_alert.extra = extra
 
+        if updated_meta:
+            db.add(event)
+
         db.commit()
     else:
+        extra = None
+        if alert_type == "ANIMAL_INTRUSION":
+            extra = _animal_extra_from_event(event)
+
         alert = Alert(
             godown_id=event.godown_id,
             camera_id=event.camera_id,
@@ -264,24 +277,39 @@ def apply_rules(db: Session, event: Event) -> None:
             status="OPEN",
             summary=_build_alert_summary(alert_type, event),
             zone_id=zone_id,
-            extra=_animal_extra_from_event(event) if alert_type == "ANIMAL_INTRUSION" else None,
+            extra=extra,
         )
         db.add(alert)
         db.flush()
+
         link = AlertEventLink(alert_id=alert.id, event_id=event.id)
         db.add(link)
+
+        # Persist inferred zone_id/meta update along with alert creation
+        if updated_meta:
+            db.add(event)
+
         db.commit()
-            
+
+        # Best-effort notifications (don't break ingestion if it fails)
+        try:
+            notify_alert(db, alert, event)
+        except Exception:
+            pass
 
 
 def _handle_after_hours_presence(db: Session, event: Event) -> bool:
     presence_types = {"PERSON_DETECTED", "VEHICLE_DETECTED", "ANPR_HIT"}
     if event.event_type not in presence_types:
         return False
+
     meta = event.meta or {}
     policy = get_after_hours_policy(db, event.godown_id)
+
+    # If policy is disabled, we consider it "handled" (no alert creation)
     if not policy.enabled:
         return True
+
     is_ah = is_after_hours(event.timestamp_utc, policy)
     if meta.get("is_after_hours") != is_ah:
         meta = dict(meta)
@@ -289,25 +317,31 @@ def _handle_after_hours_presence(db: Session, event: Event) -> bool:
         event.meta = meta
         db.add(event)
         db.commit()
+
     count_raw = meta.get("count")
     try:
         count = int(count_raw) if count_raw is not None else 0
     except Exception:
         count = 0
+
     if not is_ah or policy.presence_allowed or count <= 0:
         return True
+
     alert_type = (
         "AFTER_HOURS_PERSON_PRESENCE"
         if event.event_type == "PERSON_DETECTED"
         else "AFTER_HOURS_VEHICLE_PRESENCE"
     )
+
     snapshot_url = None
     if isinstance(meta.get("evidence"), dict):
         snapshot_url = meta.get("evidence", {}).get("snapshot_url")
     if not snapshot_url:
         snapshot_url = event.image_url
+
     plate = meta.get("vehicle_plate") or meta.get("plate_text")
     now = event.timestamp_utc
+
     existing = (
         db.query(Alert)
         .filter(
@@ -333,6 +367,7 @@ def _handle_after_hours_presence(db: Session, event: Event) -> bool:
         existing.extra = extra
         db.commit()
         return True
+
     cutoff = now - timedelta(seconds=max(1, policy.cooldown_seconds))
     recent = (
         db.query(Alert)
@@ -347,11 +382,13 @@ def _handle_after_hours_presence(db: Session, event: Event) -> bool:
     )
     if recent:
         return True
+
     summary = (
         f"After-hours person detected (count={count})"
         if alert_type == "AFTER_HOURS_PERSON_PRESENCE"
         else f"After-hours vehicle detected (count={count})"
     )
+
     alert = Alert(
         godown_id=event.godown_id,
         camera_id=event.camera_id,
@@ -427,6 +464,15 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
     if event_type in {"CAMERA_TAMPERED", "CAMERA_OFFLINE", "LOW_LIGHT"}:
         return "CAMERA_HEALTH_ISSUE"
 
+    if event_type == "ANPR_PLATE_ALERT":
+        match_status = (meta or {}).get("match_status")
+        match_status = str(match_status).strip().upper() if match_status else ""
+        if match_status == "NOT_VERIFIED":
+            return "ANPR_PLATE_NOT_VERIFIED"
+        if match_status == "BLACKLIST":
+            return "ANPR_PLATE_BLACKLIST"
+        return "ANPR_PLATE_ALERT"
+
     if event_type == "ANPR_PLATE_MISMATCH":
         return "ANPR_MISMATCH_VEHICLE"
 
@@ -461,7 +507,6 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         count = meta.get("animal_count") or meta.get("count")
         zone = meta.get("zone_id")
 
-        # Normalize display
         species_text = str(species).strip().capitalize() if species else "Animal"
         count_text = f" (count={count})" if count else ""
         zone_text = f" in zone {zone}" if zone else ""
@@ -498,6 +543,14 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
     if alert_type == "CAMERA_HEALTH_ISSUE":
         reason = event.meta.get("reason") if event.meta else None
         return f"Camera health issue: {reason}"
+
+    if alert_type in {"ANPR_PLATE_NOT_VERIFIED", "ANPR_PLATE_BLACKLIST", "ANPR_PLATE_ALERT"}:
+        plate = event.meta.get("plate_text") if event.meta else None
+        if alert_type == "ANPR_PLATE_NOT_VERIFIED":
+            return f"Not verified plate detected: {plate}"
+        if alert_type == "ANPR_PLATE_BLACKLIST":
+            return f"Blacklisted plate detected: {plate}"
+        return f"ANPR plate alert: {plate}"
 
     if alert_type == "ANPR_MISMATCH_VEHICLE":
         plate = event.meta.get("plate_text") if event.meta else None
@@ -733,7 +786,6 @@ def _handle_animal_intrusion(db: Session, event: Event) -> bool:
             extra["snapshot_url"] = event.image_url
         existing.extra = extra
 
-        # keep summary updated (so cards show “Dog intrusion...”)
         existing.summary = _build_alert_summary("ANIMAL_INTRUSION", event)
 
         db.commit()
