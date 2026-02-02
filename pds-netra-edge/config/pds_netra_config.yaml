@@ -88,7 +88,7 @@ after_hours_presence:
   http_fallback: false
 
 fire_detection:
-  enabled: false
+  enabled: true
   model_path: "models/fire.pt"
   device: "cpu"
   conf: 0.35

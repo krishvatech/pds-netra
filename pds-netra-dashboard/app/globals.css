@@ -248,6 +248,14 @@ a {
     backdrop-filter: blur(12px);
   }
 
+  .table-shell table {
+    color: #0f172a;
+  }
+
+  .table-shell thead {
+    color: #1f2937;
+  }
+
   .stagger > * {
     animation: fadeUp 0.6s ease-out both;
   }

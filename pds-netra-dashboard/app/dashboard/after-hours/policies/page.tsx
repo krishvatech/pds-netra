@@ -189,7 +189,7 @@ export default function AfterHoursPoliciesPage() {
                       <td className="py-2 pr-3">
                         {Object.entries(item.changes ?? {}).map(([k, v]) => (
                           <div key={k} className="text-xs text-slate-500">
-                            {k}: {String((v as any).from)} -> {String((v as any).to)}
+                            {k}: {String((v as any).from)} {'→'} {String((v as any).to)}
                           </div>
                         ))}
                       </td>

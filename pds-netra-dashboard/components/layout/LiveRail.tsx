@@ -18,6 +18,8 @@ function severityRank(sev: Severity) {
 function alertPriority(alert: AlertItem): number {
   if (alert.alert_type === 'FIRE_DETECTED') return 5;
   if (alert.alert_type === 'BLACKLIST_PERSON_MATCH') return 4;
+  if (alert.alert_type === 'ANPR_PLATE_BLACKLIST') return 4;
+  if (alert.alert_type === 'ANPR_PLATE_NOT_VERIFIED') return 3;
   if (alert.alert_type === 'AFTER_HOURS_PERSON_PRESENCE') return 3;
   if (alert.alert_type === 'AFTER_HOURS_VEHICLE_PRESENCE') return 3;
   return 0;

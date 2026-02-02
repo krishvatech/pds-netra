@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ...core.db import get_db
 import os
 from ...models.rule import Rule
+from ...models.anpr_vehicle import AnprVehicle
 from ...services.rule_seed import seed_rules_for_godown
 from ...schemas.rule import RuleCreate, RuleOut, RuleUpdate
 
@@ -83,6 +84,29 @@ def _to_active_payload(rule: Rule) -> dict:
     return payload
 
 
+def _active_anpr_vehicle_lists(db: Session, *, godown_id: str) -> tuple[list[str], list[str]]:
+    rows = (
+        db.query(AnprVehicle.plate_norm, AnprVehicle.list_type)
+        .filter(
+            AnprVehicle.godown_id == godown_id,
+            AnprVehicle.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    whitelist: set[str] = set()
+    blacklist: set[str] = set()
+    for plate_norm, list_type in rows:
+        plate = (plate_norm or "").strip().upper()
+        if not plate:
+            continue
+        lt = (list_type or "WHITELIST").strip().upper()
+        if lt == "BLACKLIST":
+            blacklist.add(plate)
+        else:
+            whitelist.add(plate)
+    return sorted(whitelist), sorted(blacklist)
+
+
 @router.get("", response_model=dict)
 def list_rules(
     godown_id: Optional[str] = Query(None),
@@ -123,7 +147,49 @@ def list_active_rules(
     if not rules and godown_id and os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
         seed_rules_for_godown(db, godown_id)
         rules = query.order_by(Rule.id.asc()).all()
-    return {"items": [_to_active_payload(r) for r in rules], "total": len(rules)}
+
+    items = [_to_active_payload(r) for r in rules]
+
+    # Bridge ANPR "Vehicles" registry (WHITELIST/BLACKLIST) into edge-consumable rules.
+    # Edge consumes /api/v1/rules/active and derives whitelist/blacklist plates from:
+    # - ANPR_WHITELIST_ONLY.allowed_plates
+    # - ANPR_BLACKLIST_ALERT.blocked_plates
+    if godown_id:
+        whitelist, blacklist = _active_anpr_vehicle_lists(db, godown_id=godown_id)
+        if whitelist or blacklist:
+            anpr_cameras = {r.camera_id for r in rules if str(r.type or "").strip().upper() == "ANPR_MONITOR"}
+            if camera_id:
+                anpr_cameras = {camera_id}
+
+            for cam_id in sorted(anpr_cameras):
+                if whitelist and not any(
+                    it.get("camera_id") == cam_id and str(it.get("type") or "").upper() == "ANPR_WHITELIST_ONLY"
+                    for it in items
+                ):
+                    items.append(
+                        {
+                            "id": f"ANPR_WHITELIST_ONLY:{godown_id}:{cam_id}",
+                            "type": "ANPR_WHITELIST_ONLY",
+                            "camera_id": cam_id,
+                            "zone_id": "all",
+                            "allowed_plates": whitelist,
+                        }
+                    )
+                if blacklist and not any(
+                    it.get("camera_id") == cam_id and str(it.get("type") or "").upper() == "ANPR_BLACKLIST_ALERT"
+                    for it in items
+                ):
+                    items.append(
+                        {
+                            "id": f"ANPR_BLACKLIST_ALERT:{godown_id}:{cam_id}",
+                            "type": "ANPR_BLACKLIST_ALERT",
+                            "camera_id": cam_id,
+                            "zone_id": "all",
+                            "blocked_plates": blacklist,
+                        }
+                    )
+
+    return {"items": items, "total": len(items)}
 
 
 @router.post("", response_model=RuleOut)
