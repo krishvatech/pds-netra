@@ -264,24 +264,13 @@ def apply_rules(db: Session, event: Event) -> None:
             status="OPEN",
             summary=_build_alert_summary(alert_type, event),
             zone_id=zone_id,
-            extra=_animal_extra_from_event(event)) if alert_type == "ANIMAL_INTRUSION" else None,
-    
-        meta = event.meta or {}
-        species = (
-            meta.get("animal_species")
-            or meta.get("species")
-            or meta.get("movement_type")
+            extra=_animal_extra_from_event(event) if alert_type == "ANIMAL_INTRUSION" else None,
         )
-            
-        count = meta.get("animal_count") or meta.get("count")
-
-        species_text = str(species).strip().capitalize() if species else "Animal"
-        count_text = f" (count={count})" if count else ""
-
-        zone = meta.get("zone_id")
-        zone_text = f" in zone {zone}" if zone else ""
-
-        return f"{species_text} intrusion detected{count_text}{zone_text}"
+        db.add(alert)
+        db.flush()
+        link = AlertEventLink(alert_id=alert.id, event_id=event.id)
+        db.add(link)
+        db.commit()
             
 
 
