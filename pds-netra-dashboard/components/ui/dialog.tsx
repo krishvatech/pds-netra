@@ -45,9 +45,9 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
-        className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
         onClick={() => {
           if (!isBusy) onCancel();
         }}
@@ -55,23 +55,35 @@ export function ConfirmDialog({
         aria-label="Close dialog"
       />
       <div
-        className="relative w-[92vw] max-w-lg glass-panel-strong rounded-2xl border border-white/10 p-6 shadow-2xl"
+        className="relative w-full max-w-md hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
       >
-        <div className="text-lg font-semibold font-display text-slate-100" id="confirm-dialog-title">
-          {title}
-        </div>
-        {message && <div className="mt-2 text-sm text-slate-300">{message}</div>}
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" onClick={onCancel} disabled={isBusy}>
-            {cancelLabel}
-          </Button>
-          <Button variant={confirmVariant} onClick={onConfirm} disabled={isBusy}>
-            {isBusy ? 'Please wait...' : confirmLabel}
-          </Button>
+        <div className="p-6 sm:p-8">
+          <div className="text-xl font-semibold font-display text-white" id="confirm-dialog-title">
+            {title}
+          </div>
+          {message && <div className="mt-3 text-sm text-slate-400 leading-relaxed">{message}</div>}
+          <div className="mt-8 flex flex-col-reverse sm:flex-row justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              disabled={isBusy}
+              className="!bg-white/5 !border-white/10 !text-slate-300 hover:!bg-white/10 hover:!text-white border-0"
+            >
+              {cancelLabel}
+            </Button>
+            <Button
+              variant={confirmVariant}
+              onClick={onConfirm}
+              disabled={isBusy}
+              className="min-w-[100px]"
+            >
+              {isBusy ? 'Wait...' : confirmLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

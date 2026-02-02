@@ -212,25 +212,39 @@ def write_edge_override(run: Dict[str, Any], *, mode: str) -> Path:
     godown_id = run["godown_id"]
     camera_id = run["camera_id"]
     saved_path = run["saved_path"]
+    run_id = run["run_id"]
     override_path = overrides_dir() / f"{godown_id}.json"
+
+    # Load existing to merge
+    data = {"mode": "live", "godown_id": godown_id, "camera_overrides": {}, "active_run_id": None}
+    if override_path.exists():
+        try:
+            with override_path.open("r", encoding="utf-8") as f:
+                data.update(json.load(f))
+        except Exception:
+            pass
+
+    overrides = data.get("camera_overrides", {})
     if mode == "test":
-        payload = {
-            "mode": "test",
-            "godown_id": godown_id,
-            "camera_overrides": {
-                camera_id: {"source_type": "file", "path": saved_path}
-            },
-            "active_run_id": run["run_id"],
+        overrides[camera_id] = {
+            "source_type": "file",
+            "path": saved_path,
+            "run_id": run_id,
         }
+        data["active_run_id"] = run_id  # Most recent
     else:
-        payload = {
-            "mode": "live",
-            "godown_id": godown_id,
-            "camera_overrides": {},
-            "active_run_id": None,
-        }
+        if camera_id in overrides:
+            del overrides[camera_id]
+
+    data["camera_overrides"] = overrides
+    if overrides:
+        data["mode"] = "test"
+    else:
+        data["mode"] = "live"
+        data["active_run_id"] = None
+
     with override_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+        json.dump(data, f, indent=2)
     return override_path
 
 

@@ -141,6 +141,25 @@ def activate_run(run_id: str) -> dict:
         )
     override_path = write_edge_override(run, mode="test")
     activated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    # DEACTIVATE others for the same camera
+    all_runs = list_test_runs()
+    for existing in all_runs:
+        if (
+            existing["run_id"] != run_id
+            and existing["godown_id"] == run["godown_id"]
+            and existing["camera_id"] == run["camera_id"]
+            and existing["status"] == "ACTIVE"
+        ):
+            update_test_run(
+                existing["run_id"],
+                {
+                    "status": "DEACTIVATED",
+                    "deactivated_at": activated_at,
+                    "deactivated_reason": "SUPERSEDED",
+                },
+            )
+
     updated = update_test_run(
         run_id,
         {

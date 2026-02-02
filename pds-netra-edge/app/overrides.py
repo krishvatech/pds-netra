@@ -65,5 +65,7 @@ class EdgeOverrideManager:
         if not cam_override:
             return default_source, "live", None
         if cam_override.get("source_type") == "file" and cam_override.get("path"):
-            return str(cam_override["path"]), "test", data.get("active_run_id")
+            # Prefer per-camera run_id if present
+            run_id = cam_override.get("run_id") or data.get("active_run_id")
+            return str(cam_override["path"]), "test", run_id
         return default_source, "live", None

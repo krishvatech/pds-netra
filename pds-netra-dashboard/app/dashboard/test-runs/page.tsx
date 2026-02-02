@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   activateTestRun,
   createTestRun,
+  deactivateTestRun,
   deleteTestRun,
   getGodownDetail,
   getGodowns,
@@ -143,6 +144,22 @@ export default function TestRunsPage() {
     }
   };
 
+  const handleDeactivate = async (runId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await deactivateTestRun(runId);
+      if (resp.run) {
+        setRuns((prev) => prev.map((r) => (r.run_id === runId ? resp.run : r)));
+        if (lastRun?.run_id === runId) setLastRun(resp.run);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to deactivate test run');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async (runId: string) => {
     const ok = window.confirm('Delete this test run and its files?');
     if (!ok) return;
@@ -277,9 +294,15 @@ export default function TestRunsPage() {
                     <TD>{run.status}</TD>
                     <TD>
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => handleActivate(run.run_id)} disabled={loading}>
-                          Activate
-                        </Button>
+                        {run.status === 'ACTIVE' ? (
+                          <Button variant="outline" onClick={() => handleDeactivate(run.run_id)} disabled={loading}>
+                            Deactivate
+                          </Button>
+                        ) : (
+                          <Button variant="outline" onClick={() => handleActivate(run.run_id)} disabled={loading}>
+                            Activate
+                          </Button>
+                        )}
                         <Button variant="danger" onClick={() => handleDelete(run.run_id)} disabled={loading}>
                           Delete
                         </Button>

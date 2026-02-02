@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getDispatchTrace, getEvents, getGodowns, getMovementSummary, getMovementTimeline, createDispatchIssue } from '@/lib/api';
+import { getDispatchTrace, getEvents, getGodowns, getMovementSummary, getMovementTimeline, createDispatchIssue, updateDispatchIssue, deleteDispatchIssue } from '@/lib/api';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import type { DispatchTraceItem, EventItem, MovementSummary, MovementTimelinePoint, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
@@ -72,6 +73,15 @@ export default function DispatchPage() {
   const [issueZone, setIssueZone] = useState('');
   const [issueTime, setIssueTime] = useState('');
   const [createStatus, setCreateStatus] = useState<string | null>(null);
+  const [editingIssue, setEditingIssue] = useState<DispatchTraceItem | null>(null);
+  const [deletingIssue, setDeletingIssue] = useState<DispatchTraceItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    godown_id: '',
+    camera_id: '',
+    zone_id: '',
+    issue_time_utc: ''
+  });
+  const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -203,6 +213,54 @@ export default function DispatchPage() {
     }
   }
 
+  async function handleUpdateIssue() {
+    if (!editingIssue) return;
+    setIsBusy(true);
+    try {
+      const ts = new Date(editForm.issue_time_utc);
+      if (Number.isNaN(ts.getTime())) {
+        alert('Invalid issue time.');
+        return;
+      }
+      await updateDispatchIssue(editingIssue.issue_id, {
+        godown_id: editForm.godown_id,
+        camera_id: editForm.camera_id || null,
+        zone_id: editForm.zone_id || null,
+        issue_time_utc: ts.toISOString()
+      });
+      setEditingIssue(null);
+      setRefreshKey((v) => v + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to update issue.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteIssue() {
+    if (!deletingIssue) return;
+    setIsBusy(true);
+    try {
+      await deleteDispatchIssue(deletingIssue.issue_id);
+      setDeletingIssue(null);
+      setRefreshKey((v) => v + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to delete issue.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function startEdit(issue: DispatchTraceItem) {
+    setEditingIssue(issue);
+    setEditForm({
+      godown_id: issue.godown_id,
+      camera_id: issue.camera_id || '',
+      zone_id: issue.zone_id || '',
+      issue_time_utc: issue.issue_time_utc ? new Date(issue.issue_time_utc).toISOString().slice(0, 16) : ''
+    });
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -282,9 +340,99 @@ export default function DispatchPage() {
           <div className="text-sm text-slate-300">Issue → first movement trace, SLA compliance, and delays.</div>
         </CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-slate-400">Loading…</div> : <DispatchTraceTable items={trace} />}
+          {loading ? (
+            <div className="text-sm text-slate-400">Loading…</div>
+          ) : (
+            <div className="[&_tr:hover]:bg-white/[0.03] transition-colors">
+              <DispatchTraceTable items={trace} onEdit={startEdit} onDelete={setDeletingIssue} />
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {editingIssue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => !isBusy && setEditingIssue(null)} />
+          <div className="relative w-full max-w-lg hud-card overflow-hidden animate-fade-up">
+            <div className="p-6 sm:p-8">
+              <div className="text-2xl font-semibold font-display text-white mb-1">Edit dispatch issue</div>
+              <div className="text-sm text-slate-400 mb-8">Update the tracking details for issue #{editingIssue.issue_id}</div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="hud-label block mb-2">Godown source</label>
+                  <Select
+                    value={editForm.godown_id}
+                    onChange={(e) => setEditForm(pv => ({ ...pv, godown_id: e.target.value }))}
+                    options={godownOptions.filter(o => o.value)}
+                    className="!bg-white/5 !border-white/10 !text-white focus:!border-amber-500/50"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="hud-label block mb-2">Camera label</label>
+                    <Input
+                      value={editForm.camera_id}
+                      onChange={(e) => setEditForm(pv => ({ ...pv, camera_id: e.target.value }))}
+                      placeholder="e.g. Office"
+                      className="!bg-white/5 !border-white/10 !text-white placeholder:text-slate-500 focus:!border-amber-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="hud-label block mb-2">Zone identifier</label>
+                    <Input
+                      value={editForm.zone_id}
+                      onChange={(e) => setEditForm(pv => ({ ...pv, zone_id: e.target.value }))}
+                      placeholder="e.g. all"
+                      className="!bg-white/5 !border-white/10 !text-white placeholder:text-slate-500 focus:!border-amber-500/50"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="hud-label block mb-2">Occurrence time (UTC)</label>
+                  <Input
+                    type="datetime-local"
+                    value={editForm.issue_time_utc}
+                    onChange={(e) => setEditForm(pv => ({ ...pv, issue_time_utc: e.target.value }))}
+                    className="!bg-white/5 !border-white/10 !text-white focus:!border-amber-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-10 flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingIssue(null)}
+                  disabled={isBusy}
+                  className="!bg-white/5 !border-white/10 !text-slate-300 hover:!bg-white/10 hover:!text-white border-0"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpdateIssue}
+                  disabled={isBusy}
+                  className="min-w-[140px]"
+                >
+                  {isBusy ? 'Saving changes...' : 'Update issue'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!deletingIssue}
+        title="Delete dispatch issue"
+        message={`Are you sure you want to delete issue #${deletingIssue?.issue_id}? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        isBusy={isBusy}
+        onConfirm={handleDeleteIssue}
+        onCancel={() => setDeletingIssue(null)}
+      />
 
       <Card className="animate-fade-up hud-card">
         <CardHeader>

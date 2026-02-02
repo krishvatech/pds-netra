@@ -57,3 +57,45 @@ def list_dispatch_issues(
     total = query.count()
     issues = query.order_by(DispatchIssue.issue_time_utc.desc()).all()
     return {"items": [DispatchIssueOut.model_validate(i).model_dump() for i in issues], "total": total}
+
+
+@router.put("/{issue_id}", response_model=DispatchIssueOut)
+def update_dispatch_issue(
+    issue_id: int,
+    payload: DispatchIssueUpdate,
+    db: Session = Depends(get_db),
+) -> DispatchIssue:
+    issue = db.query(DispatchIssue).filter(DispatchIssue.id == issue_id).first()
+    if not issue:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Dispatch issue not found")
+
+    if payload.godown_id is not None:
+        issue.godown_id = payload.godown_id
+    if payload.camera_id is not None:
+        issue.camera_id = payload.camera_id
+    if payload.zone_id is not None:
+        issue.zone_id = payload.zone_id
+    if payload.issue_time_utc is not None:
+        issue.issue_time_utc = _ensure_utc(payload.issue_time_utc)
+    if payload.status is not None:
+        issue.status = payload.status
+
+    db.commit()
+    db.refresh(issue)
+    return issue
+
+
+@router.delete("/{issue_id}")
+def delete_dispatch_issue(
+    issue_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    issue = db.query(DispatchIssue).filter(DispatchIssue.id == issue_id).first()
+    if not issue:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Dispatch issue not found")
+
+    db.delete(issue)
+    db.commit()
+    return {"status": "success", "id": issue_id}

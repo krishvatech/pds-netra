@@ -17,6 +17,14 @@ class DispatchIssueCreate(BaseModel):
     issue_time_utc: datetime
 
 
+class DispatchIssueUpdate(BaseModel):
+    godown_id: Optional[str] = None
+    camera_id: Optional[str] = None
+    zone_id: Optional[str] = None
+    issue_time_utc: Optional[datetime] = None
+    status: Optional[str] = None
+
+
 class DispatchIssueOut(BaseModel):
     id: int
     godown_id: str

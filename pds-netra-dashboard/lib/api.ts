@@ -580,6 +580,25 @@ export async function createDispatchIssue(payload: {
   });
 }
 
+export async function updateDispatchIssue(issueId: number, payload: {
+  godown_id?: string | null;
+  camera_id?: string | null;
+  zone_id?: string | null;
+  issue_time_utc?: string | null;
+  status?: string | null;
+}): Promise<DispatchIssueItem> {
+  return apiFetch(`/api/v1/dispatch-issues/${issueId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteDispatchIssue(issueId: number): Promise<{ status: string; id: number }> {
+  return apiFetch(`/api/v1/dispatch-issues/${issueId}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function getRules(params?: {
   godown_id?: string;
   camera_id?: string;
