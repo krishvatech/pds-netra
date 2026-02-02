@@ -32,6 +32,10 @@ from .authorized_user import AuthorizedUser  # noqa: E402,F401
 from .godown import Godown, Camera  # noqa: E402,F401
 from .event import Event, Alert, AlertEventLink  # noqa: E402,F401
 from .dispatch_issue import DispatchIssue  # noqa: E402,F401
+from .anpr_event import AnprEvent
+from .anpr_vehicle import AnprVehicle  # noqa: E402,F401
+from .anpr_daily_plan import AnprDailyPlan  # noqa: E402,F401
+from .anpr_daily_plan_item import AnprDailyPlanItem  # noqa: E402,F401
 
 __all__ = [
     "Base",
@@ -47,6 +51,10 @@ __all__ = [
     "AlertEventLink",
     "AlertAction",
     "AlertReport",
+    "AnprEvent",
+    "AnprVehicle",
+    "AnprDailyPlan",
+    "AnprDailyPlanItem",
 
     # Watchlist / Face
     "WatchlistPerson",

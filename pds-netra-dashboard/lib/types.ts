@@ -99,7 +99,6 @@ export interface EventMeta {
   person_role?: string | null;
   match_score?: number | null;
   animal_species?: string | null;
-  animal_label?: string | null;
   animal_count?: number | null;
   animal_confidence?: number | null;
   animal_is_night?: boolean | null;
@@ -158,7 +157,6 @@ export interface AlertItem {
     occurred_at?: string | null;
     last_seen_at?: string | null;
     animal_species?: string | null;
-    animal_label?: string | null;
     animal_count?: number | null;
     animal_confidence?: number | null;
     animal_is_night?: boolean | null;
@@ -469,46 +467,104 @@ export interface UpdateAuthorizedUserPayload {
   godown_id?: string | null;
   is_active?: boolean;
 }
-// ------------------------------------------------------------------
-// ANPR (CSV-first PoC) types
-// Backend: GET /api/v1/anpr/csv-events
-// ------------------------------------------------------------------
-export type AnprMatchStatus =
-  | 'VERIFIED'
-  | 'NOT_VERIFIED'
-  | 'BLACKLIST'
-  | 'DETECTED'
-  | 'DEDUP'
-  | 'GUESSED'
-  | 'UNKNOWN'
-  | string;
 
-export interface AnprCsvEvent {
+export interface AnprEvent {
   timestamp_utc: string;
   timestamp_local: string;
   camera_id: string;
   zone_id?: string | null;
   plate_text: string;
-  match_status: AnprMatchStatus;
+  match_status: string;
   event_type: string;
-  det_conf: number;
-  ocr_conf: number;
-  combined_conf: number;
-  bbox?: number[] | null;
+  confidence: number;
+  bbox?: any;
 }
 
-export interface AnprCsvEventsResponse {
-  source: {
-    csv_path: string;
-    csv_mtime_utc: string;
-  };
-  summary: {
-    total: number;
-    verified: number;
-    not_verified: number;
-    blacklist: number;
-    dedup: number;
-    last_seen_local: string | null;
-  };
-  events: AnprCsvEvent[];
+export interface AnprEventsResponse {
+  source: { db: boolean; table: string };
+  count: number;
+  events: AnprEvent[];
+}
+
+export interface AnprVehicle {
+  id: string;
+  godown_id: string;
+  plate_raw: string;
+  plate_norm: string;
+  list_type?: 'WHITELIST' | 'BLACKLIST' | string | null;
+  transporter?: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AnprVehicleListResponse {
+  items: AnprVehicle[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AnprDailyPlan {
+  id: string;
+  godown_id: string;
+  plan_date: string; // YYYY-MM-DD
+  timezone_name: string;
+  expected_count?: number | null;
+  cutoff_time_local: string; // HH:MM:SS
+  notes?: string | null;
+}
+
+export type AnprPlanStatus = 'PLANNED' | 'ARRIVED' | 'DELAYED' | 'CANCELLED' | 'NO_SHOW' | string;
+
+export interface AnprDailyPlanItem {
+  id: string;
+  plan_id: string;
+  vehicle_id?: string | null;
+  plate_raw: string;
+  plate_norm: string;
+  expected_by_local?: string | null; // HH:MM:SS
+  status?: AnprPlanStatus | null; // manual
+  notes?: string | null;
+  effective_status: AnprPlanStatus;
+  arrived_at_utc?: string | null;
+}
+
+export interface AnprDailyPlanResponse {
+  plan: AnprDailyPlan;
+  items: AnprDailyPlanItem[];
+}
+
+export interface AnprDailyReportRow {
+  date_local: string; // YYYY-MM-DD
+  expected_count?: number | null;
+  planned_items: number;
+  arrived: number;
+  delayed: number;
+  no_show: number;
+  cancelled: number;
+}
+
+export interface AnprDailyReportResponse {
+  godown_id: string;
+  timezone_name: string;
+  rows: AnprDailyReportRow[];
+}
+
+export interface CsvImportRowResult {
+  row_number: number;
+  plate_text: string;
+  status: string;
+  message?: string | null;
+  entity_id?: string | null;
+}
+
+export interface CsvImportSummary {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  rows: CsvImportRowResult[];
 }

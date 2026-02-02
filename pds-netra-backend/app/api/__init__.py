@@ -24,8 +24,9 @@ from .v1.after_hours import router as after_hours_router
 from .v1.vehicle_gate_sessions import router as vehicle_gate_sessions_router
 from .v1.notifications import router as notifications_router
 from .v1.authorized_users import router as authorized_users_router
-from .v1.anpr_csv import router as anpr_csv_router
 from .v1.anpr_sessions import router as anpr_sessions
+from .v1.anpr_events import router as anpr_events_router
+from .v1.anpr_management import router as anpr_management_router
 
 api_router = APIRouter()
 api_router.include_router(events_router)
@@ -45,5 +46,6 @@ api_router.include_router(after_hours_router)
 api_router.include_router(vehicle_gate_sessions_router)
 api_router.include_router(notifications_router)
 api_router.include_router(authorized_users_router)
-api_router.include_router(anpr_csv_router)
 api_router.include_router(anpr_sessions)
+api_router.include_router(anpr_events_router)
+api_router.include_router(anpr_management_router)

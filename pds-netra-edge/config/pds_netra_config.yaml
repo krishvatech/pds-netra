@@ -39,7 +39,6 @@ anpr:
   show_invalid: false
   registered_file: null
   dedup_interval_sec: 60
-  save_csv: "../pds-netra-backend/data/anpr_csv/{godown_id}/anpr_debug.csv"
   # save_crops_dir: "./././anpr_crops"
   # save_crops_max: 15
 

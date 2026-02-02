@@ -18,6 +18,14 @@ from ...services.event_ingest import handle_incoming_event
 
 router = APIRouter(prefix="/api/v1/edge", tags=["edge"])
 
+ANPR_EVENT_TYPES = {
+    "ANPR_PLATE_VERIFIED",
+    "ANPR_PLATE_ALERT",
+    "ANPR_PLATE_DETECTED",
+    "ANPR_TIME_VIOLATION",
+    "ANPR_HIT",
+}
+
 
 @router.post("/events")
 def ingest_edge_event(payload: dict = Body(...), db: Session = Depends(get_db)) -> dict:
@@ -37,7 +45,7 @@ def ingest_edge_event(payload: dict = Body(...), db: Session = Depends(get_db)) 
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok", "event_id": event.id, "created": created}
-    if event_type in {"ANIMAL_INTRUSION", "ANIMAL_DETECTED", "ANPR_HIT", "FIRE_DETECTED"}:
+    if event_type in {"ANIMAL_INTRUSION", "ANIMAL_DETECTED", "FIRE_DETECTED"} | ANPR_EVENT_TYPES:
         event_in = EventIn.model_validate(payload)
         event = handle_incoming_event(event_in, db)
         return {"status": "ok", "event_id": event.id}

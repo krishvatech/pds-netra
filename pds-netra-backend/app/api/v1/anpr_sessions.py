@@ -1,104 +1,78 @@
-from fastapi import APIRouter, Query, HTTPException
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import csv
-import os
-from collections import defaultdict
-from typing import List, Dict, Any
+from __future__ import annotations
 
-router = APIRouter(prefix="/api/v1/anpr", tags=["ANPR"])
+import datetime
+from typing import Optional
 
-# Config
-ANPR_CSV_BASE = os.getenv("ANPR_CSV_DIR", "data/anpr_csv")
-DEFAULT_GAP_SECONDS = 300  # 5 minutes
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc
+
+from ...core.db import get_db
+from ...models.vehicle_gate_session import VehicleGateSession
+from ...services.vehicle_gate import _ensure_utc
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 
-def _parse_ts(ts: str) -> datetime:
-    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+router = APIRouter(prefix="/api/v1/anpr", tags=["anpr"])
 
 
 @router.get("/sessions")
-def get_anpr_sessions(
+def anpr_sessions(
     godown_id: str = Query(...),
     timezone_name: str = Query("Asia/Kolkata"),
-    gap_seconds: int = Query(DEFAULT_GAP_SECONDS),
+    status: Optional[str] = Query(None, description="OPEN/CLOSED"),
+    camera_id: Optional[str] = Query(None),
+    plate_text: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=2000),
+    db: Session = Depends(get_db),
 ):
-    tz = ZoneInfo(timezone_name)
+    tz = ZoneInfo(timezone_name) if ZoneInfo else datetime.timezone.utc
 
-    csv_dir = os.path.join(ANPR_CSV_BASE, godown_id)
-    if not os.path.exists(csv_dir):
-        raise HTTPException(status_code=404, detail="CSV directory not found")
+    filters = [VehicleGateSession.godown_id == godown_id]
+    if status:
+        filters.append(VehicleGateSession.status == status.strip().upper())
+    if camera_id:
+        filters.append(VehicleGateSession.anpr_camera_id == camera_id)
+    if plate_text:
+        norm = "".join(ch for ch in plate_text.strip().upper() if ch.isalnum())
+        if norm:
+            filters.append(VehicleGateSession.plate_norm == norm)
 
-    csv_files = [f for f in os.listdir(csv_dir) if f.endswith(".csv")]
-    if not csv_files:
-        raise HTTPException(status_code=404, detail="No ANPR CSV files found")
+    sessions = (
+        db.query(VehicleGateSession)
+        .filter(and_(*filters))
+        .order_by(desc(VehicleGateSession.last_seen_at))
+        .limit(limit)
+        .all()
+    )
 
-    rows: List[Dict[str, Any]] = []
+    out = []
+    for s in sessions:
+        entry_at = _ensure_utc(s.entry_at)
+        exit_at = _ensure_utc(s.exit_at) if s.exit_at else None
+        last_seen = _ensure_utc(s.last_seen_at)
 
-    for fname in csv_files:
-        with open(os.path.join(csv_dir, fname), newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                rows.append(r)
+        out.append(
+            {
+                "id": s.id,
+                "godown_id": s.godown_id,
+                "camera_id": s.anpr_camera_id,
+                "plate_text": s.plate_raw,
+                "plate_norm": s.plate_norm,
+                "entry_at_utc": entry_at.isoformat().replace("+00:00", "Z"),
+                "last_seen_utc": last_seen.isoformat().replace("+00:00", "Z"),
+                "exit_at_utc": exit_at.isoformat().replace("+00:00", "Z") if exit_at else None,
+                "entry_time_local": entry_at.astimezone(tz).replace(tzinfo=None).isoformat(sep=" "),
+                "exit_time_local": exit_at.astimezone(tz).replace(tzinfo=None).isoformat(sep=" ") if exit_at else None,
+                "duration_seconds": int((exit_at - entry_at).total_seconds()) if exit_at else None,
+                "session_status": "ACTIVE" if (s.status or "").upper() == "OPEN" else "CLOSED",
+                "reminders_sent": s.reminders_sent or {},
+                "last_snapshot_url": s.last_snapshot_url,
+            }
+        )
 
-    if not rows:
-        return {"sessions": []}
-
-    # sort by time
-    rows.sort(key=lambda r: r["timestamp_utc"])
-
-    # group by plate + camera
-    grouped = defaultdict(list)
-    for r in rows:
-        key = (r["plate_text"], r["camera_id"])
-        grouped[key].append(r)
-
-    sessions = []
-
-    for (plate, camera), events in grouped.items():
-        start = _parse_ts(events[0]["timestamp_utc"])
-        last_seen = start
-
-        max_conf = 0.0
-        final_status = events[0].get("match_status", "UNKNOWN")
-
-        for ev in events:
-            ts = _parse_ts(ev["timestamp_utc"])
-            conf = float(ev.get("combined_conf", 0.0))
-            max_conf = max(max_conf, conf)
-            final_status = ev.get("match_status", final_status)
-
-            if (ts - last_seen).total_seconds() > gap_seconds:
-                # close previous session
-                sessions.append({
-                    "plate_text": plate,
-                    "plate_status": final_status,
-                    "entry_time_local": start.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-                    "exit_time_local": last_seen.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-                    "duration_seconds": int((last_seen - start).total_seconds()),
-                    "confidence": round(max_conf, 3),
-                    "camera_id": camera,
-                    "session_status": "CLOSED",
-                })
-                # start new session
-                start = ts
-                max_conf = conf
-
-            last_seen = ts
-
-        # final session (ACTIVE or CLOSED)
-        now_utc = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
-        active = (now_utc - last_seen).total_seconds() <= gap_seconds
-
-        sessions.append({
-            "plate_text": plate,
-            "plate_status": final_status,
-            "entry_time_local": start.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-            "exit_time_local": None if active else last_seen.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S"),
-            "duration_seconds": None if active else int((last_seen - start).total_seconds()),
-            "confidence": round(max_conf, 3),
-            "camera_id": camera,
-            "session_status": "ACTIVE" if active else "CLOSED",
-        })
-
-    return {"sessions": sessions}
+    return {"sessions": out}

@@ -34,18 +34,6 @@ class Settings(BaseSettings):
     enable_mqtt_consumer: bool = Field(default=True, env="ENABLE_MQTT_CONSUMER")
     edge_config_path: str | None = Field(default=None, env="EDGE_CONFIG_PATH")
 
-    # ------------------------------------------------------------------
-    # ANPR (CSV-first PoC)
-    #
-    # Edge writes ANPR events to CSV. Backend reads those CSVs and serves
-    # them to the dashboard via an API endpoint.
-    #
-    # Default location is: <backend-root>/data/anpr_csv/<GODOWN_ID>/*.csv
-    #
-    # You can override with env: ANPR_CSV_DIR
-    # ------------------------------------------------------------------
-    anpr_csv_dir: str = Field(default="data/anpr_csv", env="ANPR_CSV_DIR")
-
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

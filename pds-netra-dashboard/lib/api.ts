@@ -23,7 +23,6 @@ import type {
   AfterHoursPolicyAudit,
   WatchlistPerson,
   WatchlistMatchEvent,
-  AnprCsvEventsResponse,
   VehicleGateSession,
   AlertDelivery,
   NotificationEndpoint,
@@ -34,7 +33,15 @@ import type {
   UpdateGodownPayload,
   AuthorizedUserItem,
   CreateAuthorizedUserPayload,
-  UpdateAuthorizedUserPayload
+  UpdateAuthorizedUserPayload,
+  AnprEventsResponse,
+  AnprVehicleListResponse,
+  AnprVehicle,
+  AnprDailyPlanResponse,
+  AnprDailyPlan,
+  AnprDailyPlanItem,
+  AnprDailyReportResponse,
+  CsvImportSummary
 } from './types';
 import { getToken, getUser } from './auth';
 
@@ -62,6 +69,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     'Content-Type': 'application/json',
     ...(init.headers ?? {})
   };
+
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (user?.role) headers['X-User-Role'] = user.role;
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
@@ -124,6 +132,163 @@ export async function getGodowns(params?: {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/godowns${q}`);
 }
+
+export async function getAnprEvents(params: {
+  godown_id: string;
+  timezone_name?: string;
+  camera_id?: string;
+  plate_text?: string;
+  match_status?: string;
+  date_from?: string; // YYYY-MM-DD
+  date_to?: string;   // YYYY-MM-DD
+  limit?: number;
+}): Promise<AnprEventsResponse> {
+  const q = buildQuery({
+    godown_id: params.godown_id,
+    timezone_name: params.timezone_name ?? 'Asia/Kolkata',
+    camera_id: params.camera_id,
+    plate_text: params.plate_text,
+    match_status: params.match_status,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    limit: params.limit ?? 200
+  });
+  return apiFetch<AnprEventsResponse>(`/api/v1/anpr/events${q}`);
+}
+
+export async function getAnprVehicles(params: {
+  godown_id: string;
+  q?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+}): Promise<AnprVehicleListResponse> {
+  const q = buildQuery(params);
+  return apiFetch<AnprVehicleListResponse>(`/api/v1/anpr/vehicles${q}`);
+}
+
+export async function createAnprVehicle(payload: {
+  godown_id: string;
+  plate_text: string;
+  list_type?: string | null;
+  transporter?: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+}): Promise<AnprVehicle> {
+  return apiFetch<AnprVehicle>('/api/v1/anpr/vehicles', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateAnprVehicle(vehicleId: string, payload: {
+  plate_text?: string | null;
+  list_type?: string | null;
+  transporter?: string | null;
+  notes?: string | null;
+  is_active?: boolean | null;
+}): Promise<AnprVehicle> {
+  return apiFetch<AnprVehicle>(`/api/v1/anpr/vehicles/${encodeURIComponent(vehicleId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function importAnprVehiclesCsv(payload: {
+  godown_id: string;
+  file: File;
+}): Promise<CsvImportSummary> {
+  const form = new FormData();
+  form.append('godown_id', payload.godown_id);
+  form.append('file', payload.file);
+  return apiFetchForm<CsvImportSummary>('/api/v1/anpr/vehicles/import', form);
+}
+
+export async function getAnprDailyPlan(params: {
+  godown_id: string;
+  date: string; // YYYY-MM-DD
+  timezone_name?: string;
+}): Promise<AnprDailyPlanResponse> {
+  const q = buildQuery({
+    godown_id: params.godown_id,
+    date: params.date,
+    timezone_name: params.timezone_name ?? 'Asia/Kolkata'
+  });
+  return apiFetch<AnprDailyPlanResponse>(`/api/v1/anpr/daily-plan${q}`);
+}
+
+export async function upsertAnprDailyPlan(payload: {
+  godown_id: string;
+  plan_date: string; // YYYY-MM-DD
+  timezone_name?: string;
+  expected_count?: number | null;
+  cutoff_time_local?: string | null; // HH:MM or HH:MM:SS
+  notes?: string | null;
+}): Promise<AnprDailyPlan> {
+  return apiFetch<AnprDailyPlan>('/api/v1/anpr/daily-plan', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function addAnprDailyPlanItem(payload: {
+  plan_id: string;
+  vehicle_id?: string | null;
+  plate_text?: string | null;
+  expected_by_local?: string | null;
+  status?: string | null;
+  notes?: string | null;
+}): Promise<AnprDailyPlanItem> {
+  return apiFetch<AnprDailyPlanItem>('/api/v1/anpr/daily-plan/items', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateAnprDailyPlanItem(itemId: string, payload: {
+  expected_by_local?: string | null;
+  status?: string | null;
+  notes?: string | null;
+}): Promise<AnprDailyPlanItem> {
+  return apiFetch<AnprDailyPlanItem>(`/api/v1/anpr/daily-plan/items/${encodeURIComponent(itemId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function importAnprDailyPlanItemsCsv(payload: {
+  godown_id: string;
+  plan_date: string; // YYYY-MM-DD
+  timezone_name?: string;
+  file: File;
+}): Promise<CsvImportSummary> {
+  const form = new FormData();
+  form.append('godown_id', payload.godown_id);
+  form.append('plan_date', payload.plan_date);
+  form.append('timezone_name', payload.timezone_name ?? 'Asia/Kolkata');
+  form.append('file', payload.file);
+  return apiFetchForm<CsvImportSummary>('/api/v1/anpr/daily-plan/items/import', form);
+}
+
+export async function deleteAnprDailyPlanItem(itemId: string): Promise<{ status: string; id: string }> {
+  return apiFetch(`/api/v1/anpr/daily-plan/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
+}
+
+export async function getAnprDailyReport(params: {
+  godown_id: string;
+  timezone_name?: string;
+  date_from: string; // YYYY-MM-DD
+  date_to: string;   // YYYY-MM-DD
+}): Promise<AnprDailyReportResponse> {
+  const q = buildQuery({
+    godown_id: params.godown_id,
+    timezone_name: params.timezone_name ?? 'Asia/Kolkata',
+    date_from: params.date_from,
+    date_to: params.date_to
+  });
+  return apiFetch<AnprDailyReportResponse>(`/api/v1/anpr/reports/daily${q}`);
+}
+
 
 export async function getGodownDetail(godownId: string): Promise<GodownDetail> {
   return apiFetch(`/api/v1/godowns/${encodeURIComponent(godownId)}`);
@@ -316,16 +481,6 @@ export async function getVehicleGateSessions(params?: {
 }): Promise<Paginated<VehicleGateSession>> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/vehicle-gate-sessions${q}`);
-}
-
-export async function getAnprCsvEvents(params?: {
-  godown_id?: string;
-  camera_id?: string;
-  match_status?: string;
-  limit?: number;
-}): Promise<AnprCsvEventsResponse> {
-  const q = buildQuery(params);
-  return apiFetch(`/api/v1/anpr/csv-events${q}`);
 }
 
 export async function createAlertAction(alertId: string, payload: { action_type: string; actor?: string; note?: string }): Promise<AlertActionItem> {

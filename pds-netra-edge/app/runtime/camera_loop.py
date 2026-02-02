@@ -168,6 +168,274 @@ def start_camera_loops(
             restart_tokens[camera_id] = restart_tokens.get(camera_id, 0) + 1
             if camera_id in started_cameras:
                 started_cameras.remove(camera_id)
+                
+    # -------------------- Helpers --------------------
+    def _read_bool_env(name: str, default: str = "false") -> bool:
+        return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y"}
+
+    def _read_int_env(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except Exception:
+            return default
+
+    def _read_float_env(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except Exception:
+            return default
+
+    def _read_str_env(name: str) -> Optional[str]:
+        val = os.getenv(name)
+        if val and val.strip():
+            return val.strip()
+        return None
+
+    def _call_default_snapshot_writer(godown_id: str, camera_id: str):
+        """
+        Different repos have different signatures:
+        - default_snapshot_writer() -> callable
+        - default_snapshot_writer(godown_id, camera_id) -> callable
+        """
+        try:
+            sig = inspect.signature(default_snapshot_writer)
+            params = list(sig.parameters.values())
+            non_self = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+            if len(non_self) == 0:
+                return default_snapshot_writer()
+            if len(non_self) >= 2:
+                return default_snapshot_writer(godown_id, camera_id)
+            return default_snapshot_writer()
+        except Exception:
+            try:
+                return default_snapshot_writer(godown_id, camera_id)
+            except Exception:
+                return default_snapshot_writer()
+
+    def _is_file_source(src: str) -> bool:
+        """Return True if the pipeline source looks like a local video file path."""
+        if not src:
+            return False
+        s = str(src).strip()
+        if not s:
+            return False
+        s_lower = s.lower()
+        if s_lower.startswith(("rtsp://", "rtsps://", "http://", "https://")):
+            return False
+        if (len(s) >= 2 and s[1] == ":") or s.startswith("\\\\"):
+            return True
+        if s.startswith("/"):
+            return True
+        media_exts = (".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts", ".webm", ".mjpeg")
+        if s_lower.endswith(media_exts):
+            return True
+        try:
+            if Path(s).expanduser().exists():
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _resolve_anpr_model_path() -> str:
+        env_path = _read_str_env("EDGE_ANPR_MODEL")
+        if env_path:
+            return env_path
+        candidates = [
+            str(Path("ML_Model") / "anpr.pt"),
+            str(Path(".") / "ML_Model" / "anpr.pt"),
+            "anpr.pt",
+            "platemodel.pt",
+            "platemodel",
+        ]
+        for p in candidates:
+            try:
+                if Path(p).exists():
+                    return p
+            except Exception:
+                continue
+        return "ML_Model/anpr.pt"
+
+    def _build_anpr_detector() -> YoloDetector:
+        anpr_model_path = _resolve_anpr_model_path()
+        anpr_imgsz = _read_int_env("EDGE_ANPR_IMGSZ", 960)
+        anpr_conf = _read_float_env("EDGE_ANPR_CONF", 0.35)
+        anpr_iou = _read_float_env("EDGE_ANPR_IOU", 0.45)
+        anpr_max_det = _read_int_env("EDGE_ANPR_MAX_DET", 300)
+
+        anpr_classes_raw = os.getenv("EDGE_ANPR_CLASSES", "0").strip()
+        anpr_classes = None
+        if anpr_classes_raw:
+            try:
+                anpr_classes = [int(x.strip()) for x in anpr_classes_raw.split(",") if x.strip() != ""]
+            except Exception:
+                anpr_classes = [0]
+
+        return YoloDetector(
+            model_name=anpr_model_path,
+            device=device,
+            tracker_name=settings.tracking.tracker_name,
+            track_persist=settings.tracking.track_persist,
+            track_conf=settings.tracking.conf,
+            track_iou=settings.tracking.iou,
+            conf=anpr_conf,
+            iou=anpr_iou,
+            imgsz=anpr_imgsz,
+            classes=anpr_classes,
+            max_det=anpr_max_det,
+        )
+
+    def _resolve_general_model_cfg() -> tuple[str, Optional[float], Optional[float], Optional[int], Any, Optional[int]]:
+        model_name = (
+            getattr(settings, "model_path", None)
+            or getattr(settings, "yolo_model_path", None)
+            or getattr(getattr(settings, "yolo", None), "model_path", None)
+            or getattr(getattr(settings, "model", None), "path", None)
+            or os.getenv("EDGE_MODEL_PATH")
+            or os.getenv("EDGE_MODEL")
+            or "./animal.pt"
+        )
+        model_conf = (
+            getattr(settings, "model_conf", None)
+            or getattr(settings, "conf", None)
+            or getattr(getattr(settings, "yolo", None), "conf", None)
+            or _read_float_env("EDGE_MODEL_CONF", 0.35)
+        )
+        model_iou = (
+            getattr(settings, "model_iou", None)
+            or getattr(settings, "iou", None)
+            or getattr(getattr(settings, "yolo", None), "iou", None)
+            or _read_float_env("EDGE_MODEL_IOU", 0.45)
+        )
+        model_imgsz = (
+            getattr(settings, "model_imgsz", None)
+            or getattr(settings, "imgsz", None)
+            or getattr(getattr(settings, "yolo", None), "imgsz", None)
+            or _read_int_env("EDGE_MODEL_IMGSZ", 640)
+        )
+        model_classes = (
+            getattr(settings, "model_classes", None)
+            or getattr(settings, "classes", None)
+            or getattr(getattr(settings, "yolo", None), "classes", None)
+        )
+        model_max_det = (
+            getattr(settings, "model_max_det", None)
+            or getattr(settings, "max_det", None)
+            or getattr(getattr(settings, "yolo", None), "max_det", None)
+        )
+        try:
+            if model_max_det is not None:
+                model_max_det = int(model_max_det)
+        except Exception:
+            model_max_det = None
+        return (
+            str(model_name),
+            float(model_conf) if model_conf is not None else None,
+            float(model_iou) if model_iou is not None else None,
+            int(model_imgsz) if model_imgsz is not None else None,
+            model_classes,
+            model_max_det,
+        )
+
+    def _build_rules_evaluator(camera_id: str, zone_polygons: dict[str, list[tuple[int, int]]], rules: List[BaseRule]) -> Optional[RulesEvaluator]:
+        # Try "new" evaluator signature (rich params), else fallback to "old" signature.
+        try:
+            return RulesEvaluator(
+                camera_id=camera_id,
+                godown_id=settings.godown_id,
+                rules=rules,
+                zone_polygons=zone_polygons,
+                timezone=settings.timezone,
+                alert_on_person=_read_bool_env("EDGE_ALERT_ON_PERSON", "false"),
+                person_alert_cooldown_sec=_read_int_env("EDGE_ALERT_PERSON_COOLDOWN", 10),
+                alert_classes=[c.strip() for c in os.getenv("EDGE_ALERT_ON_CLASSES", "").split(",") if c.strip()],
+                alert_severity=os.getenv("EDGE_ALERT_SEVERITY", "warning"),
+                alert_min_conf=_read_float_env("EDGE_ALERT_MIN_CONF", 0.0),
+                zone_enforce=_read_bool_env("EDGE_ZONE_ENFORCE", "true"),
+            )
+        except TypeError:
+            try:
+                return RulesEvaluator(camera_id, settings.godown_id, settings.timezone, mqtt_client, rules)  # type: ignore[arg-type]
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    def _run_rules_evaluator(evaluator: RulesEvaluator, objects: List[DetectedObject], frame, now_utc: datetime.datetime, meta_extra: dict[str, str]) -> None:
+        # Prefer new method if present
+        if hasattr(evaluator, "process_detections"):
+            evaluator.process_detections(  # type: ignore[attr-defined]
+                objects=objects,
+                now_utc=now_utc,
+                mqtt_client=mqtt_client,
+                frame=frame,
+                snapshotter=None,
+                instant_only=False,
+                meta_extra=meta_extra,
+            )
+            return
+        # Fallback older method
+        if hasattr(evaluator, "process"):
+            try:
+                evaluator.process(objects, frame=frame)  # type: ignore[misc]
+            except TypeError:
+                evaluator.process(objects)  # type: ignore[misc]
+
+    def _update_rules_evaluator(evaluator: RulesEvaluator, rules: List[BaseRule]) -> None:
+        if hasattr(evaluator, "update_rules"):
+            evaluator.update_rules(rules)  # type: ignore[misc]
+
+    def _build_anpr_processor(
+        camera_id: str,
+        zone_polygons: dict[str, list[tuple[int, int]]],
+        anpr_rules: List[BaseRule],
+        anpr_detector: YoloDetector,
+    ) -> Optional[AnprProcessor]:
+        plate_detector = PlateDetector(
+            anpr_detector,
+            plate_class_names=getattr(getattr(settings, "anpr", None), "plate_class_names", None),
+        )
+        # Try most common variants
+        try:
+            return AnprProcessor(
+                camera_id=camera_id,
+                godown_id=settings.godown_id,
+                rules=anpr_rules,
+                zone_polygons=zone_polygons,
+                timezone=settings.timezone,
+                plate_detector=plate_detector,
+                ocr_lang=getattr(getattr(settings, "anpr", None), "ocr_lang", None),
+                ocr_every_n=getattr(getattr(settings, "anpr", None), "ocr_every_n", 1),
+                ocr_min_conf=getattr(getattr(settings, "anpr", None), "ocr_min_conf", 0.3),
+                ocr_debug=getattr(getattr(settings, "anpr", None), "ocr_debug", False),
+                validate_india=getattr(getattr(settings, "anpr", None), "validate_india", False),
+                show_invalid=getattr(getattr(settings, "anpr", None), "show_invalid", False),
+                registered_file=getattr(getattr(settings, "anpr", None), "registered_file", None),
+                save_crops_dir=getattr(getattr(settings, "anpr", None), "save_crops_dir", None),
+                save_crops_max=getattr(getattr(settings, "anpr", None), "save_crops_max", None),
+                dedup_interval_sec=getattr(getattr(settings, "anpr", None), "dedup_interval_sec", 30),
+            )
+        except TypeError:
+            try:
+                return AnprProcessor(camera_id, settings.godown_id, settings.timezone, anpr_rules, plate_detector, zone_polygons)
+            except TypeError:
+                try:
+                    return AnprProcessor(
+                        camera_id=camera_id,
+                        godown_id=settings.godown_id,
+                        mqtt_client=mqtt_client,
+                        timezone=settings.timezone,
+                        rules=anpr_rules,
+                        plate_detector=plate_detector,
+                    )
+                except Exception:
+                    return None
+
+    def _update_anpr_processor(proc: AnprProcessor, rules: List[BaseRule]) -> None:
+        if hasattr(proc, "update_rules"):
+            try:
+                proc.update_rules(rules)  # type: ignore[misc]
+            except Exception:
+                pass
 
     def _start_camera(camera: CameraConfig) -> None:
         with camera_lock:
@@ -320,7 +588,6 @@ def start_camera_loops(
                     validate_india=anpr_cfg.validate_india,
                     show_invalid=anpr_cfg.show_invalid,
                     registered_file=anpr_cfg.registered_file,
-                    save_csv=anpr_cfg.save_csv,
                     save_crops_dir=anpr_cfg.save_crops_dir,
                     save_crops_max=anpr_cfg.save_crops_max,
                     dedup_interval_sec=dedup_interval,

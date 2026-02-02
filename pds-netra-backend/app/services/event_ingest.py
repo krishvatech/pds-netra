@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import List, Tuple
 
 from sqlalchemy.orm import Session
 
+from ..models.anpr_event import AnprEvent
 from ..models.godown import Godown, Camera
 from ..models.event import Event
 from ..schemas.event import EventIn
@@ -79,6 +81,76 @@ def _infer_zone_id(bbox: List[int], zones_json: str | None) -> str | None:
         if _bbox_in_zone(bbox, poly_pts):
             return zone_id
     return None
+
+
+ANPR_EDGE_EVENT_TYPES = {
+    "ANPR_PLATE_VERIFIED",
+    "ANPR_PLATE_ALERT",
+    "ANPR_PLATE_DETECTED",
+    "ANPR_TIME_VIOLATION",
+    # Legacy/alternate payloads:
+    "ANPR_HIT",
+}
+
+
+def _normalize_plate(text: str | None) -> str | None:
+    if not text:
+        return None
+    out = "".join(ch for ch in str(text).upper() if ch.isalnum())
+    return out or None
+
+
+def _parse_float(value) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _maybe_uuid(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except Exception:
+        return None
+
+
+def _upsert_anpr_event(db: Session, *, event_in: EventIn, meta: dict) -> None:
+    event_uuid = _maybe_uuid(event_in.event_id)
+    if event_uuid:
+        existing = db.query(AnprEvent).filter(AnprEvent.event_id == event_uuid).first()
+        if existing:
+            return
+
+    plate_raw = (meta.get("plate_text") or meta.get("plate_raw") or "").strip() or None
+    plate_norm = (meta.get("plate_norm") or _normalize_plate(plate_raw)) if plate_raw else None
+
+    extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
+    det_conf = _parse_float(extra.get("det_conf"))
+    ocr_conf = _parse_float(extra.get("ocr_conf"))
+    combined_conf = _parse_float(meta.get("confidence"))
+
+    anpr = AnprEvent(
+        event_id=event_uuid,
+        godown_id=event_in.godown_id,
+        camera_id=event_in.camera_id,
+        zone_id=meta.get("zone_id"),
+        timestamp_utc=event_in.timestamp_utc,
+        plate_raw=plate_raw,
+        plate_norm=plate_norm,
+        match_status=(meta.get("match_status") or "UNKNOWN"),
+        event_type=event_in.event_type,
+        det_conf=det_conf,
+        ocr_conf=ocr_conf,
+        combined_conf=combined_conf,
+        bbox=event_in.bbox,
+        snapshot_url=event_in.image_url,
+        meta=meta,
+    )
+    db.add(anpr)
 
 
 def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
@@ -149,7 +221,14 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
     db.add(event)
     db.commit()
     db.refresh(event)
-    if event.event_type == "ANPR_HIT":
+    if event.event_type in ANPR_EDGE_EVENT_TYPES:
+        try:
+            _upsert_anpr_event(db, event_in=event_in, meta=meta)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    if event.event_type in ANPR_EDGE_EVENT_TYPES:
         role = (camera.role or "").strip().upper()
         allow_gate_session = role in {"", "GATE_ANPR"}
         if allow_gate_session:

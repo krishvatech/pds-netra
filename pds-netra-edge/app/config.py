@@ -178,7 +178,6 @@ class AnprConfig:
     show_invalid: bool = False
     registered_file: Optional[str] = None
     dedup_interval_sec: int = 30
-    save_csv: Optional[str] = None
     save_crops_dir: Optional[str] = None
     save_crops_max: Optional[int] = None
     gate_line: Optional[List[List[int]]] = None
@@ -534,6 +533,8 @@ def load_settings(config_path: str) -> Settings:
             ocr_lang = anpr_data.get("ocr_lang")
             if ocr_lang is not None:
                 ocr_lang = [str(x) for x in ocr_lang]
+
+
             anpr_cfg = AnprConfig(
                 enabled=bool(anpr_data.get("enabled", False)),
                 model_path=str(anpr_data.get("model_path", "./ML_MOdel/anpr.pt")),
@@ -552,7 +553,6 @@ def load_settings(config_path: str) -> Settings:
                 show_invalid=bool(anpr_data.get("show_invalid", False)),
                 registered_file=anpr_data.get("registered_file"),
                 dedup_interval_sec=int(anpr_data.get("dedup_interval_sec", 30)),
-                save_csv=anpr_data.get("save_csv"),
                 save_crops_dir=anpr_data.get("save_crops_dir"),
                 save_crops_max=anpr_data.get("save_crops_max"),
                 gate_line=anpr_data.get("gate_line"),

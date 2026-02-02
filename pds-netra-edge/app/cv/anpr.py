@@ -22,10 +22,8 @@ D) ✅ Minimum OCR acceptance strategy: run OCR with low min_conf, then apply yo
 
 from __future__ import annotations
 
-import csv
 import datetime
 import os
-import csv
 import logging
 import re
 import uuid
@@ -56,7 +54,7 @@ from .yolo_detector import YoloDetector
 from .zones import is_bbox_in_zone
 from ..models.event import EventModel, MetaModel
 from ..events.mqtt_client import MQTTClient
-from ..rules.loader import BaseRule
+from ..rules.loader import BaseRule, AnprWhitelistRule, AnprBlacklistRule
 
 
 # ---------------------------------------------------------------------
@@ -881,7 +879,6 @@ class AnprProcessor:
         validate_india: bool = False,
         show_invalid: bool = False,
         registered_file: Optional[str] = None,
-        save_csv: Optional[str] = None,
         save_crops_dir: Optional[str] = None,
         save_crops_max: Optional[int] = None,
         dedup_interval_sec: int = 30,
@@ -899,9 +896,6 @@ class AnprProcessor:
         self.require_zone = os.getenv("EDGE_ANPR_REQUIRE_ZONE", "false").lower() in {"1", "true", "yes"}
 
         self.rules_by_zone: Dict[str, List[BaseRule]] = {}
-        for rule in rules:
-            zid = getattr(rule, "zone_id", None) or "__GLOBAL__"
-            self.rules_by_zone.setdefault(zid, []).append(rule)
 
         self.zone_polygons = zone_polygons
         try:
@@ -941,27 +935,24 @@ class AnprProcessor:
 
         self.registered_plates = load_registered_plates(registered_file)
 
-        self.plate_rules_json = plate_rules_json or os.getenv("EDGE_ANPR_RULES_JSON", "")
-        self.whitelist_plates, self.blacklist_plates = load_plate_rules_json(self.plate_rules_json)
-        if self.whitelist_plates or self.blacklist_plates:
-            self.logger.info(
-                "ANPR JSON rules loaded: whitelist=%d blacklist=%d path=%s window=%s-%s",
-                len(self.whitelist_plates), len(self.blacklist_plates),
-                self.plate_rules_json, self.allowed_start, self.allowed_end
-            )
+        self.plate_rules_json = ""
+        self.whitelist_plates: set[str] = set()
+        self.blacklist_plates: set[str] = set()
+        self.update_rules(rules)
 
-        # Always bind CSV path to runtime godown_id
-        if save_csv:
-    # allow template paths like .../anpr_csv/{godown_id}/anpr.csv
-         self.save_csv = save_csv.format(godown_id=self.godown_id)
-        else:
-            self.save_csv = None
-
-        if self.save_csv:
-            try:
-                os.makedirs(os.path.dirname(self.save_csv), exist_ok=True)
-            except Exception:
-                pass
+        use_json_rules = os.getenv("EDGE_ANPR_USE_JSON_RULES", "false").lower() in {"1", "true", "yes"}
+        if use_json_rules and not (self.whitelist_plates or self.blacklist_plates):
+            self.plate_rules_json = plate_rules_json or os.getenv("EDGE_ANPR_RULES_JSON", "")
+            self.whitelist_plates, self.blacklist_plates = load_plate_rules_json(self.plate_rules_json)
+            if self.whitelist_plates or self.blacklist_plates:
+                self.logger.info(
+                    "ANPR JSON rules loaded (fallback): whitelist=%d blacklist=%d path=%s window=%s-%s",
+                    len(self.whitelist_plates),
+                    len(self.blacklist_plates),
+                    self.plate_rules_json,
+                    self.allowed_start,
+                    self.allowed_end,
+                )
 
         self.save_crops_dir = os.getenv("EDGE_ANPR_CROPS_DIR", "") or save_crops_dir
         if self.save_crops_dir:
@@ -970,13 +961,6 @@ class AnprProcessor:
         self.save_crops_max = save_crops_max
         self._crop_save_count = 0
 
-        self._csv_ready = False
-        if self.save_csv:
-            try:
-                if os.path.exists(self.save_csv) and os.path.getsize(self.save_csv) > 0:
-                    self._csv_ready = True
-            except Exception:
-                pass
 
         self.dedup_interval_sec = int(dedup_interval_sec)
         self.plate_cache: Dict[Tuple[str, str], datetime.datetime] = {}
@@ -991,6 +975,38 @@ class AnprProcessor:
         self.crop_shrink_y = float(os.getenv("EDGE_ANPR_CROP_SHRINK_Y", "0.12"))
         self.crop_pad_x = float(os.getenv("EDGE_ANPR_CROP_PAD_X", "0.06"))
         self.crop_pad_y = float(os.getenv("EDGE_ANPR_CROP_PAD_Y", "0.10"))
+
+    def _plates_from_rules(self, rules: List[BaseRule]) -> tuple[set[str], set[str]]:
+        whitelist: set[str] = set()
+        blacklist: set[str] = set()
+        for rule in rules or []:
+            rtype = str(getattr(rule, "type", "") or "").strip().upper()
+            if isinstance(rule, AnprWhitelistRule) or rtype == "ANPR_WHITELIST_ONLY":
+                for plate in (getattr(rule, "allowed_plates", None) or []):
+                    norm = normalize_plate_text(str(plate))
+                    if norm:
+                        whitelist.add(norm)
+            if isinstance(rule, AnprBlacklistRule) or rtype == "ANPR_BLACKLIST_ALERT":
+                for plate in (getattr(rule, "blocked_plates", None) or []):
+                    norm = normalize_plate_text(str(plate))
+                    if norm:
+                        blacklist.add(norm)
+        return whitelist, blacklist
+
+    def update_rules(self, rules: List[BaseRule]) -> None:
+        self.rules_by_zone = {}
+        for rule in rules or []:
+            zid = getattr(rule, "zone_id", None) or "__GLOBAL__"
+            self.rules_by_zone.setdefault(zid, []).append(rule)
+        self.whitelist_plates, self.blacklist_plates = self._plates_from_rules(rules)
+        if self.whitelist_plates or self.blacklist_plates:
+            self.logger.info(
+                "ANPR DB rules loaded: whitelist=%d blacklist=%d window=%s-%s",
+                len(self.whitelist_plates),
+                len(self.blacklist_plates),
+                self.allowed_start,
+                self.allowed_end,
+            )
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         if not self.zone_polygons:
@@ -1304,15 +1320,6 @@ class AnprProcessor:
             if self.registered_plates:
                 extra["registered"] = "1" if norm_plate in self.registered_plates else "0"
 
-            if self.save_csv:
-                self._append_csv_row(
-                    timestamp_iso, zone_id, plate_text_display,
-                    float(det_conf), float(ocr_conf), float(combined_conf), True,
-                    extra.get("registered", ""),
-                    bbox=bbox,
-                    match_status=match_status,
-                )
-
             event = EventModel(
                 godown_id=self.godown_id,
                 camera_id=self.camera_id,
@@ -1357,32 +1364,3 @@ class AnprProcessor:
             )
 
         return results_out
-
-    def _append_csv_row(self, ts, zone, text, det, ocr, comb, valid, reg, bbox=None, match_status: str = ""):
-        if not self.save_csv:
-            return
-        try:
-            try:
-                parent = os.path.dirname(self.save_csv)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-            except Exception:
-                pass
-
-            with open(self.save_csv, "a", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                if (not self._csv_ready) and (f.tell() == 0):
-                    writer.writerow([
-                        "timestamp_utc", "camera_id", "zone_id", "plate_text",
-                        "det_conf", "ocr_conf", "combined_conf", "valid",
-                        "registered", "match_status", "bbox"
-                    ])
-                    self._csv_ready = True
-                writer.writerow([
-                    ts, self.camera_id, zone, text,
-                    f"{float(det):.4f}", f"{float(ocr):.4f}", f"{float(comb):.4f}",
-                    "1" if valid else "0", reg, match_status,
-                    "" if bbox is None else str(list(bbox)),
-                ])
-        except Exception as exc:
-            self.logger.warning("ANPR CSV write failed (%s): %s", self.save_csv, exc)
