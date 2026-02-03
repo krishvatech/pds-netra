@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { AlertItem } from '@/lib/types';
+import type { AlertItem, AlertStatus } from '@/lib/types';
 import { getAlerts } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -45,7 +45,7 @@ export default function AfterHoursPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('person');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [godownId, setGodownId] = useState('');
-  const [status, setStatus] = useState<string>('OPEN');
+  const [status, setStatus] = useState<AlertStatus | ''>('OPEN');
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { AlertItem } from '@/lib/types';
+import type { AlertItem, AlertStatus } from '@/lib/types';
 import { getAlerts } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -42,7 +42,7 @@ export default function AnimalsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [godownId, setGodownId] = useState('');
   const [species, setSpecies] = useState('');
-  const [status, setStatus] = useState<string>('OPEN');
+  const [status, setStatus] = useState<AlertStatus | ''>('OPEN');
   const [onlyNight, setOnlyNight] = useState(true);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

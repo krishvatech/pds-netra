@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { AlertItem, VehicleGateSession } from '@/lib/types';
+import type { AlertItem, AlertStatus, VehicleGateSession } from '@/lib/types';
 import { getAlerts, getVehicleGateSessions } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -67,7 +67,7 @@ export default function DispatchMovementPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [godownId, setGodownId] = useState('');
   const [plateQuery, setPlateQuery] = useState('');
-  const [status, setStatus] = useState<string>('OPEN');
+  const [status, setStatus] = useState<AlertStatus | ''>('OPEN');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [error, setError] = useState<string | null>(null);

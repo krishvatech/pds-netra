@@ -65,10 +65,15 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? getToken() : null;
   const user = typeof window !== 'undefined' ? getUser() : null;
 
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(init.headers ?? {})
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
   };
+  if (init.headers) {
+    const merged = new Headers(init.headers);
+    merged.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
 
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (user?.role) headers['X-User-Role'] = user.role;
@@ -94,7 +99,7 @@ async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const token = typeof window !== 'undefined' ? getToken() : null;
   const user = typeof window !== 'undefined' ? getUser() : null;
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   if (user?.role) headers['X-User-Role'] = user.role;
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
   if (user?.district) headers['X-User-District'] = String(user.district);
