@@ -120,7 +120,8 @@ export default function WatchlistPage() {
           return;
         }
         const resp = await getAlerts(matchParams);
-        if (mounted) setMatches(resp.items ?? []);
+        const items = Array.isArray(resp) ? resp : resp.items ?? [];
+        if (mounted) setMatches(items);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load matches');
       }

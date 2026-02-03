@@ -123,7 +123,8 @@ export default function DispatchMovementPage() {
         ]);
         if (mounted) {
           setSessions(sessionsResp.items ?? []);
-          setAlerts(alertsResp.items ?? []);
+          const items = Array.isArray(alertsResp) ? alertsResp : alertsResp.items ?? [];
+          setAlerts(items);
         }
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load dispatch movement data');
