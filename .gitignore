@@ -48,3 +48,6 @@ pds-netra-backend/data/live/
 
 # Docker
 *.env
+
+# PDS Netra edge known faces (local)
+pds-netra-edge/config/known_faces.json
