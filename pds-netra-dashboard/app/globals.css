@@ -330,14 +330,23 @@ a {
     border: 1px solid rgba(255, 255, 255, 0.4);
     background: rgba(15, 23, 42, 0.35);
     box-shadow: inset 0 0 20px rgba(15, 23, 42, 0.6);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 12px 0;
   }
 
   .ticker-track {
+    position: absolute;
+    inset: 0;
     display: flex;
+    align-items: center;
     gap: 18px;
-    width: max-content;
+    min-width: 260%;
     animation: tickerScroll 24s linear infinite;
-    padding: 10px 18px;
+    padding: 0 18px;
+    will-change: transform;
   }
 
   .ticker-chip {
