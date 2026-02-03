@@ -126,7 +126,7 @@ export default function FirePage() {
               <Label>Status</Label>
               <Select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as AlertStatus | '')}
                 options={[
                   { label: 'All', value: '' },
                   { label: 'Open', value: 'OPEN' },

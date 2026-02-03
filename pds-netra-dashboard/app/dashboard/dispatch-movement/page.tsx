@@ -185,7 +185,7 @@ export default function DispatchMovementPage() {
               <Label>Status</Label>
               <Select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as AlertStatus | '')}
                 options={[
                   { label: 'Open', value: 'OPEN' },
                   { label: 'Closed', value: 'CLOSED' },
