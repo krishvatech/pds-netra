@@ -433,10 +433,18 @@ export default function RulesPage() {
   }
 
   async function handleToggle(rule: RuleItem) {
+    const updatedEnabled = !rule.enabled;
+    setRules((current) =>
+      current.map((item) => (item.id === rule.id ? { ...item, enabled: updatedEnabled } : item))
+    );
     try {
-      await updateRule(rule.id, { enabled: !rule.enabled });
+      setError(null);
+      await updateRule(rule.id, { enabled: updatedEnabled });
       await refresh();
     } catch (e) {
+      setRules((current) =>
+        current.map((item) => (item.id === rule.id ? { ...item, enabled: rule.enabled } : item))
+      );
       setError(e instanceof Error ? e.message : 'Failed to update rule');
     }
   }
