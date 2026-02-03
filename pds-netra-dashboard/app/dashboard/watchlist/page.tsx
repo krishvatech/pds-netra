@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { AlertItem, WatchlistPerson } from '@/lib/types';
+import type { AlertItem, AlertStatus, WatchlistPerson } from '@/lib/types';
 import { createWatchlistPerson, getAlerts, getWatchlistPersons } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -74,7 +74,7 @@ export default function WatchlistPage() {
 
   const matchParams = useMemo(() => ({
     alert_type: 'BLACKLIST_PERSON_MATCH',
-    status: 'OPEN',
+    status: 'OPEN' as AlertStatus,
     page: 1,
     page_size: 50,
     godown_id: matchGodown || undefined,
