@@ -1,0 +1,10 @@
+{$CADDY_DOMAIN} {
+    encode gzip
+
+    reverse_proxy /api/* backend:8001
+    reverse_proxy /media/* backend:8001
+
+    reverse_proxy /* dashboard:3000
+
+    tls {$CADDY_EMAIL}
+}

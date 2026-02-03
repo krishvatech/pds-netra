@@ -5,7 +5,7 @@ from pathlib import Path
 import traceback
 
 # Setup path
-project_root = Path("/home/shruti/pds-netra/pds-netra")
+project_root = Path("/Users/krishva/Projects/PDS-Netra-Project/pds-netra")
 edge_path = project_root / "pds-netra-edge"
 sys.path.append(str(edge_path))
 
