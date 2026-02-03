@@ -5,10 +5,12 @@ Notification outbox helpers and alert message templating.
 from __future__ import annotations
 
 import datetime
+import html
+import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional, Iterable
+from typing import Any, Iterable, Optional
 
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
@@ -53,6 +55,116 @@ def _human_alert_type(alert_type: str) -> str:
         "SECURITY_UNAUTH_ACCESS": "Unauthorized Access",
     }
     return mapping.get(alert_type, alert_type.replace("_", " ").title())
+
+
+META_FIELD_LABELS: list[tuple[str, str]] = [
+    ("vehicle_plate", "Vehicle plate"),
+    ("plate_text", "Plate text"),
+    ("plate_norm", "Plate (normalized)"),
+    ("movement_type", "Movement type"),
+    ("reason", "Reason"),
+    ("detected_count", "Detected count"),
+    ("occurred_at", "Occurred at"),
+    ("last_seen_at", "Last seen at"),
+    ("entry_at", "Entry at"),
+    ("age_hours", "Age (h)"),
+    ("threshold_hours", "Threshold (h)"),
+    ("animal_species", "Animal species"),
+    ("animal_count", "Animal count"),
+    ("animal_confidence", "Animal confidence"),
+    ("animal_is_night", "Animal is night"),
+    ("fire_confidence", "Fire confidence"),
+    ("fire_classes", "Fire classes"),
+    ("fire_model_name", "Fire model"),
+    ("fire_model_version", "Fire model version"),
+    ("fire_weights_id", "Fire weights"),
+    ("snapshot_url", "Snapshot URL"),
+    ("clip_url", "Clip URL"),
+]
+
+
+def _format_meta_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple, dict)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
+def _collect_meta_values(event: Optional[Event], alert: Alert) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    sources: list[dict[str, Any]] = []
+    if event and isinstance(event.meta, dict):
+        sources.append(event.meta)
+    extra = alert.extra if isinstance(alert.extra, dict) else {}
+    if extra:
+        sources.append(extra)
+    for source in sources:
+        for key, value in source.items():
+            if value is None:
+                continue
+            values[key] = value
+    return values
+
+
+def _build_metadata_rows(
+    *,
+    alert: Alert,
+    event: Optional[Event],
+    camera: Camera | None,
+    camera_name: str,
+    godown_name: str,
+) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    if alert.godown_id:
+        rows.append(("Godown ID", alert.godown_id))
+    if godown_name and godown_name != alert.godown_id:
+        rows.append(("Godown name", godown_name))
+    if camera_name:
+        rows.append(("Camera label", camera_name))
+    if alert.camera_id:
+        rows.append(("Camera ID", alert.camera_id))
+    if camera and camera.role:
+        rows.append(("Camera role", camera.role))
+    if alert.zone_id:
+        rows.append(("Zone", alert.zone_id))
+    if alert.summary:
+        rows.append(("Summary", alert.summary))
+    if alert.status:
+        rows.append(("Status", alert.status))
+
+    meta_values = _collect_meta_values(event, alert)
+    if meta_values:
+        for key, label in META_FIELD_LABELS:
+            value = meta_values.pop(key, None)
+            if value is not None:
+                rows.append((label, _format_meta_value(value)))
+        for key in sorted(meta_values):
+            rows.append((key.replace("_", " ").title(), _format_meta_value(meta_values[key])))
+    return rows
+
+
+def _render_meta_table(rows: list[tuple[str, str]]) -> str:
+    if not rows:
+        return ""
+    lines = [
+        '<table style="border-collapse:collapse;margin-top:8px;">',
+        "<tbody>",
+    ]
+    for label, value in rows:
+        lines.append(
+            "<tr>"
+            f'<td style="padding:4px 8px;font-weight:600;border:1px solid #4b5563;background:#0f172a;color:#f8fafc;">{html.escape(label)}</td>'
+            f'<td style="padding:4px 8px;border:1px solid #4b5563;background:#111827;color:#f8fafc;">{html.escape(value)}</td>'
+            "</tr>"
+        )
+    lines.append("</tbody></table>")
+    return "".join(lines)
 
 
 def _evidence_url(alert: Alert, event: Optional[Event]) -> Optional[str]:
@@ -153,7 +265,17 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         lines.append(f"Evidence: {evidence}")
     if link:
         lines.append(f"Dashboard: {link}")
-    whatsapp_text = "\n".join(lines[:4]) if len(lines) > 4 else "\n".join(lines)
+    meta_rows = _build_metadata_rows(
+        alert=alert,
+        event=event,
+        camera=camera,
+        camera_name=camera_name,
+        godown_name=godown_name,
+    )
+    whatsapp_lines = lines[:]
+    for label, value in meta_rows[:5]:
+        whatsapp_lines.append(f"{label}: {value}")
+    whatsapp_text = "\n".join(whatsapp_lines)
 
     email_subject = f"PDS Netra: {alert_title}"
     email_body = (
@@ -167,6 +289,9 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         email_body += f"<p><strong>Evidence:</strong> <a href=\"{evidence}\">{evidence}</a></p>"
     if link:
         email_body += f"<p><strong>Dashboard:</strong> <a href=\"{link}\">{link}</a></p>"
+    detail_table = _render_meta_table(meta_rows)
+    if detail_table:
+        email_body += "<h4>Details</h4>" + detail_table
 
     return NotificationContent(
         title=alert_title,

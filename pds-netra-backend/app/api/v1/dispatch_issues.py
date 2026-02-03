@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 
 from ...core.db import get_db
 from ...models.dispatch_issue import DispatchIssue
-from ...schemas.dispatch_issue import DispatchIssueCreate, DispatchIssueOut
+from ...schemas.dispatch_issue import (
+    DispatchIssueCreate,
+    DispatchIssueOut,
+    DispatchIssueUpdate,
+)
 
 
 router = APIRouter(prefix="/api/v1/dispatch-issues", tags=["dispatch-issues"])
