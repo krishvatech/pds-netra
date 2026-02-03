@@ -1,0 +1,111 @@
+PDS Netra Deployment Runbook (DigitalOcean)
+==========================================
+
+Repo location (droplet): /opt/krishvatech/pds-netra
+Main compose file: docker-compose.prod.yml
+
+Important files
+---------------
+- /opt/krishvatech/pds-netra/docker-compose.prod.yml
+- /opt/krishvatech/pds-netra/deployment/.env
+  - CADDY_DOMAIN, CADDY_EMAIL
+- /opt/krishvatech/pds-netra/deployment/env/backend.env
+  - DATABASE_URL, MQTT_*, PDS_AUTH_DISABLED
+- /opt/krishvatech/pds-netra/deployment/env/dashboard.env
+  - NEXT_PUBLIC_API_BASE_URL, NEXT_PUBLIC_MOCK_MODE
+- /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile
+  - MQTT username/password
+
+Core commands
+-------------
+# Build images
+cd /opt/krishvatech/pds-netra
+
+docker compose -f docker-compose.prod.yml build
+
+# Start services
+
+docker compose -f docker-compose.prod.yml up -d
+
+# Stop services
+
+docker compose -f docker-compose.prod.yml down
+
+# Restart specific service
+
+docker compose -f docker-compose.prod.yml restart backend
+
+docker compose -f docker-compose.prod.yml restart dashboard
+
+docker compose -f docker-compose.prod.yml restart mosquitto
+
+docker compose -f docker-compose.prod.yml restart caddy
+
+# Status + logs
+
+docker compose -f docker-compose.prod.yml ps
+
+docker compose -f docker-compose.prod.yml logs backend --tail=50
+
+docker compose -f docker-compose.prod.yml logs dashboard --tail=50
+
+docker compose -f docker-compose.prod.yml logs caddy --tail=50
+
+Backend config (backend.env)
+----------------------------
+DATABASE_URL=postgresql+psycopg2://USER:PASS@HOST:25060/defaultdb?sslmode=require
+MQTT_BROKER_HOST=mosquitto
+MQTT_BROKER_PORT=1883
+MQTT_USERNAME=mqtt_user
+MQTT_PASSWORD=mqtt_pass
+PDS_AUTH_DISABLED=true
+
+Caddy config (.env)
+-------------------
+CADDY_DOMAIN=cv.krishvatech.com
+CADDY_EMAIL=your-real-email@domain.com
+
+Mosquitto credentials
+---------------------
+# Create/update MQTT user+pass
+
+docker run --rm -it --user 0:0 \
+  -v /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile:/mosquitto/config/pwfile \
+  eclipse-mosquitto:2 \
+  mosquitto_passwd -b /mosquitto/config/pwfile mqtt_user mqtt_pass
+
+# Fix pwfile permissions
+
+sudo chown root:root /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile
+sudo chmod 0600 /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile
+
+Jetson edge .env
+----------------
+MQTT_BROKER_HOST=cv.krishvatech.com
+MQTT_BROKER_PORT=1883
+MQTT_USERNAME=mqtt_user
+MQTT_PASSWORD=mqtt_pass
+EDGE_BACKEND_URL=https://cv.krishvatech.com
+EDGE_SNAPSHOT_BASE_URL=https://cv.krishvatech.com/media/snapshots
+
+Common errors and fixes
+-----------------------
+1) Backend error: "ValueError: invalid literal for int() with base 10: 'PORT'"
+   - DATABASE_URL still has placeholder. Update backend.env.
+
+2) Backend error: "Failed to connect to MQTT broker with code 5"
+   - MQTT auth mismatch. Ensure backend.env matches mosquitto pwfile.
+
+3) Caddy SSL error
+   - Use a real email in CADDY_EMAIL (example.com fails).
+
+4) Domain not loading
+   - Ensure DNS A record points to droplet IP and ports 80/443 are open.
+
+5) Dashboard 401 Unauthorized
+   - Set PDS_AUTH_DISABLED=true for PoC.
+
+Security reminders
+------------------
+- Rotate DB and Twilio secrets after sharing.
+- Keep backend.env and pwfile permissions restricted.
