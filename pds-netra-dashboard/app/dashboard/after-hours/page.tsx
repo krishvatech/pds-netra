@@ -87,7 +87,8 @@ export default function AfterHoursPage() {
           return;
         }
         const resp = await getAlerts(params);
-        if (mounted) setAlerts(resp.items ?? []);
+        const items = Array.isArray(resp) ? resp : resp.items ?? [];
+        if (mounted) setAlerts(items);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load after-hours alerts');
       }
