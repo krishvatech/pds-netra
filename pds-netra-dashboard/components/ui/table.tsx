@@ -5,7 +5,7 @@ export function Table({ className = '', ...props }: React.TableHTMLAttributes<HT
 }
 
 export function THead({ className = '', ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={`sticky top-0 z-10 bg-white/80 backdrop-blur text-slate-600 ${className}`} {...props} />;
+  return <thead className={`sticky top-0 z-10 bg-white/80 backdrop-blur text-slate-900 ${className}`} {...props} />;
 }
 
 export function TH({ className = '', ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {

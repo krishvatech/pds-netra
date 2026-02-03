@@ -166,6 +166,7 @@ a {
     border: 1px solid var(--stroke);
     box-shadow: 0 20px 50px -40px rgba(15, 23, 42, 0.7);
     backdrop-filter: blur(18px);
+    color: var(--ink);
   }
 
   .glass-panel-strong {
@@ -173,6 +174,7 @@ a {
     border: 1px solid var(--stroke);
     box-shadow: 0 25px 70px -50px rgba(15, 23, 42, 0.6);
     backdrop-filter: blur(18px);
+    color: var(--ink);
   }
 
   .btn-primary {
@@ -216,6 +218,7 @@ a {
     border: 1px solid var(--stroke);
     box-shadow: 0 30px 60px -50px rgba(15, 23, 42, 0.75);
     backdrop-filter: blur(16px);
+    color: var(--ink);
   }
 
   .surface-card.hud-card {
