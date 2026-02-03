@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { ErrorBanner } from '@/components/ui/error-banner';
 
@@ -127,6 +128,7 @@ export default function AnprDailyPlanPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<CsvImportSummary | null>(null);
   const [importBusy, setImportBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const godownOptions = useMemo(() => {
     const opts = godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }));
@@ -191,6 +193,20 @@ export default function AnprDailyPlanPage() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [godownId, dateLocal, timezoneName]);
+
+  useEffect(() => {
+    if (!importOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImportOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [importOpen]);
 
   const planId = data?.plan?.id || '';
   const items: AnprDailyPlanItem[] = data?.items || [];
@@ -333,13 +349,27 @@ export default function AnprDailyPlanPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="text-xl font-semibold">ANPR Daily Plan</div>
+    <>
+      <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">Daily plan</div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            ANPR Daily Plan
+          </div>
+          <div className="text-sm text-slate-300">Plan expected arrivals and track live status updates.</div>
+        </div>
+        <div className="hud-card p-4 min-w-[240px]">
+          <div className="hud-label">Summary</div>
+          <div className="hud-value">{summary.ARRIVED} / {summary.PLANNED}</div>
+          <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
+        </div>
+      </div>
       {error && <ErrorBanner message={error} />}
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
-          <div className="font-medium">Plan Settings</div>
+          <div className="text-lg font-semibold font-display">Plan Settings</div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div>
@@ -387,24 +417,20 @@ export default function AnprDailyPlanPage() {
               }}
             />
           </div>
-          <div className="md:col-span-5 flex gap-2 items-center">
-            <button
-              className="rounded-xl px-4 py-2 text-sm border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-              onClick={onSavePlan}
-              disabled={busy || !godownId || !dateLocal}
-            >
+          <div className="md:col-span-5 flex flex-wrap gap-2 items-center">
+            <Button onClick={onSavePlan} disabled={busy || !godownId || !dateLocal}>
               Save Plan
-            </button>
+            </Button>
             <div className="text-xs text-slate-300">
-              Planned: {summary.PLANNED} • Arrived: {summary.ARRIVED} • Delayed: {summary.DELAYED} • No show: {summary.NO_SHOW} • Cancelled: {summary.CANCELLED}
+              Planned: {summary.PLANNED} | Arrived: {summary.ARRIVED} | Delayed: {summary.DELAYED} | No show: {summary.NO_SHOW} | Cancelled: {summary.CANCELLED}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
-          <div className="font-medium">Add Planned Vehicle</div>
+          <div className="text-lg font-semibold font-display">Add Planned Vehicle</div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
@@ -424,102 +450,42 @@ export default function AnprDailyPlanPage() {
             <Input value={addNotes} onChange={(e) => setAddNotes(e.target.value)} placeholder="optional" />
           </div>
           <div className="md:col-span-4">
-            <button
-              className="rounded-xl px-4 py-2 text-sm border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-              onClick={onAddItem}
-              disabled={busy || !planId || !addPlate.trim()}
-            >
+            <Button onClick={onAddItem} disabled={busy || !planId || !addPlate.trim()}>
               Add to Plan
-            </button>
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="font-medium">Import Plan Items (CSV)</div>
+      <Card className="hud-card">
+        <CardHeader className="flex items-center justify-between">
+          <div className="text-lg font-semibold font-display">Import Plan Items (CSV)</div>
+          <div className="hud-pill">Bulk load</div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {importError && <ErrorBanner message={importError} />}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div>
-              <Label>CSV File</Label>
-              <Input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
-              />
-            </div>
-            <div>
-              <Label>Godown</Label>
-              <Select
-                value={godownId}
-                onChange={(e) => setGodownId(e.target.value)}
-                options={godownOptions}
-                placeholder="Select godown..."
-              />
-            </div>
-            <div>
-              <Label>Date</Label>
-              <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
-            </div>
-            <div className="self-end">
-              <button
-                className="rounded-xl px-4 py-2 text-sm border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-                onClick={onImportCsv}
-                disabled={importBusy || !importFile || !godownId || !dateLocal}
-              >
-                {importBusy ? 'Importing...' : 'Import CSV'}
-              </button>
-            </div>
+          <div className="text-sm text-slate-300">
+            Upload a CSV to add or update planned vehicles for the selected date.
           </div>
-
-          {importRows.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs text-slate-300">
-                Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
-              </div>
-              <div className="overflow-auto">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Plate</TH>
-                      <TH>Expected By</TH>
-                      <TH>Status</TH>
-                      <TH>Notes</TH>
-                      <TH>Issue</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {importRows.map((r, idx) => (
-                      <TR key={`${r.plate_text}-${idx}`}>
-                        <TD className="font-semibold">{r.plate_text || '—'}</TD>
-                        <TD>{r.expected_by_local || '—'}</TD>
-                        <TD>{r.status || '—'}</TD>
-                        <TD className="max-w-[360px] truncate">{r.notes || '—'}</TD>
-                        <TD className="text-xs text-amber-300">{r.error || '—'}</TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </div>
-            </div>
-          )}
-
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => setImportOpen(true)}>Open Import</Button>
+            <div className="text-xs text-slate-400">Columns: plate_text, expected_by_local, status, notes</div>
+          </div>
           {importResult && (
             <div className="text-xs text-slate-300">
-              Imported: {importResult.total} • Created: {importResult.created} • Updated: {importResult.updated} • Failed: {importResult.failed}
+              Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="font-medium">Planned Vehicles</div>
+      <Card className="hud-card">
+        <CardHeader className="flex items-center justify-between">
+          <div className="text-lg font-semibold font-display">Planned Vehicles</div>
+          <div className="hud-pill">Live status</div>
         </CardHeader>
-        <CardContent className="overflow-auto">
-          <Table>
+        <CardContent>
+          <div className="table-shell overflow-auto">
+            <Table>
             <THead>
               <TR>
                 <TH>Plate</TH>
@@ -557,23 +523,116 @@ export default function AnprDailyPlanPage() {
                       />
                     </TD>
                     <TD>{statusBadge(it.effective_status || 'PLANNED')}</TD>
-                    <TD className="text-xs">{it.arrived_at_utc || '—'}</TD>
+                    <TD className="text-xs">{it.arrived_at_utc || 'N/A'}</TD>
                     <TD>
-                      <button
-                        className="rounded-lg px-3 py-1.5 text-xs border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-                        onClick={() => onDelete(it.id)}
-                        disabled={busy}
-                      >
+                      <Button variant="danger" className="px-3 py-1.5 text-xs" onClick={() => onDelete(it.id)} disabled={busy}>
                         Delete
-                      </button>
+                      </Button>
                     </TD>
                   </TR>
                 ))
               )}
             </TBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>
+    {importOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <button
+          className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+          onClick={() => setImportOpen(false)}
+          aria-label="Close import"
+        />
+        <div
+          className="relative w-full max-w-3xl hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="p-6 sm:p-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
+                <div className="text-xs text-slate-400">Bulk load planned vehicles for a date.</div>
+              </div>
+              <Button variant="outline" onClick={() => setImportOpen(false)}>
+                Close
+              </Button>
+            </div>
+
+            {importError && <ErrorBanner message={importError} />}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div>
+                <Label>CSV File</Label>
+                <Input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
+                />
+              </div>
+              <div>
+                <Label>Godown</Label>
+                <Select
+                  value={godownId}
+                  onChange={(e) => setGodownId(e.target.value)}
+                  options={godownOptions}
+                  placeholder="Select godown..."
+                />
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
+              </div>
+              <div className="self-end">
+                <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId || !dateLocal}>
+                  {importBusy ? 'Importing...' : 'Import CSV'}
+                </Button>
+              </div>
+            </div>
+
+            {importRows.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-slate-300">
+                  Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
+                </div>
+                <div className="table-shell overflow-auto">
+                  <Table>
+                    <THead>
+                      <TR>
+                        <TH>Plate</TH>
+                        <TH>Expected By</TH>
+                        <TH>Status</TH>
+                        <TH>Notes</TH>
+                        <TH>Issue</TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {importRows.map((r, idx) => (
+                        <TR key={`${r.plate_text}-${idx}`}>
+                          <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
+                          <TD>{r.expected_by_local || 'N/A'}</TD>
+                          <TD>{r.status || 'N/A'}</TD>
+                          <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
+                          <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {importResult && (
+              <div className="text-xs text-slate-300">
+                Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

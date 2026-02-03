@@ -44,6 +44,19 @@ function formatDuration(ms: number) {
   return `${m}m`;
 }
 
+function toLocalDateStr(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function eventLocalDate(ev: { timestamp_local?: string; timestamp_utc?: string }) {
+  if (ev.timestamp_local) return ev.timestamp_local.slice(0, 10);
+  if (ev.timestamp_utc) return toLocalDateStr(new Date(ev.timestamp_utc));
+  return '';
+}
+
 export default function AnprDashboardPage() {
   const [godownId, setGodownId] = useState('');
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
@@ -51,6 +64,16 @@ export default function AnprDashboardPage() {
   const [cameraId, setCameraId] = useState('');
   const [matchStatus, setMatchStatus] = useState('');
   const [limit, setLimit] = useState(500);
+  const [nowLabel, setNowLabel] = useState(() =>
+    new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(new Date())
+  );
 
   const [data, setData] = useState<AnprEventsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,13 +182,30 @@ export default function AnprDashboardPage() {
     };
   }, [godownId, cameraId, matchStatus, limit]);
 
+  useEffect(() => {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const t = setInterval(() => {
+      setNowLabel(formatter.format(new Date()));
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // 🔥 BUILD SESSIONS FROM EVENTS (DB-backed)
   const sessions = useMemo(() => {
     if (!data?.events) return [];
 
+    const todayStr = toLocalDateStr(new Date());
     const byPlate: Record<string, any[]> = {};
     for (const e of data.events) {
       if (!e?.plate_text) continue;
+      if (eventLocalDate(e) !== todayStr) continue;
       if (!byPlate[e.plate_text]) byPlate[e.plate_text] = [];
       byPlate[e.plate_text].push(e);
     }
@@ -205,14 +245,33 @@ export default function AnprDashboardPage() {
   }, [data]);
 
   return (
-    <div className="space-y-4">
-      <div className="text-xl font-semibold">ANPR Vehicle Sessions</div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="hud-pill">Live sessions</div>
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+            ANPR Vehicle Sessions
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            <span className="uppercase tracking-[0.18em] text-slate-400">Live</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]" />
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-200">
+              {nowLabel}
+            </span>
+          </div>
+        </div>
+        <div className="hud-card p-4 min-w-[220px]">
+          <div className="hud-label">Sessions</div>
+          <div className="hud-value">{sessions.length}</div>
+          <div className="text-xs text-slate-500">Refresh: 3s</div>
+        </div>
+      </div>
 
       {error && <ErrorBanner message={error} />}
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
-          <div className="font-medium">Filters</div>
+          <div className="text-lg font-semibold font-display">Filters</div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
@@ -256,12 +315,14 @@ export default function AnprDashboardPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="font-medium">Vehicle Entry / Exit Sessions</div>
+      <Card className="hud-card">
+        <CardHeader className="flex items-center justify-between">
+          <div className="text-lg font-semibold font-display">Vehicle Entry / Exit Sessions</div>
+          <div className="hud-pill">Active feed</div>
         </CardHeader>
-        <CardContent className="overflow-auto">
-          <Table>
+        <CardContent>
+          <div className="table-shell overflow-auto">
+            <Table>
             <THead>
               <TR>
                 <TH>Plate</TH>
@@ -287,8 +348,8 @@ export default function AnprDashboardPage() {
                     <TD className="font-semibold">{s.plate}</TD>
                     <TD>{statusBadge(s.status)}</TD>
                     <TD>{s.entryTime}</TD>
-                    <TD>{s.exitTime ?? '—'}</TD>
-                    <TD>{s.duration ?? '—'}</TD>
+                    <TD>{s.exitTime ?? 'N/A'}</TD>
+                    <TD>{s.duration ?? 'N/A'}</TD>
                     <TD>{Number(s.confidence || 0).toFixed(2)}</TD>
                     <TD>{s.camera}</TD>
                     <TD>
@@ -307,6 +368,7 @@ export default function AnprDashboardPage() {
               )}
             </TBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

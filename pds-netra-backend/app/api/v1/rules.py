@@ -213,6 +213,7 @@ def create_rule(
     return _to_rule_out(rule)
 
 
+
 @router.put("/{rule_id}", response_model=RuleOut)
 def update_rule(
     rule_id: int,

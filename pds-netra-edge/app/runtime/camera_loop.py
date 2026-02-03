@@ -40,7 +40,14 @@ from ..rules.evaluator import RulesEvaluator
 from ..cv.anpr import AnprProcessor, PlateDetector
 from ..rules.remote import fetch_rule_configs
 from ..cv.tamper import analyze_frame_for_tamper, CameraTamperState
-from ..config import Settings, HealthConfig, FaceRecognitionCameraConfig, CameraConfig, ZoneConfig, CameraModules
+from ..config import (
+    Settings,
+    HealthConfig,
+    FaceRecognitionCameraConfig,
+    CameraConfig,
+    ZoneConfig,
+    CameraModules,
+)
 from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces, detect_faces
 from ..cv.fire_detection import FireDetectionProcessor
 from ..watchlist.manager import WatchlistManager
@@ -437,6 +444,85 @@ def start_camera_loops(
             except Exception:
                 pass
 
+    def _create_anpr_processor_for_camera(
+        camera: CameraConfig,
+        zone_polygons: dict[str, list[tuple[int, int]]],
+        anpr_rules: List[BaseRule],
+        force_session_heuristic: bool = False,
+    ) -> Optional[AnprProcessor]:
+        if not (settings.anpr and settings.anpr.enabled):
+            return None
+        if not anpr_rules:
+            return None
+        anpr_cfg = settings.anpr
+        try:
+            gate_line = anpr_cfg.gate_line
+            inside_side = anpr_cfg.inside_side
+            dedup_interval = anpr_cfg.dedup_interval_sec
+            direction_inference = "LINE_CROSSING"
+            if camera.anpr is not None:
+                if camera.anpr.gate_line is not None:
+                    gate_line = camera.anpr.gate_line
+                if camera.anpr.inside_side is not None:
+                    inside_side = camera.anpr.inside_side
+                if camera.anpr.direction_inference:
+                    direction_inference = camera.anpr.direction_inference.strip().upper()
+                if camera.anpr.anpr_event_cooldown_seconds is not None:
+                    dedup_interval = camera.anpr.anpr_event_cooldown_seconds
+                elif camera.anpr.anpr_event_cooldown_seconds is None:
+                    dedup_interval = 10
+            if camera.role_explicit and str(camera.role).strip().upper() == "GATE_ANPR" and camera.anpr is None:
+                dedup_interval = 10
+            if force_session_heuristic:
+                direction_inference = "SESSION_HEURISTIC"
+            if direction_inference not in {"LINE_CROSSING", "SESSION_HEURISTIC"}:
+                direction_inference = "LINE_CROSSING"
+            if direction_inference == "SESSION_HEURISTIC":
+                gate_line = None
+
+            plate_detector = PlateDetector(
+                YoloDetector(
+                    model_name=anpr_cfg.model_path,
+                    device=anpr_cfg.device or device,
+                    conf=anpr_cfg.conf,
+                    iou=anpr_cfg.iou,
+                    imgsz=anpr_cfg.imgsz,
+                    classes=anpr_cfg.classes,
+                    max_det=anpr_cfg.max_det,
+                ),
+                plate_class_names=anpr_cfg.plate_class_names,
+            )
+            return AnprProcessor(
+                camera_id=camera.id,
+                godown_id=settings.godown_id,
+                rules=anpr_rules,
+                zone_polygons=zone_polygons,
+                timezone=settings.timezone,
+                plate_detector=plate_detector,
+                ocr_engine=None,
+                ocr_lang=anpr_cfg.ocr_lang,
+                ocr_gpu=str(anpr_cfg.device).lower() != "cpu",
+                ocr_every_n=anpr_cfg.ocr_every_n,
+                ocr_min_conf=anpr_cfg.ocr_min_conf,
+                ocr_debug=anpr_cfg.ocr_debug,
+                validate_india=anpr_cfg.validate_india,
+                show_invalid=anpr_cfg.show_invalid,
+                registered_file=anpr_cfg.registered_file,
+                save_crops_dir=anpr_cfg.save_crops_dir,
+                save_crops_max=anpr_cfg.save_crops_max,
+                dedup_interval_sec=dedup_interval,
+                gate_line=gate_line,
+                inside_side=inside_side,
+                direction_max_gap_sec=anpr_cfg.direction_max_gap_sec,
+            )
+        except Exception as exc:
+            logging.getLogger("camera_loop").error(
+                "Failed to initialize ANPR processor for camera %s: %s",
+                camera.id,
+                exc,
+            )
+            return None
+
     def _start_camera(camera: CameraConfig) -> None:
         with camera_lock:
             if camera.id in started_cameras:
@@ -533,71 +619,13 @@ def start_camera_loops(
         # Determine if ANPR rules apply for this camera
         anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
         anpr_processor: Optional[AnprProcessor] = None
-        if settings.anpr is not None and settings.anpr.enabled and modules.anpr_enabled:
-            anpr_cfg = settings.anpr
-            try:
-                gate_line = anpr_cfg.gate_line
-                inside_side = anpr_cfg.inside_side
-                dedup_interval = anpr_cfg.dedup_interval_sec
-                direction_inference = "LINE_CROSSING"
-                if camera.anpr is not None:
-                    if camera.anpr.gate_line is not None:
-                        gate_line = camera.anpr.gate_line
-                    if camera.anpr.inside_side is not None:
-                        inside_side = camera.anpr.inside_side
-                    if camera.anpr.direction_inference:
-                        direction_inference = camera.anpr.direction_inference.strip().upper()
-                    if camera.anpr.anpr_event_cooldown_seconds is not None:
-                        dedup_interval = camera.anpr.anpr_event_cooldown_seconds
-                    elif camera.anpr.anpr_event_cooldown_seconds is None:
-                        dedup_interval = 10
-                if camera.role_explicit and str(camera.role).strip().upper() == "GATE_ANPR" and camera.anpr is None:
-                    dedup_interval = 10
-                if not modules.gate_entry_exit_enabled:
-                    direction_inference = "SESSION_HEURISTIC"
-                if direction_inference not in {"LINE_CROSSING", "SESSION_HEURISTIC"}:
-                    direction_inference = "LINE_CROSSING"
-                if direction_inference == "SESSION_HEURISTIC":
-                    gate_line = None
-
-                plate_detector = PlateDetector(
-                    YoloDetector(
-                        model_name=anpr_cfg.model_path,
-                        device=anpr_cfg.device or device,
-                        conf=anpr_cfg.conf,
-                        iou=anpr_cfg.iou,
-                        imgsz=anpr_cfg.imgsz,
-                        classes=anpr_cfg.classes,
-                        max_det=anpr_cfg.max_det,
-                    ),
-                    plate_class_names=anpr_cfg.plate_class_names,
-                )
-                anpr_processor = AnprProcessor(
-                    camera_id=camera.id,
-                    godown_id=settings.godown_id,
-                    rules=anpr_rules,
-                    zone_polygons=zone_polygons,
-                    timezone=settings.timezone,
-                    plate_detector=plate_detector,
-                    ocr_engine=None,
-                    ocr_lang=anpr_cfg.ocr_lang,
-                    ocr_gpu=str(anpr_cfg.device).lower() != "cpu",
-                    ocr_every_n=anpr_cfg.ocr_every_n,
-                    ocr_min_conf=anpr_cfg.ocr_min_conf,
-                    ocr_debug=anpr_cfg.ocr_debug,
-                    validate_india=anpr_cfg.validate_india,
-                    show_invalid=anpr_cfg.show_invalid,
-                    registered_file=anpr_cfg.registered_file,
-                    save_crops_dir=anpr_cfg.save_crops_dir,
-                    save_crops_max=anpr_cfg.save_crops_max,
-                    dedup_interval_sec=dedup_interval,
-                    gate_line=gate_line,
-                    inside_side=inside_side,
-                    direction_max_gap_sec=anpr_cfg.direction_max_gap_sec,
-                )
-            except Exception as exc:
-                logger.error("Failed to initialize ANPR processor for camera %s: %s", camera.id, exc)
-                anpr_processor = None
+        if modules.anpr_enabled:
+            anpr_processor = _create_anpr_processor_for_camera(
+                camera,
+                zone_polygons,
+                anpr_rules,
+                force_session_heuristic=not modules.gate_entry_exit_enabled,
+            )
     
         # Initialise health state for this camera
         # Use provided health configuration or a default instance
@@ -1455,8 +1483,17 @@ def start_camera_loops(
                 anpr_rules = [r for r in cam_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
                 if modules is not None and not modules.anpr_enabled:
                     bundle.anpr_processor = None
+                elif not anpr_rules:
+                    bundle.anpr_processor = None
                 elif bundle.anpr_processor is not None:
                     bundle.anpr_processor.update_rules(anpr_rules)
+                elif cam_cfg is not None:
+                    bundle.anpr_processor = _create_anpr_processor_for_camera(
+                        cam_cfg,
+                        bundle.zone_polygons,
+                        anpr_rules,
+                        force_session_heuristic=not modules.gate_entry_exit_enabled,
+                    )
 
         def _rules_sync_loop() -> None:
             backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001")
