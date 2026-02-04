@@ -316,16 +316,25 @@ def _ensure_blacklist_alert(
         Alert.status.in_(["OPEN", "ACK"]),
     )
     if person_id:
+        candidates = None
         if db.bind and db.bind.dialect.name == "sqlite":
             candidates = q.all()
+        else:
+            try:
+                existing = q.filter(Alert.extra["person_id"].astext == person_id).first()
+                if existing:
+                    candidates = None
+                else:
+                    candidates = []
+            except Exception:
+                candidates = q.all()
+        if candidates is not None:
             existing = None
             for alert in candidates:
                 extra = alert.extra or {}
                 if extra.get("person_id") == person_id:
                     existing = alert
                     break
-        else:
-            existing = q.filter(Alert.extra["person_id"].astext == person_id).first()
     else:
         existing = q.first()
 

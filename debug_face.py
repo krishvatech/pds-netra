@@ -5,7 +5,7 @@ from pathlib import Path
 import traceback
 
 # Setup path
-project_root = Path("/home/shruti/pds-netra/pds-netra")
+project_root = Path("/Users/krishva/Projects/PDS-Netra-Project/pds-netra")
 edge_path = project_root / "pds-netra-edge"
 sys.path.append(str(edge_path))
 
@@ -14,7 +14,7 @@ try:
     from tools.generate_face_embedding import compute_embedding
     print("Import successful.", flush=True)
     
-    image_path = "/home/shruti/.gemini/antigravity/brain/9e1f93e3-7d07-478a-b049-d55be703d998/uploaded_media_1769577881708.png"
+    image_path = "path/to/your/face_image.jpg"
     
     print(f"Testing compute_embedding on {image_path}", flush=True)
     embedding = compute_embedding(image_path)

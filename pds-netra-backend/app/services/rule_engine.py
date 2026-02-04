@@ -607,7 +607,7 @@ def _handle_fire_detected(db: Session, event: Event) -> bool:
             Alert.godown_id == event.godown_id,
             Alert.camera_id == event.camera_id,
             Alert.alert_type == "FIRE_DETECTED",
-            Alert.status.in_(["OPEN", "ACK"]),
+            Alert.status == "OPEN",
         )
         .order_by(Alert.start_time.desc())
         .first()
@@ -636,6 +636,7 @@ def _handle_fire_detected(db: Session, event: Event) -> bool:
             Alert.godown_id == event.godown_id,
             Alert.camera_id == event.camera_id,
             Alert.alert_type == "FIRE_DETECTED",
+            Alert.status != "ACK",
             Alert.start_time >= cutoff,
         )
         .order_by(Alert.start_time.desc())
@@ -761,7 +762,7 @@ def _handle_animal_intrusion(db: Session, event: Event) -> bool:
             Alert.godown_id == event.godown_id,
             Alert.camera_id == event.camera_id,
             Alert.alert_type == "ANIMAL_INTRUSION",
-            Alert.status.in_(["OPEN", "ACK"]),
+            Alert.status == "OPEN",
         )
         .order_by(Alert.start_time.desc())
         .first()
@@ -798,6 +799,7 @@ def _handle_animal_intrusion(db: Session, event: Event) -> bool:
             Alert.godown_id == event.godown_id,
             Alert.camera_id == event.camera_id,
             Alert.alert_type == "ANIMAL_INTRUSION",
+            Alert.status != "ACK",
             Alert.start_time >= cutoff,
         )
         .order_by(Alert.start_time.desc())

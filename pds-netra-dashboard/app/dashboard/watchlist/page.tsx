@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { AlertItem, WatchlistPerson } from '@/lib/types';
+import type { AlertItem, AlertStatus, WatchlistPerson } from '@/lib/types';
 import { createWatchlistPerson, getAlerts, getWatchlistPersons } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -64,6 +64,7 @@ export default function WatchlistPage() {
   const [minScore, setMinScore] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!matchGodown) {
@@ -74,7 +75,7 @@ export default function WatchlistPage() {
 
   const matchParams = useMemo(() => ({
     alert_type: 'BLACKLIST_PERSON_MATCH',
-    status: 'OPEN',
+    status: 'OPEN' as AlertStatus,
     page: 1,
     page_size: 50,
     godown_id: matchGodown || undefined,
@@ -120,7 +121,8 @@ export default function WatchlistPage() {
           return;
         }
         const resp = await getAlerts(matchParams);
-        if (mounted) setMatches(resp.items ?? []);
+        const items = Array.isArray(resp) ? resp : resp.items ?? [];
+        if (mounted) setMatches(items);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load matches');
       }
@@ -261,13 +263,40 @@ export default function WatchlistPage() {
               </div>
               <div>
                 <Label>Date from</Label>
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setDateNotice(null);
+                    setDateFrom(next);
+                    if (next && dateTo && next > dateTo) {
+                      setDateTo(next);
+                      setDateNotice('Adjusted Date to to keep the range valid.');
+                    }
+                  }}
+                />
               </div>
               <div>
                 <Label>Date to</Label>
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                <Input
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setDateNotice(null);
+                    setDateTo(next);
+                    if (dateFrom && next && next < dateFrom) {
+                      setDateFrom(next);
+                      setDateNotice('Adjusted Date from to keep the range valid.');
+                    }
+                  }}
+                />
               </div>
             </div>
+            {dateNotice && <div className="text-xs text-amber-300 mb-4">{dateNotice}</div>}
             <div className="table-shell overflow-auto">
               <table className="min-w-full text-sm">
                 <thead>

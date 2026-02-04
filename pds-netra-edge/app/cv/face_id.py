@@ -356,6 +356,9 @@ class FaceRecognitionProcessor:
         faces: List[Tuple[List[int], List[float]]],
         now_utc: datetime.datetime,
         mqtt_client: MQTTClient,
+        *,
+        snapshotter=None,
+        frame=None,
     ) -> List[FaceOverlay]:
         """Process precomputed face detections and embeddings."""
         if not self.global_config.enabled:
@@ -466,16 +469,23 @@ class FaceRecognitionProcessor:
                     dedup_key = (match_status, self.camera_config.zone_id)
                     if not self._should_emit(dedup_key, now_utc):
                         continue
+                    event_id = str(uuid.uuid4())
+                    snapshot_url = None
+                    if snapshotter is not None and frame is not None:
+                        try:
+                            snapshot_url = snapshotter(frame, event_id, now_utc, bbox=bbox, label="Unauthorized Person")
+                        except Exception:
+                            snapshot_url = None
                     event = EventModel(
                         godown_id=self.godown_id,
                         camera_id=self.camera_id,
-                        event_id=str(uuid.uuid4()),
+                        event_id=event_id,
                         event_type=event_type,
                         severity=severity,
                         timestamp_utc=timestamp_iso,
                         bbox=bbox,
                         track_id=0,
-                        image_url=None,
+                        image_url=snapshot_url,
                         clip_url=None,
                         meta=MetaModel(
                             zone_id=self.camera_config.zone_id,

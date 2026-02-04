@@ -1,0 +1,49 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./deployment/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf
+      - ./deployment/mosquitto/pwfile:/mosquitto/config/pwfile
+      - ./deployment/mosquitto/data:/mosquitto/data
+      - ./deployment/mosquitto/log:/mosquitto/log
+
+  backend:
+    build:
+      context: ./pds-netra-backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./deployment/env/backend.env
+    depends_on:
+      - mosquitto
+    volumes:
+      - ./deployment/data/backend:/opt/app/data
+
+  dashboard:
+    build:
+      context: ./pds-netra-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./deployment/env/dashboard.env
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file:
+      - ./deployment/.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deployment/caddy/data:/data
+      - ./deployment/caddy/config:/config
+    depends_on:
+      - dashboard
+      - backend

@@ -17,6 +17,7 @@ import urllib.error
 from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Optional
+from urllib.parse import urlparse
 from ..core.config import settings
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -82,6 +83,47 @@ class WhatsAppHttpProvider(NotificationProvider):
     def send_call(self, to: str, message: str) -> Optional[str]:
         return None
 
+class WhatsAppTwilioProvider(NotificationProvider):
+    def __init__(self) -> None:
+        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        self.from_whatsapp = os.getenv("TWILIO_WHATSAPP_FROM")
+
+        if not self.account_sid or not self.auth_token or not self.from_whatsapp:
+            raise RuntimeError(
+                "Twilio WhatsApp config missing. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM."
+            )
+
+        try:
+            from twilio.rest import Client  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("Twilio SDK not installed. Run: pip install twilio") from exc
+
+        self.client = Client(self.account_sid, self.auth_token)
+
+    def _normalize_to(self, to: str) -> str:
+        t = (to or "").strip()
+        if not t:
+            raise RuntimeError("WhatsApp target is empty")
+        if t.startswith("whatsapp:"):
+            return t
+        if t.startswith("+"):
+            return f"whatsapp:{t}"
+        return f"whatsapp:+{t}"
+
+    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+        kwargs = {
+            "from_": self.from_whatsapp,
+            "to": self._normalize_to(to),
+            "body": message,
+        }
+        if media_url:
+            kwargs["media_url"] = [media_url]
+        msg = self.client.messages.create(**kwargs)
+        return getattr(msg, "sid", None)
+
+    def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
+        return None
 
 class EmailLogProvider(NotificationProvider):
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
@@ -274,13 +316,28 @@ class ProviderSet:
 
     def send(self, outbox: NotificationOutbox) -> Optional[str]:
         if outbox.channel == "WHATSAPP":
-            return self.whatsapp.send_whatsapp(outbox.target, outbox.message, outbox.media_url)
+            media_url = outbox.media_url
+            # Avoid media URLs that are only reachable locally (Twilio can't fetch them).
+            if _is_local_media_url(media_url):
+                media_url = None
+            return self.whatsapp.send_whatsapp(outbox.target, outbox.message, media_url)
         if outbox.channel == "EMAIL":
             subject = outbox.subject or "PDS Netra Alert"
             return self.email.send_email(outbox.target, subject, outbox.message)
         if outbox.channel == "CALL":
             return self.call.send_call(outbox.target, outbox.message)
         raise RuntimeError(f"Unsupported channel: {outbox.channel}")
+
+
+def _is_local_media_url(url: Optional[str]) -> bool:
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return False
+    return host in {"localhost", "127.0.0.1", "0.0.0.0"} or host.startswith("127.")
 
 
 def _build_providers() -> ProviderSet:
@@ -291,8 +348,11 @@ def _build_providers() -> ProviderSet:
     if not provider:
         provider = "http" if http_url else "log"
 
-    if provider in {"http", "twilio", "meta"}:
-        whatsapp = WhatsAppHttpProvider(http_url or "", (os.getenv("WHATSAPP_HTTP_TOKEN") or "").strip() or None)
+    if provider == "twilio":
+        whatsapp = WhatsAppTwilioProvider()
+    elif provider in {"http", "meta"}:
+        token = (os.getenv("WHATSAPP_HTTP_TOKEN") or "").strip()
+        whatsapp = WhatsAppHttpProvider(http_url or "", token or None)
     else:
         whatsapp = WhatsAppLogProvider()
 

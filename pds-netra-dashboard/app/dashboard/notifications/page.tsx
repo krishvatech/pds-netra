@@ -432,7 +432,7 @@ export default function NotificationsPage() {
               <Input value={filterGodown} onChange={(e) => setFilterGodown(e.target.value)} placeholder="Auto (from login)" />
             </div>
             <div className="flex items-end">
-              <Button variant="outline" onClick={() => loadEndpoints({ showToast: true })}>Refresh</Button>
+              <Button className="btn-refresh" variant="outline" onClick={() => loadEndpoints({ showToast: true })}>Refresh</Button>
             </div>
           </div>
 

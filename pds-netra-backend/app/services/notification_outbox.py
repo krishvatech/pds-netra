@@ -5,11 +5,11 @@ Notification outbox helpers and alert message templating.
 from __future__ import annotations
 
 import datetime
-import html
-import json
 import logging
 import os
 from dataclasses import dataclass
+import html
+import json
 from typing import Any, Iterable, Optional
 
 from sqlalchemy.orm import Session
@@ -181,8 +181,6 @@ def _build_call_script(segments: list[str]) -> str:
     if script and not script.endswith("."):
         script += "."
     return script or "PDS Netra alert."
-
-
 def _evidence_url(alert: Alert, event: Optional[Event]) -> Optional[str]:
     extra = alert.extra if isinstance(alert.extra, dict) else {}
     for key in ("snapshot_url", "clip_url", "image_url"):
@@ -281,17 +279,7 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         lines.append(f"Evidence: {evidence}")
     if link:
         lines.append(f"Dashboard: {link}")
-    meta_rows = _build_metadata_rows(
-        alert=alert,
-        event=event,
-        camera=camera,
-        camera_name=camera_name,
-        godown_name=godown_name,
-    )
-    whatsapp_lines = lines[:]
-    for label, value in meta_rows[:5]:
-        whatsapp_lines.append(f"{label}: {value}")
-    whatsapp_text = "\n".join(whatsapp_lines)
+    whatsapp_text = "\n".join(lines[:4]) if len(lines) > 4 else "\n".join(lines)
 
     call_segments = [
         f"{alert_title} at {godown_name}",
@@ -314,9 +302,6 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         email_body += f"<p><strong>Evidence:</strong> <a href=\"{evidence}\">{evidence}</a></p>"
     if link:
         email_body += f"<p><strong>Dashboard:</strong> <a href=\"{link}\">{link}</a></p>"
-    detail_table = _render_meta_table(meta_rows)
-    if detail_table:
-        email_body += "<h4>Details</h4>" + detail_table
 
     return NotificationContent(
         title=alert_title,

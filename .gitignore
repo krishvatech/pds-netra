@@ -45,6 +45,12 @@ pds-netra-backend/data/snapshots/
 pds-netra-backend/data/annotated/
 pds-netra-backend/data/edge_overrides/
 pds-netra-backend/data/live/
+pds-netra-backend/data/watchlist/
 
 # Docker
 *.env
+
+# PDS Netra edge known faces (local)
+pds-netra-edge/config/known_faces.json
+# PDS Netra edge watchlist (local)
+data/watchlist/watchlist_cache.json

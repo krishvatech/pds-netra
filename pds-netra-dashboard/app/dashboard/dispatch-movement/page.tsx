@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { AlertItem, VehicleGateSession } from '@/lib/types';
+import type { AlertItem, AlertStatus, VehicleGateSession } from '@/lib/types';
 import { getAlerts, getVehicleGateSessions } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -67,9 +67,10 @@ export default function DispatchMovementPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [godownId, setGodownId] = useState('');
   const [plateQuery, setPlateQuery] = useState('');
-  const [status, setStatus] = useState<string>('OPEN');
+  const [status, setStatus] = useState<AlertStatus | ''>('OPEN');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -123,7 +124,8 @@ export default function DispatchMovementPage() {
         ]);
         if (mounted) {
           setSessions(sessionsResp.items ?? []);
-          setAlerts(alertsResp.items ?? []);
+          const items = Array.isArray(alertsResp) ? alertsResp : alertsResp.items ?? [];
+          setAlerts(items);
         }
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load dispatch movement data');
@@ -184,7 +186,7 @@ export default function DispatchMovementPage() {
               <Label>Status</Label>
               <Select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as AlertStatus | '')}
                 options={[
                   { label: 'Open', value: 'OPEN' },
                   { label: 'Closed', value: 'CLOSED' },
@@ -194,13 +196,40 @@ export default function DispatchMovementPage() {
             </div>
             <div>
               <Label>Entry from</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateFrom(next);
+                  if (next && dateTo && next > dateTo) {
+                    setDateTo(next);
+                    setDateNotice('Adjusted Entry to to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>Entry to</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateTo(next);
+                  if (dateFrom && next && next < dateFrom) {
+                    setDateFrom(next);
+                    setDateNotice('Adjusted Entry from to keep the range valid.');
+                  }
+                }}
+              />
             </div>
           </div>
+          {dateNotice && <div className="text-xs text-amber-300 mt-2">{dateNotice}</div>}
         </CardContent>
       </Card>
 

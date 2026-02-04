@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { AlertItem } from '@/lib/types';
+import type { AlertItem, AlertStatus } from '@/lib/types';
 import { getAlerts } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -45,10 +45,11 @@ export default function AfterHoursPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('person');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [godownId, setGodownId] = useState('');
-  const [status, setStatus] = useState<string>('OPEN');
+  const [status, setStatus] = useState<AlertStatus | ''>('OPEN');
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -87,7 +88,8 @@ export default function AfterHoursPage() {
           return;
         }
         const resp = await getAlerts(params);
-        if (mounted) setAlerts(resp.items ?? []);
+        const items = Array.isArray(resp) ? resp : resp.items ?? [];
+        if (mounted) setAlerts(items);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load after-hours alerts');
       }
@@ -143,7 +145,7 @@ export default function AfterHoursPage() {
               <Label>Status</Label>
               <Select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as AlertStatus | '')}
                 options={[
                   { label: 'All', value: '' },
                   { label: 'Open', value: 'OPEN' },
@@ -154,11 +156,37 @@ export default function AfterHoursPage() {
             </div>
             <div>
               <Label>Date from</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateFrom(next);
+                  if (next && dateTo && next > dateTo) {
+                    setDateTo(next);
+                    setDateNotice('Adjusted Date to to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>Date to</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateTo(next);
+                  if (dateFrom && next && next < dateFrom) {
+                    setDateFrom(next);
+                    setDateNotice('Adjusted Date from to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div className="flex items-end">
               <Button
@@ -169,6 +197,7 @@ export default function AfterHoursPage() {
               </Button>
             </div>
           </div>
+          {dateNotice && <div className="text-xs text-amber-300 mt-2">{dateNotice}</div>}
         </CardContent>
       </Card>
 

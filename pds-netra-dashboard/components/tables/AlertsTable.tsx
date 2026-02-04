@@ -5,6 +5,12 @@ import type { AlertItem } from '@/lib/types';
 import { formatUtc, humanAlertType, severityBadgeClass } from '@/lib/formatters';
 
 export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
+  const formatScore = (raw?: unknown) => {
+    if (raw === null || raw === undefined) return null;
+    const val = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isNaN(val)) return null;
+    return val.toFixed(3);
+  };
   return (
     <div className="table-shell overflow-auto">
       <Table>
@@ -26,6 +32,12 @@ export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
                 <Link href={`/dashboard/alerts/${encodeURIComponent(a.id)}`} className="font-medium hover:underline">
                   {humanAlertType(a.alert_type)}
                 </Link>
+                {a.alert_type === 'BLACKLIST_PERSON_MATCH' && (a.key_meta?.person_name || a.key_meta?.person_id) ? (
+                  <div className="text-xs text-slate-500 mt-1">
+                    Blacklisted: {a.key_meta?.person_name ?? 'Unknown'}
+                    {formatScore(a.key_meta?.match_score) ? ` | Match ${formatScore(a.key_meta?.match_score)}` : ''}
+                  </div>
+                ) : null}
                 {a.key_meta?.reason ? (
                   <div className="text-xs text-slate-500 mt-1">Reason: {a.key_meta.reason}</div>
                 ) : null}
