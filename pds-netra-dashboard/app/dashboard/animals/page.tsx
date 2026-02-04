@@ -46,6 +46,7 @@ export default function AnimalsPage() {
   const [onlyNight, setOnlyNight] = useState(true);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,11 +146,37 @@ export default function AnimalsPage() {
             </div>
             <div>
               <Label>Date from</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateFrom(next);
+                  if (next && dateTo && next > dateTo) {
+                    setDateTo(next);
+                    setDateNotice('Adjusted Date to to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>Date to</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateTo(next);
+                  if (dateFrom && next && next < dateFrom) {
+                    setDateFrom(next);
+                    setDateNotice('Adjusted Date from to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div className="flex items-end">
               <Button variant={onlyNight ? 'default' : 'outline'} onClick={() => setOnlyNight((prev) => !prev)}>
@@ -157,6 +184,7 @@ export default function AnimalsPage() {
               </Button>
             </div>
           </div>
+          {dateNotice && <div className="text-xs text-amber-300 mt-2">{dateNotice}</div>}
         </CardContent>
       </Card>
 

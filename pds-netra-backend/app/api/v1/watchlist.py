@@ -5,7 +5,7 @@ Watchlist management APIs.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
@@ -48,14 +48,15 @@ def create_person(
     alias: Optional[str] = Form(None),
     reason: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    reference_images: Optional[List[UploadFile]] = File(None),
+    reference_images: Optional[Union[UploadFile, List[UploadFile]]] = File(None),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
     person = watchlist_service.create_person(db, name=name, alias=alias, reason=reason, notes=notes)
     if reference_images:
         images_payload = []
-        for img in reference_images:
+        images_list = reference_images if isinstance(reference_images, list) else [reference_images]
+        for img in images_list:
             data = img.file.read()
             images_payload.append((data, img.content_type, img.filename))
         watchlist_service.add_person_images(db, person=person, images=images_payload)
@@ -105,7 +106,7 @@ def deactivate_person(
 @router.post("/persons/{person_id}/images")
 def add_images(
     person_id: str,
-    reference_images: List[UploadFile] = File(...),
+    reference_images: Union[UploadFile, List[UploadFile]] = File(...),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
@@ -113,7 +114,8 @@ def add_images(
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
     images_payload = []
-    for img in reference_images:
+    images_list = reference_images if isinstance(reference_images, list) else [reference_images]
+    for img in images_list:
         data = img.file.read()
         images_payload.append((data, img.content_type, img.filename))
     watchlist_service.add_person_images(db, person=person, images=images_payload)

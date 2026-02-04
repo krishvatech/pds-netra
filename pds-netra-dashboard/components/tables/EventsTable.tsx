@@ -11,6 +11,12 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
     if (url.startsWith('/media/')) return `${apiBase}${url}`;
     return url;
   };
+  const formatScore = (raw?: unknown) => {
+    if (raw === null || raw === undefined) return null;
+    const val = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isNaN(val)) return null;
+    return val.toFixed(3);
+  };
   return (
     <div className="table-shell overflow-auto">
       <Table>
@@ -35,6 +41,12 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
                   : e.event_type === 'ANIMAL_INTRUSION' && (e.meta?.animal_species || e.meta?.animal_label)
                     ? `Animal Intrusion: ${e.meta?.animal_label ?? e.meta?.animal_species}`
                     : humanEventType(e.event_type)}
+                {e.event_type === 'FACE_MATCH' && (e.meta?.person_name || e.meta?.person_id) ? (
+                  <div className="text-xs text-slate-500 mt-1">
+                    Blacklisted: {e.meta?.person_name ?? 'Unknown'}
+                    {formatScore(e.meta?.match_score) ? ` | Match ${formatScore(e.meta?.match_score)}` : ''}
+                  </div>
+                ) : null}
                 {e.event_type === 'FACE_IDENTIFIED' && (e.meta?.person_id || e.meta?.person_name) ? (
                   <div className="text-xs text-slate-500 mt-1">
                     Authorized: {e.meta.person_name ?? 'Unknown'}{e.meta.person_id ? ` (${e.meta.person_id})` : ''}

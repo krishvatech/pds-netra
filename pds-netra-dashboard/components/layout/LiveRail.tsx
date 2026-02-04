@@ -72,6 +72,22 @@ function alertTitle(alert: AlertItem): string {
   return animal ? `${base} • ${animal}` : base;
 }
 
+function formatScore(raw?: unknown) {
+  if (raw === null || raw === undefined) return null;
+  const val = typeof raw === 'number' ? raw : Number(raw);
+  if (Number.isNaN(val)) return null;
+  return val.toFixed(3);
+}
+
+function alertDetail(alert: AlertItem): string | null {
+  if (alert.alert_type === 'BLACKLIST_PERSON_MATCH') {
+    const name = alert.key_meta?.person_name ?? 'Unknown';
+    const score = formatScore(alert.key_meta?.match_score);
+    return score ? `Blacklisted: ${name} | Match ${score}` : `Blacklisted: ${name}`;
+  }
+  return null;
+}
+
 function alertEpoch(alert: AlertItem): number | null {
   const ts = alert.end_time ?? alert.start_time;
   if (!ts) return null;
@@ -303,6 +319,9 @@ export function LiveRail() {
             <div className="mt-1 text-sm font-semibold text-white">
               {alertTitle(alert)}
             </div>
+            {alertDetail(alert) ? (
+              <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
+            ) : null}
             {alert.key_meta?.reason ? (
               <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
             ) : null}
@@ -357,6 +376,9 @@ export function MobileRail() {
         <div className="text-sm font-semibold text-white truncate">
           {alertTitle(latest)}
         </div>
+        {alertDetail(latest) ? (
+          <div className="text-xs text-slate-300 truncate">{alertDetail(latest)}</div>
+        ) : null}
         {latest.key_meta?.reason ? (
           <div className="text-xs text-slate-300 truncate">Reason: {latest.key_meta.reason}</div>
         ) : null}

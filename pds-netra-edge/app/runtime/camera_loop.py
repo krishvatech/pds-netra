@@ -1060,7 +1060,13 @@ def start_camera_loops(
                             )
                     if face_processor_local is not None:
                         try:
-                            face_overlays = face_processor_local.process_faces(faces, now, mqtt_client) or []
+                            face_overlays = face_processor_local.process_faces(
+                                faces,
+                                now,
+                                mqtt_client,
+                                snapshotter=snapshotter,
+                                frame=frame,
+                            ) or []
                         except Exception as exc:
                             logging.getLogger("camera_loop").exception(
                                 "Face recognition failed for camera %s: %s", camera_obj.id, exc

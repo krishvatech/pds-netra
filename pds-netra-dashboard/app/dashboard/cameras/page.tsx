@@ -384,7 +384,7 @@ export default function CamerasPage() {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => loadCameras({ showToast: true })}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md transition-colors text-sm font-medium"
+            className="btn-refresh px-4 py-2 rounded-md transition-colors text-sm font-medium"
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}

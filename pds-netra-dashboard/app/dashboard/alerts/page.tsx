@@ -33,6 +33,7 @@ export default function AlertsPage() {
   const [status, setStatus] = useState<string>('OPEN');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -179,13 +180,40 @@ export default function AlertsPage() {
 
             <div className="md:col-span-3">
               <Label>Date from</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateFrom(next);
+                  if (next && dateTo && next > dateTo) {
+                    setDateTo(next);
+                    setDateNotice('Adjusted Date to to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div className="md:col-span-3">
               <Label>Date to</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateTo(next);
+                  if (dateFrom && next && next < dateFrom) {
+                    setDateFrom(next);
+                    setDateNotice('Adjusted Date from to keep the range valid.');
+                  }
+                }}
+              />
             </div>
           </div>
+          {dateNotice && <div className="text-xs text-amber-300 mb-4">{dateNotice}</div>}
 
           {activeFilters.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
