@@ -2,7 +2,7 @@
 
 ## Routing policy (implemented)
 
-- **Godown Manager** receives **real-time alerts** via WhatsApp + Email.
+- **Godown Manager** receives **real-time alerts** via WhatsApp, Email, and optional Twilio voice calls.
 - **HQ** receives **digest reports only** (no individual alert pings).
 
 This routing is enforced in `app/services/notification_outbox.py`.
@@ -27,9 +27,17 @@ This routing is enforced in `app/services/notification_outbox.py`.
 - `WHATSAPP_HTTP_URL`
 - `WHATSAPP_HTTP_TOKEN`
 
+### Voice call (Twilio)
+
+- `CALL` channel rows trigger Twilio voice calls with a short spoken summary.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_CALL_FROM_NUMBER`
+- Optional tuning: `TWILIO_CALL_VOICE` (default `alice`), `TWILIO_CALL_LANGUAGE` (default `en-US`), `TWILIO_CALL_TIMEOUT`
+- When Twilio credentials are missing, the worker logs calls instead of dialing.
+
 ### Email
 
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_USE_TLS`
+- Local dev tip: run Mailhog (`docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`), then point `SMTP_HOST=127.0.0.1`, `SMTP_PORT=1025`, `SMTP_STARTTLS=false`, and inspect every alert at http://localhost:8025.
 
 If not configured, log providers are used (safe for PoC).
 

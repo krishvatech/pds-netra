@@ -11,6 +11,19 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
+Start Mailhog if you want to capture notification emails:
+
+```bash
+docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog
+export SMTP_HOST=127.0.0.1
+export SMTP_PORT=1025
+export SMTP_STARTTLS=false
+export SMTP_FROM="alerts@pdsnetra.local"
+export SMTP_TO="you@example.com"
+```
+
+Preview email deliveries at http://localhost:8025 while developing.
+
 ### 2) Worker
 
 ```bash

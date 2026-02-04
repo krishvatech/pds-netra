@@ -13,6 +13,13 @@ from __future__ import annotations
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_PATH, override=False)
+
+
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
@@ -33,6 +40,11 @@ class Settings(BaseSettings):
     auto_seed_cameras_from_edge: bool = Field(default=True, env="AUTO_SEED_CAMERAS_FROM_EDGE")
     enable_mqtt_consumer: bool = Field(default=True, env="ENABLE_MQTT_CONSUMER")
     edge_config_path: str | None = Field(default=None, env="EDGE_CONFIG_PATH")
+    smtp_host: str | None = Field(default=None, env="SMTP_HOST")
+    smtp_port: int | None = Field(default=None, env="SMTP_PORT")
+    smtp_user: str | None = Field(default=None, env="SMTP_USER")
+    smtp_password: str | None = Field(default=None, env="SMTP_PASSWORD")
+    smtp_from: str | None = Field(default=None, env="SMTP_FROM")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

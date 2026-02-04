@@ -5,14 +5,14 @@ See `docs/notifications-routing.md` for the routing policy (Godown Manager realt
 
 ## Overview
 - Alerts are created by existing services (rules, watchlist, dispatch watchdog, etc.).
-- When an alert is created, a **notification outbox** row is enqueued for each recipient/channel.
+- When an alert is created, a **notification outbox** row is enqueued for each recipient/channel (Email, WhatsApp, or Twilio `CALL`).
 - A dedicated worker processes the outbox asynchronously, retries on failure, and logs delivery status.
 
 ## Data model
 **notification_endpoints**
 - `scope`: `HQ` or `GODOWN_MANAGER`
 - `godown_id`: required for `GODOWN_MANAGER` scope
-- `channel`: `WHATSAPP` or `EMAIL`
+- `channel`: `WHATSAPP`, `EMAIL`, or `CALL`
 - `target`: phone number or email
 - `is_enabled`: enable/disable delivery
 
@@ -35,12 +35,21 @@ SMTP_PASS=pass
 SMTP_FROM=alerts@example.com
 SMTP_USE_TLS=true
 
+TWILIO_ACCOUNT_SID=your_account_sid
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_CALL_FROM_NUMBER=+1234567890
+TWILIO_CALL_VOICE=alice
+TWILIO_CALL_LANGUAGE=en-US
+TWILIO_CALL_TIMEOUT=10
+
 NOTIFY_WORKER_INTERVAL_SEC=10
 NOTIFY_WORKER_BATCH_SIZE=50
 NOTIFY_MAX_ATTEMPTS=5
 
 DASHBOARD_BASE_URL=https://dashboard.example.com
 ```
+
+Voice call alerts rely on Twilio voice APIs (see `TWILIO_*` variables above) and are dispatched whenever a `CALL` channel row is enqueued.
 
 If no provider is configured, the worker uses log providers and marks messages as sent (useful for local development).
 

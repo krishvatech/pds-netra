@@ -151,6 +151,25 @@
       "threshold_distance": null,
       "allowed_plates": null,
       "blocked_plates": null
+    },
+    {
+      "id": "19",
+      "type": "ANPR_MONITOR",
+      "camera_id": "CAM_GATE_2",
+      "zone_id": "all",
+      "start_time": null,
+      "end_time": null,
+      "start": null,
+      "end": null,
+      "threshold_seconds": null,
+      "start_local": null,
+      "end_local": null,
+      "cooldown_seconds": null,
+      "require_active_dispatch_plan": null,
+      "allowed_overage_percent": null,
+      "threshold_distance": null,
+      "allowed_plates": null,
+      "blocked_plates": null
     }
   ]
 }

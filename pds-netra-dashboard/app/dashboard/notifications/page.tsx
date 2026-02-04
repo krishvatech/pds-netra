@@ -83,7 +83,7 @@ export default function NotificationsPage() {
       const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
       return emailOk ? '' : 'Enter a valid email address';
     }
-    if (form.channel === 'WHATSAPP') {
+    if (form.channel === 'WHATSAPP' || form.channel === 'CALL') {
       const phoneOk = /^\+?[1-9]\d{7,14}$/.test(trimmed);
       return phoneOk ? '' : 'Enter a valid phone number (E.164)';
     }
@@ -283,7 +283,7 @@ export default function NotificationsPage() {
           <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
             Notification Routing
           </div>
-          <div className="text-sm text-slate-300">Manage HQ + godown recipients for WhatsApp and Email alerts.</div>
+          <div className="text-sm text-slate-300">Manage HQ + godown recipients for WhatsApp, Email, and Call alerts.</div>
         </div>
         <div className="intel-banner">HQ only</div>
       </div>
@@ -331,7 +331,8 @@ export default function NotificationsPage() {
                 onChange={(e) => setForm((s) => ({ ...s, channel: e.target.value }))}
                 options={[
                   { label: 'Email', value: 'EMAIL' },
-                  { label: 'WhatsApp', value: 'WHATSAPP' }
+                  { label: 'WhatsApp', value: 'WHATSAPP' },
+                  { label: 'Call', value: 'CALL' }
                 ]}
               />
             </div>
@@ -340,10 +341,18 @@ export default function NotificationsPage() {
               <Input
                 value={form.target}
                 onChange={(e) => setForm((s) => ({ ...s, target: e.target.value }))}
-                placeholder={form.channel === 'EMAIL' ? 'name@example.com' : '+91XXXXXXXXXX'}
+                placeholder={
+                  form.channel === 'EMAIL'
+                    ? 'name@example.com'
+                    : form.channel === 'CALL'
+                    ? '+1XXXXXXXXXX'
+                    : '+91XXXXXXXXXX'
+                }
               />
               <div className="mt-1 text-[11px] text-slate-400">
-                {form.channel === 'EMAIL' ? 'Format: name@example.com' : 'Format: E.164, e.g., +91XXXXXXXXXX'}
+                {form.channel === 'EMAIL'
+                  ? 'Format: name@example.com'
+                  : 'Format: E.164, e.g., +1XXXXXXXXXX'}
               </div>
               {targetValidation && (
                 <div className="mt-1 text-xs text-rose-300">{targetValidation}</div>
@@ -413,7 +422,8 @@ export default function NotificationsPage() {
                 options={[
                   { label: 'All', value: '' },
                   { label: 'Email', value: 'EMAIL' },
-                  { label: 'WhatsApp', value: 'WHATSAPP' }
+                  { label: 'WhatsApp', value: 'WHATSAPP' },
+                  { label: 'Call', value: 'CALL' }
                 ]}
               />
             </div>

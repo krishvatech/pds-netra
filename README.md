@@ -34,7 +34,27 @@ docker run -d --name pdsnetra-postgres \
   postgres:14
 ```
 
-### 3) Backend (FastAPI)
+### 3) Mailhog (email sink for notifications)
+```bash
+docker run -d --name pdsnetra-mailhog \
+  -p 1025:1025 \
+  -p 8025:8025 \
+  mailhog/mailhog
+```
+
+Before starting the backend, expose these vars so alerts are routed through Mailhog:
+
+```bash
+export SMTP_HOST=127.0.0.1
+export SMTP_PORT=1025
+export SMTP_STARTTLS=false
+export SMTP_FROM="alerts@pdsnetra.local"
+export SMTP_TO="you@example.com"
+```
+
+The Mailhog UI at http://localhost:8025 keeps a copy of every email the worker sends.
+
+### 4) Backend (FastAPI)
 ```bash
 cd pds-netra-backend
 python3 -m venv .venv
@@ -44,7 +64,7 @@ cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-### 4) Edge node (with test-run override support)
+### 5) Edge node (with test-run override support)
 ```bash
 cd pds-netra-edge
 python3 -m venv .venv
@@ -55,7 +75,7 @@ export EDGE_OVERRIDE_PATH=/Users/krishva/Projects/PDS-Netra-Project/pds-netra/pd
 python -m app.main --config config/pds_netra_config.yaml --device cpu --log-level INFO
 ```
 
-### 5) Dashboard
+### 6) Dashboard
 ```bash
 cd pds-netra-dashboard
 cp env.example .env.local

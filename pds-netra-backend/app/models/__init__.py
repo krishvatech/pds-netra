@@ -8,6 +8,16 @@ from the declarative `Base` defined here.
 
 from __future__ import annotations
 
+from sqlalchemy import JSON
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return compiler.process(JSON(), **kw)
+
+
 from sqlalchemy.orm import DeclarativeBase
 
 

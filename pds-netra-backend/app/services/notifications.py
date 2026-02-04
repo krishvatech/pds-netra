@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from ..models.event import Alert, Event
 from ..models.notification_recipient import NotificationRecipient
 from .notification_outbox import enqueue_alert_notifications
+from ..core.config import settings
 
 
 def _webhook_urls() -> list[str]:
@@ -216,11 +217,14 @@ def _load_recipients(db: Session, godown_id: Optional[str]) -> list[Notification
 
 
 def _build_notification_service() -> NotificationService:
-    providers: list[NotificationProvider] = [MockNotificationProvider()]
+    _ = settings  # ensure .env is loaded before checking providers
+    providers: list[NotificationProvider] = []
     if os.getenv("WHATSAPP_WEBHOOK_URL"):
         providers.append(WebhookWhatsAppProvider())
-    if os.getenv("SMTP_HOST"):
+    if settings.smtp_host:
         providers.append(SmtpEmailProvider())
+    if not providers:
+        providers.append(MockNotificationProvider())
     return NotificationService(providers)
 
 

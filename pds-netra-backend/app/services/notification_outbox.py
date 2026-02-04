@@ -32,6 +32,7 @@ class NotificationContent:
     whatsapp_text: str
     email_subject: str
     email_body: str
+    call_script: str
     media_url: Optional[str] = None
 
 
@@ -167,6 +168,21 @@ def _render_meta_table(rows: list[tuple[str, str]]) -> str:
     return "".join(lines)
 
 
+def _build_call_script(segments: list[str]) -> str:
+    normalized: list[str] = []
+    for text in segments:
+        text = text.strip()
+        if not text:
+            continue
+        text = text.replace("\n", " ")
+        normalized.append(" ".join(text.split()))
+    script = ". ".join(normalized)
+    script = " ".join(script.split())
+    if script and not script.endswith("."):
+        script += "."
+    return script or "PDS Netra alert."
+
+
 def _evidence_url(alert: Alert, event: Optional[Event]) -> Optional[str]:
     extra = alert.extra if isinstance(alert.extra, dict) else {}
     for key in ("snapshot_url", "clip_url", "image_url"):
@@ -277,6 +293,15 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         whatsapp_lines.append(f"{label}: {value}")
     whatsapp_text = "\n".join(whatsapp_lines)
 
+    call_segments = [
+        f"{alert_title} at {godown_name}",
+        f"Camera {camera_name} at {ts_str}",
+        f"Details {details}",
+    ]
+    if evidence or link:
+        call_segments.append("Evidence and dashboard links are available via email")
+    call_script = _build_call_script(call_segments)
+
     email_subject = f"PDS Netra: {alert_title}"
     email_body = (
         f"<h3>{alert_title}</h3>"
@@ -299,8 +324,33 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         whatsapp_text=whatsapp_text,
         email_subject=email_subject,
         email_body=email_body,
+        call_script=call_script,
         media_url=evidence,
     )
+
+
+# Helpers for normalizing and merging targets
+def _normalize_target(channel: str | None, target: str | None) -> tuple[str, str] | None:
+    if not channel or not target:
+        return None
+    channel_norm = channel.strip().upper()
+    target_norm = target.strip()
+    if not channel_norm or not target_norm:
+        return None
+    return channel_norm, target_norm
+
+
+def _merge_targets(*sources: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    merged: list[tuple[str, str]] = []
+    for source in sources:
+        for channel, target in source:
+            key = (channel, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append((channel, target))
+    return merged
 
 
 def _targets_from_endpoints(
@@ -319,9 +369,13 @@ def _targets_from_endpoints(
         if ep_scope == scope:
             if scope == "GODOWN_MANAGER":
                 if godown_id and ep.godown_id == godown_id:
-                    targets.append((ep.channel, ep.target))
+                    normalized = _normalize_target(ep.channel, ep.target)
+                    if normalized:
+                        targets.append(normalized)
             else:
-                targets.append((ep.channel, ep.target))
+                normalized = _normalize_target(ep.channel, ep.target)
+                if normalized:
+                    targets.append(normalized)
     return targets
 
 
@@ -339,9 +393,13 @@ def _targets_from_recipients(
         if role == scope:
             if scope == "GODOWN_MANAGER":
                 if godown_id and row.godown_id == godown_id:
-                    targets.append((row.channel, row.destination))
+                    normalized = _normalize_target(row.channel, row.destination)
+                    if normalized:
+                        targets.append(normalized)
             else:
-                targets.append((row.channel, row.destination))
+                normalized = _normalize_target(row.channel, row.destination)
+                if normalized:
+                    targets.append(normalized)
     return targets
 
 
@@ -350,15 +408,26 @@ def _recipient_targets_from_env(*, godown_id: Optional[str], scope: str) -> list
     if scope == "HQ":
         hq_emails = [e.strip() for e in os.getenv("WATCHLIST_NOTIFY_HQ_EMAILS", "").split(",") if e.strip()]
         hq_whatsapp = [e.strip() for e in os.getenv("WATCHLIST_NOTIFY_HQ_WHATSAPP", "").split(",") if e.strip()]
+        hq_calls = [e.strip() for e in os.getenv("WATCHLIST_NOTIFY_HQ_CALLS", "").split(",") if e.strip()]
         for email in hq_emails:
-            targets.append(("EMAIL", email))
+            normalized = _normalize_target("EMAIL", email)
+            if normalized:
+                targets.append(normalized)
         for phone in hq_whatsapp:
-            targets.append(("WHATSAPP", phone))
+            normalized = _normalize_target("WHATSAPP", phone)
+            if normalized:
+                targets.append(normalized)
+        for phone in hq_calls:
+            normalized = _normalize_target("CALL", phone)
+            if normalized:
+                targets.append(normalized)
     if scope == "GODOWN_MANAGER" and godown_id:
         mapping = os.getenv("WATCHLIST_NOTIFY_GODOWN_EMAILS", "")
         targets += _parse_mapping(mapping, godown_id, channel="EMAIL")
         mapping = os.getenv("WATCHLIST_NOTIFY_GODOWN_WHATSAPP", "")
         targets += _parse_mapping(mapping, godown_id, channel="WHATSAPP")
+        mapping = os.getenv("WATCHLIST_NOTIFY_GODOWN_CALLS", "")
+        targets += _parse_mapping(mapping, godown_id, channel="CALL")
     return targets
 
 
@@ -371,7 +440,9 @@ def _parse_mapping(raw: str, godown_id: str, channel: str) -> list[tuple[str, st
             continue
         gdn, dest = entry.split(":", 1)
         if gdn.strip() == godown_id and dest.strip():
-            targets.append((channel, dest.strip()))
+            normalized = _normalize_target(channel, dest.strip())
+            if normalized:
+                targets.append(normalized)
     return targets
 
 
@@ -379,19 +450,17 @@ def resolve_notification_targets(
     db: Session,
     *,
     godown_id: Optional[str],
-    scope: str,
+    scopes: Iterable[str],
 ) -> list[tuple[str, str]]:
     endpoints = db.query(NotificationEndpoint).all()
-    if endpoints:
-        targets = _targets_from_endpoints(endpoints, godown_id=godown_id, scope=scope)
-        if targets:
-            return targets
     recipients = db.query(NotificationRecipient).all()
-    if recipients:
-        targets = _targets_from_recipients(recipients, godown_id=godown_id, scope=scope)
-        if targets:
-            return targets
-    return _recipient_targets_from_env(godown_id=godown_id, scope=scope)
+    target_sources: list[list[tuple[str, str]]] = []
+    for scope in scopes:
+        target_sources.append(_targets_from_endpoints(endpoints, godown_id=godown_id, scope=scope))
+        target_sources.append(_targets_from_recipients(recipients, godown_id=godown_id, scope=scope))
+        target_sources.append(_recipient_targets_from_env(godown_id=godown_id, scope=scope))
+    targets = _merge_targets(*target_sources)
+    return targets
 
 
 def _find_event_for_alert(db: Session, alert: Alert, event: Optional[Event]) -> Optional[Event]:
@@ -409,7 +478,11 @@ def _find_event_for_alert(db: Session, alert: Alert, event: Optional[Event]) -> 
 def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Event] = None) -> int:
     if not alert.public_id:
         db.flush()
-    targets = resolve_notification_targets(db, godown_id=alert.godown_id, scope="GODOWN_MANAGER")
+    targets = resolve_notification_targets(
+        db,
+        godown_id=alert.godown_id,
+        scopes=("GODOWN_MANAGER", "HQ"),
+    )
     if not targets:
         logger.info("No notification targets configured for godown=%s", alert.godown_id)
         return 0
@@ -418,7 +491,7 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
     created = 0
     for channel, target in targets:
         channel_norm = channel.upper()
-        if channel_norm not in {"WHATSAPP", "EMAIL"}:
+        if channel_norm not in {"WHATSAPP", "EMAIL", "CALL"}:
             continue
         exists = (
             db.query(NotificationOutbox)
@@ -431,8 +504,15 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
         )
         if exists:
             continue
-        subject = content.email_subject if channel_norm == "EMAIL" else None
-        message = content.email_body if channel_norm == "EMAIL" else content.whatsapp_text
+        if channel_norm == "EMAIL":
+            subject = content.email_subject
+            message = content.email_body
+        elif channel_norm == "WHATSAPP":
+            subject = None
+            message = content.whatsapp_text
+        else:
+            subject = None
+            message = content.call_script
         outbox = NotificationOutbox(
             kind="ALERT",
             alert_id=alert.public_id,
@@ -463,7 +543,11 @@ def enqueue_report_notifications(
     email_html: str,
     subject: str,
 ) -> int:
-    targets = resolve_notification_targets(db, godown_id=None, scope="HQ")
+    targets = resolve_notification_targets(
+        db,
+        godown_id=None,
+        scopes=("HQ",),
+    )
     if not targets:
         logger.info("No HQ notification targets configured")
         return 0

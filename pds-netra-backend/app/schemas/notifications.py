@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 class NotificationEndpointIn(BaseModel):
     scope: Literal["HQ", "GODOWN_MANAGER", "GODOWN"]
     godown_id: Optional[str] = None
-    channel: Literal["WHATSAPP", "EMAIL"]
+    channel: Literal["WHATSAPP", "EMAIL", "CALL"]
     target: str
     is_enabled: bool = True
 
@@ -21,7 +21,7 @@ class NotificationEndpointIn(BaseModel):
 class NotificationEndpointUpdate(BaseModel):
     scope: Optional[Literal["HQ", "GODOWN_MANAGER", "GODOWN"]] = None
     godown_id: Optional[str] = None
-    channel: Optional[Literal["WHATSAPP", "EMAIL"]] = None
+    channel: Optional[Literal["WHATSAPP", "EMAIL", "CALL"]] = None
     target: Optional[str] = None
     is_enabled: Optional[bool] = None
 

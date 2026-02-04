@@ -4,13 +4,38 @@ Notification worker process entrypoint.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import time
-import datetime
+from pathlib import Path
 
+def _load_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        raise RuntimeError(f".env not found at: {env_path}")
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        current = os.environ.get(key)
+        if current in (None, ""):
+            os.environ[key] = value
+
+# Force-load .env from pds-netra-backend/.env no matter where module is imported from
+backend_root = Path(__file__).resolve().parents[1]  # .../pds-netra-backend
+env_path = backend_root / ".env"
+_load_env_file(env_path)
+
+from .core.config import settings  # ensures .env is loaded for standalone worker
 from .core.db import SessionLocal
-from .services.notification_worker import process_outbox_batch
+from .services.notification_worker import _build_providers, process_outbox_batch
 from .services.alert_reports import generate_hq_report, IST
 
 
@@ -32,11 +57,15 @@ def main() -> int:
         batch_size,
         max_attempts,
     )
+    _load_env_file(env_path)
+    _ = settings  # load environment before the loop
+    providers = _build_providers()
     while True:
         try:
             with SessionLocal() as db:
                 processed = process_outbox_batch(
                     db,
+                    providers=providers,
                     max_attempts=max_attempts,
                     batch_size=batch_size,
                 )

@@ -1,4 +1,5 @@
 import datetime
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -72,6 +73,35 @@ def test_enqueue_alert_notifications_idempotent():
     assert rows[0].channel == "WHATSAPP"
 
 
+def test_enqueue_alert_notifications_combines_env_call_with_endpoints():
+    db = _make_session()
+    endpoint_email = NotificationEndpoint(
+        scope="GODOWN_MANAGER",
+        godown_id="GDN_SAMPLE",
+        channel="EMAIL",
+        target="manager@example.com",
+        is_enabled=True,
+    )
+    db.add(endpoint_email)
+    db.commit()
+
+    prev_value = os.environ.get("WATCHLIST_NOTIFY_GODOWN_CALLS")
+    try:
+        os.environ["WATCHLIST_NOTIFY_GODOWN_CALLS"] = "GDN_SAMPLE:+919876543210"
+        alert = _create_alert(db)
+        created = enqueue_alert_notifications(db, alert)
+        assert created == 2
+        rows = db.query(NotificationOutbox).all()
+        channels = {row.channel for row in rows}
+        assert "EMAIL" in channels
+        assert "CALL" in channels
+    finally:
+        if prev_value is None:
+            os.environ.pop("WATCHLIST_NOTIFY_GODOWN_CALLS", None)
+        else:
+            os.environ["WATCHLIST_NOTIFY_GODOWN_CALLS"] = prev_value
+
+
 def test_worker_marks_sent_with_log_provider():
     db = _make_session()
     alert = _create_alert(db)
@@ -97,12 +127,55 @@ def test_worker_marks_sent_with_log_provider():
         def send_email(self, to: str, subject: str, html: str):
             return "log"
 
-    providers = ProviderSet(whatsapp=LogProvider(), email=LogProvider())
+        def send_call(self, to: str, message: str):
+            return "log"
+
+    providers = ProviderSet(whatsapp=LogProvider(), email=LogProvider(), call=LogProvider())
     processed = process_outbox_batch(db, providers=providers, max_attempts=3, batch_size=5)
     assert processed == 1
     row = db.query(NotificationOutbox).first()
     assert row.status == "SENT"
     assert row.sent_at is not None
+
+
+def test_worker_sends_call_channel():
+    db = _make_session()
+    alert = _create_alert(db)
+    outbox = NotificationOutbox(
+        kind="ALERT",
+        alert_id=alert.public_id,
+        report_id=None,
+        channel="CALL",
+        target="+910000000002",
+        subject=None,
+        message="Call message",
+        media_url=None,
+        status="PENDING",
+        attempts=0,
+    )
+    db.add(outbox)
+    db.commit()
+
+    class CallProvider(NotificationProvider):
+        def send_whatsapp(self, to: str, message: str, media_url=None):
+            raise RuntimeError("unexpected whatsapp")
+
+        def send_email(self, to: str, subject: str, html: str):
+            raise RuntimeError("unexpected email")
+
+        def send_call(self, to: str, message: str):
+            return "twilio-call-id"
+
+    providers = ProviderSet(
+        whatsapp=CallProvider(),
+        email=CallProvider(),
+        call=CallProvider(),
+    )
+    processed = process_outbox_batch(db, providers=providers, max_attempts=3, batch_size=5)
+    assert processed == 1
+    row = db.query(NotificationOutbox).first()
+    assert row.status == "SENT"
+    assert row.provider_message_id == "twilio-call-id"
 
 
 def test_worker_retries_on_failure():
@@ -130,7 +203,10 @@ def test_worker_retries_on_failure():
         def send_email(self, to: str, subject: str, html: str):
             raise RuntimeError("boom")
 
-    providers = ProviderSet(whatsapp=FailingProvider(), email=FailingProvider())
+        def send_call(self, to: str, message: str):
+            raise RuntimeError("boom")
+
+    providers = ProviderSet(whatsapp=FailingProvider(), email=FailingProvider(), call=FailingProvider())
     processed = process_outbox_batch(db, providers=providers, max_attempts=5, batch_size=5)
     assert processed == 1
     row = db.query(NotificationOutbox).first()
