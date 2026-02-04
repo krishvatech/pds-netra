@@ -53,7 +53,7 @@ docker compose -f docker-compose.prod.yml logs caddy --tail=50
 
 Backend config (backend.env)
 ----------------------------
-DATABASE_URL=postgresql+psycopg2://USER:PASS@HOST:25060/defaultdb?sslmode=require
+DATABASE_URL=postgresql://doadmin:show-password@db-postgresql-blr1-86288-do-user-32882899-0.j.db.ondigitalocean.com:25060/defaultdb?sslmode=require
 MQTT_BROKER_HOST=mosquitto
 MQTT_BROKER_PORT=1883
 MQTT_USERNAME=mqtt_user
@@ -63,7 +63,7 @@ PDS_AUTH_DISABLED=true
 Caddy config (.env)
 -------------------
 CADDY_DOMAIN=cv.krishvatech.com
-CADDY_EMAIL=your-real-email@domain.com
+CADDY_EMAIL=info@krishvatech.com
 
 Mosquitto credentials
 ---------------------
