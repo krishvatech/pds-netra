@@ -197,6 +197,45 @@ a {
     box-shadow: 0 8px 20px -16px rgba(245, 158, 11, 0.6);
   }
 
+  .btn-refresh {
+    border: 1px solid rgba(56, 189, 248, 0.55);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(2, 132, 199, 0.28));
+    color: #e2e8f0;
+    box-shadow:
+      0 10px 22px -16px rgba(14, 165, 233, 0.7),
+      inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+  }
+
+  .btn-refresh:hover {
+    border-color: rgba(125, 211, 252, 0.9);
+    box-shadow:
+      0 12px 28px -18px rgba(14, 165, 233, 0.85),
+      inset 0 0 0 1px rgba(125, 211, 252, 0.35);
+  }
+
+  .input-field {
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(226, 232, 240, 0.9));
+    color: #0f172a;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 10px 24px -18px rgba(2, 6, 23, 0.35);
+    transition: box-shadow 150ms ease, border-color 150ms ease;
+  }
+
+  .input-field::placeholder {
+    color: rgba(100, 116, 139, 0.7);
+  }
+
+  .input-field:focus {
+    border-color: rgba(56, 189, 248, 0.85);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 0 0 3px rgba(56, 189, 248, 0.25),
+      0 12px 28px -20px rgba(14, 165, 233, 0.6);
+    outline: none;
+  }
+
   .btn-danger {
     background: linear-gradient(135deg, #f43f5e, #ef4444);
     color: #ffffff;
@@ -208,8 +247,9 @@ a {
   }
 
   .badge-soft {
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.25);
+    color: #0f172a;
   }
 
   .surface-card {
@@ -245,10 +285,32 @@ a {
 
   .table-shell {
     @apply rounded-2xl overflow-hidden;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255, 255, 255, 0.7);
-    box-shadow: 0 25px 50px -45px rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(12px);
+    position: relative;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: #ffffff;
+    box-shadow:
+      0 24px 48px -36px rgba(2, 6, 23, 0.18),
+      inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+    backdrop-filter: blur(14px);
+  }
+
+  .table-shell::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 20px;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(56, 189, 248, 0.25), transparent 45%),
+      radial-gradient(circle at 90% 0%, rgba(245, 158, 11, 0.2), transparent 45%);
+    opacity: 0.6;
+    filter: blur(14px);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .table-shell > * {
+    position: relative;
+    z-index: 1;
   }
 
   .table-shell table {
@@ -256,7 +318,37 @@ a {
   }
 
   .table-shell thead {
-    color: #1f2937;
+    color: #0f172a;
+    background: #f1f5f9;
+  }
+
+  .table-shell thead th {
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(15, 23, 42, 0.7);
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .table-shell tbody tr {
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    background: #ffffff;
+    transition: background 150ms ease, transform 150ms ease;
+  }
+
+  .table-shell tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  .table-shell tbody tr:hover {
+    background: rgba(14, 165, 233, 0.08);
+  }
+
+  .table-shell tbody td {
+    padding-top: 14px;
+    padding-bottom: 14px;
+    color: rgba(15, 23, 42, 0.95);
   }
 
   .stagger > * {

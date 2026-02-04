@@ -155,7 +155,7 @@ export default function ReportsPage() {
             <Button variant="outline" onClick={() => triggerReport('1h')} disabled={hqGenerating}>
               Generate hourly report
             </Button>
-            <Button variant="outline" onClick={loadHqReports} disabled={hqLoading}>
+            <Button className="btn-refresh" variant="outline" onClick={loadHqReports} disabled={hqLoading}>
               Refresh list
             </Button>
           </div>

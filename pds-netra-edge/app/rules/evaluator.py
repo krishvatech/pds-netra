@@ -379,16 +379,17 @@ class RulesEvaluator:
                                 if entry_key not in self.person_active:
                                     # Emit only once per entry; track until exit threshold expires.
                                     severity = 'critical' if isinstance(rule, NoPersonDuringRule) else 'warning'
+                                    event_id = str(uuid.uuid4())
                                     event = EventModel(
                                         godown_id=self.godown_id,
                                         camera_id=self.camera_id,
-                                        event_id=str(uuid.uuid4()),
+                                        event_id=event_id,
                                         event_type="UNAUTH_PERSON",
                                         severity=severity,
                                         timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
                                         bbox=obj.bbox,
                                         track_id=obj.track_id,
-                                        image_url=None,
+                                        image_url=self._snapshot(frame, snapshotter, event_id, now_utc, bbox=obj.bbox, label="Unauthorized Person"),
                                         clip_url=None,
                                         meta=MetaModel(
                                             zone_id=zone_id,

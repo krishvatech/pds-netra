@@ -58,7 +58,9 @@ export default function AnprReportsPage() {
     return toDateTimeLocalStr(d);
   });
   const [dateTimeTo, setDateTimeTo] = useState(() => toDateTimeLocalStr(new Date()));
-  const [sessionLimit, setSessionLimit] = useState(2000);
+  const [dateNotice, setDateNotice] = useState<string | null>(null);
+  const [dateTimeNotice, setDateTimeNotice] = useState<string | null>(null);
+  const [sessionLimit, setSessionLimit] = useState(2000);
 
   const [data, setData] = useState<AnprDailyReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -342,29 +344,82 @@ export default function AnprReportsPage() {
             </div>
             <div>
               <Label>Date From</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateFrom(next);
+                  if (next && dateTo && next > dateTo) {
+                    setDateTo(next);
+                    setDateNotice('Adjusted Date To to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>Date To</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateNotice(null);
+                  setDateTo(next);
+                  if (dateFrom && next && next < dateFrom) {
+                    setDateFrom(next);
+                    setDateNotice('Adjusted Date From to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div className="flex items-end gap-2">
-              <Button onClick={load}>Refresh</Button>
+              <Button className="btn-refresh" onClick={load}>Refresh</Button>
               <Button variant="outline" onClick={exportCsv} disabled={!data?.rows?.length}>
                 Export CSV
               </Button>
             </div>
           </div>
+          {dateNotice && <div className="text-xs text-amber-300">{dateNotice}</div>}
 
           <div className="text-xs uppercase tracking-wide text-slate-400">Session report range</div>
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <div>
-              <Label>From (Date &amp; Time)</Label>
-              <Input type="datetime-local" value={dateTimeFrom} onChange={(e) => setDateTimeFrom(e.target.value)} />
+               <Label>From (Date &amp; Time)</Label>
+              <Input
+                type="datetime-local"
+                value={dateTimeFrom}
+                max={dateTimeTo || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateTimeNotice(null);
+                  setDateTimeFrom(next);
+                  if (next && dateTimeTo && next > dateTimeTo) {
+                    setDateTimeTo(next);
+                    setDateTimeNotice('Adjusted session To time to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>To (Date &amp; Time)</Label>
-              <Input type="datetime-local" value={dateTimeTo} onChange={(e) => setDateTimeTo(e.target.value)} />
+              <Input
+                type="datetime-local"
+                value={dateTimeTo}
+                min={dateTimeFrom || undefined}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDateTimeNotice(null);
+                  setDateTimeTo(next);
+                  if (dateTimeFrom && next && next < dateTimeFrom) {
+                    setDateTimeFrom(next);
+                    setDateTimeNotice('Adjusted session From time to keep the range valid.');
+                  }
+                }}
+              />
             </div>
             <div>
               <Label>Events Limit</Label>
@@ -375,11 +430,12 @@ export default function AnprReportsPage() {
               />
             </div>
             <div className="flex items-end gap-2">
-              <Button onClick={loadSessions} disabled={sessionLoading}>
+              <Button className="btn-refresh" onClick={loadSessions} disabled={sessionLoading}>
                 {sessionLoading ? 'Refreshing...' : 'Refresh Sessions'}
               </Button>
             </div>
           </div>
+          {dateTimeNotice && <div className="text-xs text-amber-300">{dateTimeNotice}</div>}
         </CardContent>
       </Card>
 

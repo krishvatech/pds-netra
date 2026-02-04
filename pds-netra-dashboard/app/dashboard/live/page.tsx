@@ -418,7 +418,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Godown
               <select
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={selectedGodown}
                 onChange={(e) => setSelectedGodown(e.target.value)}
               >
@@ -430,7 +430,7 @@ export default function LiveCamerasPage() {
               </select>
             </label>
             <div className="flex items-end">
-              <Button variant="outline" onClick={() => setStreamNonce((n) => n + 1)}>
+              <Button className="btn-refresh" variant="outline" onClick={() => setStreamNonce((n) => n + 1)}>
                 Refresh stream
               </Button>
             </div>
@@ -439,7 +439,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Camera ID
               <input
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={newCameraId}
                 onChange={(e) => setNewCameraId(e.target.value)}
                 placeholder="CAM_GATE_2"
@@ -448,7 +448,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Label
               <input
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={newCameraLabel}
                 onChange={(e) => setNewCameraLabel(e.target.value)}
                 placeholder="Gate 2"
@@ -457,7 +457,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Role
               <input
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={newCameraRole}
                 onChange={(e) => setNewCameraRole(e.target.value)}
                 placeholder="GATE"
@@ -466,7 +466,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               RTSP URL
               <input
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={newCameraRtsp}
                 onChange={(e) => setNewCameraRtsp(e.target.value)}
                 placeholder="rtsp://user:pass@ip/stream"
@@ -550,19 +550,19 @@ export default function LiveCamerasPage() {
                     {isEditing ? (
                       <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
                         <input
-                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          className="w-full rounded-xl px-3 py-2 text-sm input-field"
                           value={editLabel}
                           onChange={(e) => setEditLabel(e.target.value)}
                           placeholder="Label"
                         />
                         <input
-                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          className="w-full rounded-xl px-3 py-2 text-sm input-field"
                           value={editRole}
                           onChange={(e) => setEditRole(e.target.value)}
                           placeholder="Role"
                         />
                         <input
-                          className="w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                          className="w-full rounded-xl px-3 py-2 text-sm input-field"
                           value={editRtsp}
                           onChange={(e) => setEditRtsp(e.target.value)}
                           placeholder="RTSP URL"
@@ -642,7 +642,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Camera
               <select
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={zoneCameraId}
                 onChange={(e) => setZoneCameraId(e.target.value)}
               >
@@ -656,7 +656,7 @@ export default function LiveCamerasPage() {
             <label className="text-sm text-slate-600">
               Zone name
               <input
-                className="mt-2 w-full rounded-xl border border-white/40 bg-white/80 px-3 py-2 text-sm text-slate-800"
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
                 value={zoneName}
                 onChange={(e) => setZoneName(e.target.value)}
                 placeholder="gate_inner"
@@ -756,7 +756,7 @@ export default function LiveCamerasPage() {
           </div>
 
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Button variant="outline" onClick={() => setZoneImageNonce((n) => n + 1)}>
+            <Button className="btn-refresh" variant="outline" onClick={() => setZoneImageNonce((n) => n + 1)}>
               Refresh frame
             </Button>
             <span>{zonePoints.length} points</span>
