@@ -96,10 +96,11 @@ function alertEpoch(alert: AlertItem): number | null {
   return d.getTime();
 }
 
-function timeAgo(alert: AlertItem): string {
+function timeAgo(alert: AlertItem, nowMs?: number | null): string {
+  if (!nowMs) return '-';
   const ts = alertEpoch(alert);
   if (!ts) return '-';
-  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
   if (diffSec < 60) return `${diffSec}s ago`;
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
@@ -179,6 +180,7 @@ export function LiveRail() {
   const { alerts, hasNew, cues, quietActive } = useAlertFeed();
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [mounted, setMounted] = useState(false);
+  const [clock, setClock] = useState<number | null>(null);
   const [scope, setScope] = useState<'ALL' | 'GODOWN' | 'CAMERA'>('ALL');
   const [scopeGodown, setScopeGodown] = useState('');
   const [scopeCamera, setScopeCamera] = useState('');
@@ -188,6 +190,12 @@ export function LiveRail() {
     setUiPrefsState(getUiPrefs());
     setMounted(true);
     return onUiPrefsChange(setUiPrefsState);
+  }, []);
+
+  useEffect(() => {
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 60000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const sortedAlerts = useMemo(() => {
@@ -326,7 +334,7 @@ export function LiveRail() {
               <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
             ) : null}
             <div className="mt-1 text-xs text-slate-400">
-              {(alert.camera_id ?? '-') + ' • ' + (alert.godown_name ?? alert.godown_id)} • {timeAgo(alert)}
+              {(alert.camera_id ?? '-') + ' • ' + (alert.godown_name ?? alert.godown_id)} • {timeAgo(alert, clock)}
             </div>
             <div className="mt-1 text-xs text-slate-500">Events: {alert.count_events ?? '-'}</div>
             <button

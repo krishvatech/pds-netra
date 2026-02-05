@@ -199,6 +199,10 @@ export async function updateAnprVehicle(vehicleId: string, payload: {
   });
 }
 
+export async function deleteAnprVehicle(vehicleId: string): Promise<{ status: string; id: string }> {
+  return apiFetch(`/api/v1/anpr/vehicles/${encodeURIComponent(vehicleId)}`, { method: 'DELETE' });
+}
+
 export async function importAnprVehiclesCsv(payload: {
   godown_id: string;
   file: File;

@@ -70,7 +70,14 @@ def _parse_time(hhmm: str) -> datetime.time:
     except Exception:
         return datetime.time(0, 0)
 
-INDIA_PLATE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$")
+_INDIA_STATE_CODES = (
+    "AN|AP|AR|AS|BR|CH|CG|DD|DL|DN|GA|GJ|HP|HR|JH|JK|KA|KL|LA|LD|"
+    "MH|ML|MN|MP|MZ|NL|OD|PB|PY|RJ|SK|TN|TR|TS|UK|UP|WB"
+)
+_INDIA_STATE_CODE_SET = set(_INDIA_STATE_CODES.split("|"))
+INDIA_PLATE_REGEX = re.compile(
+    rf"^({_INDIA_STATE_CODES})\d{{2}}[A-Z]{{1,2}}\d{{4}}$|^\d{{2}}BH\d{{4}}[A-Z]{{2}}$"
+)
 
 
 @dataclass
@@ -385,21 +392,17 @@ def is_valid_india_plate(text: str) -> bool:
     if not text:
         return False
     t = normalize_plate_text(text)
-    patterns = [
-        r"^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}$",
-        r"^\d{2}BH\d{4}[A-Z]{1,2}$",
-    ]
-    return any(re.match(pat, t) for pat in patterns)
+    return bool(INDIA_PLATE_REGEX.match(t))
 
 
 def format_indian_plate(text: str) -> str:
     cleaned = normalize_plate_text(text)
     if not cleaned:
         return ""
-    m = re.match(r"^([A-Z]{2})(\d{1,2})([A-Z]{1,3})(\d{4})$", cleaned)
+    m = re.match(r"^([A-Z]{2})(\d{2})([A-Z]{1,2})(\d{4})$", cleaned)
     if m:
         return f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}"
-    m = re.match(r"^(\d{2})(BH)(\d{4})([A-Z]{1,2})$", cleaned)
+    m = re.match(r"^(\d{2})(BH)(\d{4})([A-Z]{2})$", cleaned)
     if m:
         return f"{m.group(1)}{m.group(2)}{m.group(3)}{m.group(4)}"
     return cleaned
@@ -410,8 +413,8 @@ def _maybe_swap_stacked_plate(text: str) -> Optional[str]:
     if not t:
         return None
     patterns = [
-        r"^([A-Z]{1,3}\d{4})([A-Z]{2}\d{1,2})$",
-        r"^(\d{4}[A-Z]{1,3})([A-Z]{2}\d{1,2})$",
+        r"^([A-Z]{1,2}\d{4})([A-Z]{2}\d{2})$",
+        r"^(\d{4}[A-Z]{1,2})([A-Z]{2}\d{2})$",
     ]
     for pat in patterns:
         m = re.match(pat, t)
@@ -424,7 +427,7 @@ def _expand_series_letters(text: str) -> List[str]:
     t = normalize_plate_text(text)
     if not t:
         return []
-    m = re.match(r"^([A-Z]{2}\d{1,2})([A-Z0-9]{1,3})(\d{4})$", t)
+    m = re.match(r"^([A-Z]{2}\d{2})([A-Z0-9]{1,2})(\d{4})$", t)
     if not m:
         return []
 
@@ -579,15 +582,15 @@ def guess_india_plate(text: str, min_len: int = 8, max_cost: int = 2) -> Optiona
         or (len(base) >= 4 and base[2:4] == "BH")
     ):
         return None
+    if len(base) >= 2 and base[0:2].isalpha() and base[0:2] not in _INDIA_STATE_CODE_SET:
+        return None
     if is_valid_india_plate(base):
         return format_indian_plate(base)
 
     patterns = []
-    for d in (1, 2):
-        for s in (1, 2, 3):
-            patterns.append("LL" + ("D" * d) + ("L" * s) + "DDDD")
     for s in (1, 2):
-        patterns.append("DD" + "BH" + "DDDD" + ("L" * s))
+        patterns.append("LL" + ("D" * 2) + ("L" * s) + "DDDD")
+    patterns.append("DD" + "BH" + "DDDD" + ("L" * 2))
 
     best = None
     best_cost = None
@@ -929,6 +932,8 @@ class AnprProcessor:
         self.ocr_every_n = max(int(ocr_every_n), 1)
         self.ocr_min_conf = float(ocr_min_conf)
         self.ocr_debug = bool(ocr_debug)
+        self.guess_promote_conf = float(os.getenv("EDGE_ANPR_GUESS_PROMOTE_CONF", "0.85"))
+        self.guess_promote_min_votes = int(os.getenv("EDGE_ANPR_GUESS_PROMOTE_MIN_VOTES", "3"))
 
         self.validate_india = bool(validate_india)
         self.show_invalid = bool(show_invalid)
@@ -975,6 +980,21 @@ class AnprProcessor:
         self.crop_shrink_y = float(os.getenv("EDGE_ANPR_CROP_SHRINK_Y", "0.12"))
         self.crop_pad_x = float(os.getenv("EDGE_ANPR_CROP_PAD_X", "0.06"))
         self.crop_pad_y = float(os.getenv("EDGE_ANPR_CROP_PAD_Y", "0.10"))
+
+    def _guess_can_promote(self, zone_id: str, norm_plate: str, conf: float, now_utc: datetime.datetime) -> bool:
+        if conf < self.guess_promote_conf:
+            return False
+        history = self.vote_history.get(zone_id, [])
+        if not history:
+            return False
+        cutoff = now_utc - datetime.timedelta(seconds=self.vote_window_sec)
+        count = 0
+        for p, _, ts in history:
+            if ts < cutoff:
+                continue
+            if normalize_plate_text(p) == norm_plate:
+                count += 1
+        return count >= self.guess_promote_min_votes
 
     def _plates_from_rules(self, rules: List[BaseRule]) -> tuple[set[str], set[str]]:
         whitelist: set[str] = set()
@@ -1213,6 +1233,19 @@ class AnprProcessor:
             if not do_ocr_this_frame:
                 if self.ocr_debug:
                     self.logger.info("ANPR: OCR skipped (frame=%d) det=%.3f zone=%s", self.frame_index, det_conf, zone_id)
+                results_out.append(
+                    RecognizedPlate(
+                        camera_id=self.camera_id,
+                        bbox=bbox,
+                        plate_text="",
+                        confidence=float(det_conf),
+                        timestamp_utc=timestamp_iso,
+                        zone_id=zone_id,
+                        det_conf=float(det_conf),
+                        ocr_conf=0.0,
+                        match_status="NO_OCR",
+                    )
+                )
                 continue
 
             plate_text_raw, ocr_conf = "", 0.0
@@ -1238,10 +1271,36 @@ class AnprProcessor:
                         "ANPR: OCR low/empty (frame=%d) det=%.3f ocr=%.3f raw=%s",
                         self.frame_index, det_conf, ocr_conf, plate_text_raw
                     )
+                results_out.append(
+                    RecognizedPlate(
+                        camera_id=self.camera_id,
+                        bbox=bbox,
+                        plate_text="",
+                        confidence=float(det_conf),
+                        timestamp_utc=timestamp_iso,
+                        zone_id=zone_id,
+                        det_conf=float(det_conf),
+                        ocr_conf=float(ocr_conf),
+                        match_status="NO_OCR",
+                    )
+                )
                 continue
 
             candidates = cleanup_plate_candidates(plate_text_raw)
             if not candidates:
+                results_out.append(
+                    RecognizedPlate(
+                        camera_id=self.camera_id,
+                        bbox=bbox,
+                        plate_text="",
+                        confidence=float(det_conf),
+                        timestamp_utc=timestamp_iso,
+                        zone_id=zone_id,
+                        det_conf=float(det_conf),
+                        ocr_conf=float(ocr_conf),
+                        match_status="NO_OCR",
+                    )
+                )
                 continue
 
             plate_text_display = ""
@@ -1265,6 +1324,19 @@ class AnprProcessor:
                     guessed_plate = True
 
             if not plate_text_display:
+                results_out.append(
+                    RecognizedPlate(
+                        camera_id=self.camera_id,
+                        bbox=bbox,
+                        plate_text="",
+                        confidence=float(det_conf),
+                        timestamp_utc=timestamp_iso,
+                        zone_id=zone_id,
+                        det_conf=float(det_conf),
+                        ocr_conf=float(ocr_conf),
+                        match_status="NO_OCR",
+                    )
+                )
                 continue
 
             norm_plate = normalize_plate_text(plate_text_display)
@@ -1274,6 +1346,8 @@ class AnprProcessor:
             plate_text_display = voted_plate
             norm_plate = normalize_plate_text(plate_text_display)
             combined_conf = float(voted_conf)
+
+            direction = self._infer_direction(norm_plate, bbox, now_utc)
 
             # Dedup
             if not self._should_emit(norm_plate, zone_id, now_utc):
@@ -1294,6 +1368,11 @@ class AnprProcessor:
 
             # --- STATUS DECISION ---
             rule_id = None
+            promoted_guess = False
+            if guessed_plate and self._guess_can_promote(zone_id, norm_plate, combined_conf, now_utc):
+                guessed_plate = False
+                promoted_guess = True
+
             if guessed_plate:
                 match_status, event_type, severity = ("GUESSED", "ANPR_PLATE_DETECTED", "info")
             else:
@@ -1317,19 +1396,35 @@ class AnprProcessor:
             }
             if guessed_plate:
                 extra["guessed"] = "1"
+            if promoted_guess:
+                extra["guess_promoted"] = "1"
             if self.registered_plates:
                 extra["registered"] = "1" if norm_plate in self.registered_plates else "0"
+
+            event_id = str(uuid.uuid4())
+            image_url = None
+            if snapshotter is not None and frame is not None:
+                try:
+                    image_url = snapshotter(
+                        frame,
+                        event_id,
+                        now_utc,
+                        bbox=bbox,
+                        label=f"Plate: {plate_text_display}",
+                    )
+                except Exception:
+                    image_url = None
 
             event = EventModel(
                 godown_id=self.godown_id,
                 camera_id=self.camera_id,
-                event_id=str(uuid.uuid4()),
+                event_id=event_id,
                 event_type=event_type,
                 severity=severity,
                 timestamp_utc=timestamp_iso,
                 bbox=bbox,
                 track_id=0,
-                image_url=None,
+                image_url=image_url,
                 clip_url=None,
                 meta=MetaModel(
                     zone_id=zone_id if zone_id != "__GLOBAL__" else None,
@@ -1337,6 +1432,7 @@ class AnprProcessor:
                     confidence=combined_conf,
                     plate_text=plate_text_display,
                     match_status=match_status,
+                    direction=direction,
                     extra=extra,
                 ),
             )
@@ -1358,8 +1454,8 @@ class AnprProcessor:
             )
 
             self.logger.info(
-                "ANPR: plate=%s zone=%s time_ok=%s status=%s event=%s",
-                plate_text_display, zone_id, inside_time,
+                "ANPR: plate=%s zone=%s direction=%s time_ok=%s status=%s event=%s",
+                plate_text_display, zone_id, direction, inside_time,
                 match_status, event_type
             )
 

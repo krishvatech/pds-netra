@@ -244,6 +244,15 @@ export default function AnprDashboardPage() {
     return rows;
   }, [data]);
 
+  const guessedSessions = useMemo(
+    () => sessions.filter((s: any) => s.status === 'GUESSED'),
+    [sessions]
+  );
+  const liveSessions = useMemo(
+    () => sessions.filter((s: any) => s.status !== 'GUESSED'),
+    [sessions]
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -262,7 +271,7 @@ export default function AnprDashboardPage() {
         </div>
         <div className="hud-card p-4 min-w-[220px]">
           <div className="hud-label">Sessions</div>
-          <div className="hud-value">{sessions.length}</div>
+          <div className="hud-value">{liveSessions.length}</div>
           <div className="text-xs text-slate-500">Refresh: 3s</div>
         </div>
       </div>
@@ -336,20 +345,20 @@ export default function AnprDashboardPage() {
               </TR>
             </THead>
             <TBody>
-              {sessions.length === 0 ? (
+              {liveSessions.length === 0 ? (
                 <TR>
                   <TD colSpan={8} className="text-sm text-slate-500">
                     No vehicle sessions
                   </TD>
                 </TR>
               ) : (
-                sessions.map((s: any) => (
+                liveSessions.map((s: any) => (
                   <TR key={`${s.plate}-${s.camera}`}>
                     <TD className="font-semibold">{s.plate}</TD>
                     <TD>{statusBadge(s.status)}</TD>
                     <TD>{s.entryTime}</TD>
-                    <TD>{s.exitTime ?? 'N/A'}</TD>
-                    <TD>{s.duration ?? 'N/A'}</TD>
+                    <TD>{s.exitTime ?? 'In progress'}</TD>
+                    <TD>{s.duration ?? 'In progress'}</TD>
                     <TD>{Number(s.confidence || 0).toFixed(2)}</TD>
                     <TD>{s.camera}</TD>
                     <TD>
@@ -369,6 +378,48 @@ export default function AnprDashboardPage() {
             </TBody>
           </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="hud-card">
+        <CardHeader className="flex items-center justify-between">
+          <div className="text-lg font-semibold font-display">Guessed Plates</div>
+          <div className="hud-pill">Confidence feed</div>
+        </CardHeader>
+        <CardContent>
+          {guessedSessions.length === 0 ? (
+            <div className="text-sm text-slate-500">No guessed plates in the last refresh window.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {guessedSessions.map((s: any) => (
+                <div key={`${s.plate}-${s.camera}-guess`} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Guess</div>
+                    <Badge className="bg-purple-100 text-purple-800 border border-purple-200">GUESSED</Badge>
+                  </div>
+                  <div className="mt-2 text-2xl font-semibold font-display text-slate-100">{s.plate}</div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+                    <div>
+                      <div className="text-slate-500">Confidence</div>
+                      <div>{Number(s.confidence || 0).toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Camera</div>
+                      <div>{s.camera || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">First seen</div>
+                      <div>{s.entryTime || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Last seen</div>
+                      <div>{s.exitTime || s.entryTime || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

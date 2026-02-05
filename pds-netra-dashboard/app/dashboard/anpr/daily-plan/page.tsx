@@ -359,10 +359,19 @@ export default function AnprDailyPlanPage() {
           </div>
           <div className="text-sm text-slate-300">Plan expected arrivals and track live status updates.</div>
         </div>
-        <div className="hud-card p-4 min-w-[240px]">
-          <div className="hud-label">Summary</div>
-          <div className="hud-value">{summary.ARRIVED} / {summary.PLANNED}</div>
-          <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="hud-card p-4 min-w-[240px]">
+            <div className="hud-label">Summary</div>
+            <div className="hud-value">{summary.ARRIVED} / {summary.PLANNED}</div>
+            <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
+          </div>
+          <Button
+            variant="outline"
+            className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]"
+            onClick={() => setImportOpen(true)}
+          >
+            Bulk Import
+          </Button>
         </div>
       </div>
       {error && <ErrorBanner message={error} />}
@@ -459,34 +468,13 @@ export default function AnprDailyPlanPage() {
 
       <Card className="hud-card">
         <CardHeader className="flex items-center justify-between">
-          <div className="text-lg font-semibold font-display">Import Plan Items (CSV)</div>
-          <div className="hud-pill">Bulk load</div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="text-sm text-slate-300">
-            Upload a CSV to add or update planned vehicles for the selected date.
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setImportOpen(true)}>Open Import</Button>
-            <div className="text-xs text-slate-400">Columns: plate_text, expected_by_local, status, notes</div>
-          </div>
-          {importResult && (
-            <div className="text-xs text-slate-300">
-              Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="hud-card">
-        <CardHeader className="flex items-center justify-between">
           <div className="text-lg font-semibold font-display">Planned Vehicles</div>
           <div className="hud-pill">Live status</div>
         </CardHeader>
         <CardContent>
           <div className="table-shell overflow-auto">
-            <Table>
-            <THead>
+            <Table className="text-slate-100">
+            <THead className="bg-slate-900/80 text-slate-200">
               <TR>
                 <TH>Plate</TH>
                 <TH>Expected By</TH>
@@ -498,14 +486,14 @@ export default function AnprDailyPlanPage() {
             </THead>
             <TBody>
               {items.length === 0 ? (
-                <TR>
+                <TR className="border-white/10 hover:bg-white/0">
                   <TD colSpan={6} className="text-sm text-slate-500">
                     No plan items
                   </TD>
                 </TR>
               ) : (
                 items.map((it) => (
-                  <TR key={it.id}>
+                  <TR key={it.id} className="border-white/10 hover:bg-white/5">
                     <TD className="font-semibold">{it.plate_raw}</TD>
                     <TD>
                       <Input
@@ -539,19 +527,20 @@ export default function AnprDailyPlanPage() {
       </Card>
     </div>
     {importOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <button
-          className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
-          onClick={() => setImportOpen(false)}
-          aria-label="Close import"
-        />
-        <div
-          className="relative w-full max-w-3xl hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="p-6 sm:p-8 space-y-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="min-h-full px-4 py-8">
+          <button
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+            onClick={() => setImportOpen(false)}
+            aria-label="Close import"
+          />
+          <div
+            className="relative mx-auto w-full max-w-3xl hud-card animate-fade-up border border-white/10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
@@ -629,6 +618,7 @@ export default function AnprDailyPlanPage() {
                 Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

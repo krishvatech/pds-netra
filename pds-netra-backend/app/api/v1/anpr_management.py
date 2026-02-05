@@ -308,6 +308,32 @@ def update_anpr_vehicle(
     return AnprVehicleOut.model_validate(v)
 
 
+@router.delete("/vehicles/{vehicle_id}")
+def delete_anpr_vehicle(
+    vehicle_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_optional_user),
+) -> dict:
+    v = db.get(AnprVehicle, vehicle_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    _enforce_godown_scope(user, v.godown_id)
+
+    # Unlink any daily plan items that referenced this vehicle.
+    linked_items = (
+        db.query(AnprDailyPlanItem)
+        .filter(AnprDailyPlanItem.vehicle_id == vehicle_id)
+        .all()
+    )
+    for item in linked_items:
+        item.vehicle_id = None
+        db.add(item)
+
+    db.delete(v)
+    db.commit()
+    return {"status": "deleted", "id": vehicle_id, "unlinked_plan_items": len(linked_items)}
+
+
 @router.post("/vehicles/import", response_model=CsvImportSummary)
 def import_anpr_vehicles_csv(
     godown_id: str = Form(...),

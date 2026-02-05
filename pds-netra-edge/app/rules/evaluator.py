@@ -39,6 +39,7 @@ ANIMAL_CLASSES = {
     "dog",
     "cat",
     "cow",
+    "cattle",
     "bull",
     "buffalo",
     "monkey",
@@ -228,7 +229,13 @@ class RulesEvaluator:
         rules: List[BaseRule] = []
         if zone_id is not None:
             rules.extend(self.rules_by_zone.get(zone_id, []))
+            # Treat "__GLOBAL__" and "all" as equivalent zone identifiers.
+            if zone_id == "all":
+                rules.extend(self.rules_by_zone.get("__GLOBAL__", []))
+            elif zone_id == "__GLOBAL__":
+                rules.extend(self.rules_by_zone.get("all", []))
         rules.extend(self.rules_by_zone.get("all", []))
+        rules.extend(self.rules_by_zone.get("__GLOBAL__", []))
         rules.extend(self.rules_by_zone.get("*", []))
         return rules
 
@@ -310,9 +317,18 @@ class RulesEvaluator:
 
         if instant_only:
             for obj in objects:
-                cls = obj.class_name.lower()
+                cls_raw = obj.class_name
+                cls = cls_raw.strip().lower()
                 zone_ids = self._determine_zones(obj.bbox)
                 for zone_id in (zone_ids if zone_ids else [None]):
+                    if cls in self.alert_classes:
+                        self.logger.info(
+                            "Instant class alert match: raw=%r norm=%s zone=%s conf=%.3f",
+                            cls_raw,
+                            cls,
+                            zone_id,
+                            obj.confidence,
+                        )
                     if cls in self.alert_classes:
                         self._process_instant_class_alert(
                             obj,
@@ -336,11 +352,20 @@ class RulesEvaluator:
             self._cleanup_person_alerts(now_utc)
             return
         for obj in objects:
-            cls = obj.class_name.lower()
+            cls_raw = obj.class_name
+            cls = cls_raw.strip().lower()
             zone_ids = self._determine_zones(obj.bbox)
             
             # Handle class-based alerts (e.g. animal, vehicle)
             for zone_id in (zone_ids if zone_ids else [None]):
+                if cls in self.alert_classes:
+                    self.logger.info(
+                        "Class alert match: raw=%r norm=%s zone=%s conf=%.3f",
+                        cls_raw,
+                        cls,
+                        zone_id,
+                        obj.confidence,
+                    )
                 if cls in self.alert_classes:
                     self._process_instant_class_alert(
                         obj,
@@ -553,7 +578,7 @@ class RulesEvaluator:
         mqtt_client: MQTTClient
             Client used to publish events.
         """
-        species = obj.class_name.lower()
+        species = obj.class_name.strip().lower()
         last_species_alert = self.animal_species_alerts.get(species)
         if last_species_alert and (now_utc - last_species_alert).total_seconds() < self.animal_species_cooldown_sec:
             return
@@ -657,17 +682,19 @@ class RulesEvaluator:
             return
         if self.zone_enforce and not zone_id:
             return
-        class_key = obj.class_name.lower()
+        class_key = obj.class_name.strip().lower()
         key = (self.camera_id, class_key, zone_id)
         last_alert = self.person_alerts.get(key)
         if last_alert and (now_utc - last_alert).total_seconds() < self.person_alert_cooldown_sec:
             return
+        is_animal = class_key in ANIMAL_CLASSES
+        event_type = "ANIMAL_INTRUSION" if is_animal else "UNAUTH_PERSON"
         event_id = str(uuid.uuid4())
         event = EventModel(
             godown_id=self.godown_id,
             camera_id=self.camera_id,
             event_id=event_id,
-            event_type="UNAUTH_PERSON",
+            event_type=event_type,
             severity=self.alert_severity,
             timestamp_utc=now_utc.replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
             bbox=obj.bbox,
@@ -679,6 +706,11 @@ class RulesEvaluator:
                 rule_id="TEST_CLASS_DETECT",
                 confidence=obj.confidence,
                 movement_type=obj.class_name,
+                animal_species=class_key if is_animal else None,
+                animal_count=1 if is_animal else None,
+                animal_confidence=obj.confidence if is_animal else None,
+                animal_is_night=self._is_night(now_utc) if is_animal else None,
+                animal_bboxes=[obj.bbox] if is_animal else None,
                 extra=dict(meta_extra or {}),
             ),
         )

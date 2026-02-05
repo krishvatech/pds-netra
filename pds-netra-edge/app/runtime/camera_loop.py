@@ -1109,8 +1109,9 @@ def start_camera_loops(
                                 bbox = getattr(res, "bbox", None)
                                 text = getattr(res, "text", getattr(res, "plate_text", None))
                                 conf = getattr(res, "confidence", 1.0)
-                                if bbox and text:
-                                    dets.append((f"Plate: {text}", float(conf), bbox, -1))
+                                if bbox:
+                                    label = f"Plate: {text}" if text else "Plate"
+                                    dets.append((label, float(conf), bbox, -1))
                     except Exception:
                         pass
 

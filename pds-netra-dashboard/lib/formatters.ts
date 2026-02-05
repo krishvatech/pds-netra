@@ -1,10 +1,33 @@
 import type { Severity } from './types';
 
+const UTC_DATE_TIME = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit'
+});
+
+const UTC_DATE = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit'
+});
+
 export function formatUtc(ts?: string | null): string {
   if (!ts) return '-';
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return UTC_DATE_TIME.format(d);
+}
+
+export function formatUtcDate(ts?: string | null): string {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  return UTC_DATE.format(d);
 }
 
 export function humanEventType(eventType: string): string {

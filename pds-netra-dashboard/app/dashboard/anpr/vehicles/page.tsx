@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getUser } from '@/lib/auth';
-import { createAnprVehicle, getAnprVehicles, updateAnprVehicle, getGodowns, importAnprVehiclesCsv } from '@/lib/api';
+import {
+  createAnprVehicle,
+  getAnprVehicles,
+  updateAnprVehicle,
+  deleteAnprVehicle,
+  getGodowns,
+  importAnprVehiclesCsv
+} from '@/lib/api';
 import type { AnprVehicle, GodownListItem, CsvImportSummary } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -76,6 +83,29 @@ function parseCsv(text: string): CsvPreviewRow[] {
   return rows;
 }
 
+function toCsvValue(value: string) {
+  if (value.includes('"') || value.includes(',') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function buildCsv(rows: CsvPreviewRow[]): string {
+  const header = ['plate_text', 'list_type', 'transporter', 'notes', 'is_active'];
+  const lines = [header.join(',')];
+  for (const row of rows) {
+    const line = [
+      row.plate_text || '',
+      row.list_type || '',
+      row.transporter || '',
+      row.notes || '',
+      row.is_active || ''
+    ].map(toCsvValue);
+    lines.push(line.join(','));
+  }
+  return lines.join('\n');
+}
+
 export default function AnprVehiclesPage() {
   const [godownId, setGodownId] = useState('');
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
@@ -96,6 +126,10 @@ export default function AnprVehiclesPage() {
   const [importResult, setImportResult] = useState<CsvImportSummary | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [importMenuId, setImportMenuId] = useState<number | null>(null);
+  const [editRowIndex, setEditRowIndex] = useState<number | null>(null);
+  const [editRowDraft, setEditRowDraft] = useState<CsvPreviewRow | null>(null);
 
   const godownOptions = useMemo(() => {
     const opts = godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }));
@@ -166,6 +200,43 @@ export default function AnprVehiclesPage() {
       document.body.style.overflow = prev;
     };
   }, [importOpen]);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const onClick = () => setOpenMenuId(null);
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [openMenuId]);
+
+  useEffect(() => {
+    if (importMenuId === null) return;
+    const onClick = () => setImportMenuId(null);
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [importMenuId]);
+
+  function openEditRow(idx: number) {
+    const row = importRows[idx];
+    if (!row) return;
+    setEditRowIndex(idx);
+    setEditRowDraft({ ...row });
+  }
+
+  function applyEditRow() {
+    if (editRowIndex === null || !editRowDraft) return;
+    const next = [...importRows];
+    const updated = { ...editRowDraft };
+    updated.error = updated.plate_text.trim() ? undefined : 'plate_text required';
+    next[editRowIndex] = updated;
+    setImportRows(next);
+    setEditRowIndex(null);
+    setEditRowDraft(null);
+  }
+
+  function deleteRow(idx: number) {
+    const next = importRows.filter((_, i) => i !== idx);
+    setImportRows(next);
+  }
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -241,6 +312,20 @@ export default function AnprVehiclesPage() {
     }
   }
 
+  async function onDelete(v: AnprVehicle) {
+    if (!window.confirm(`Delete vehicle ${v.plate_raw}? This cannot be undone.`)) return;
+    try {
+      setBusy(true);
+      setError(null);
+      await deleteAnprVehicle(v.id);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete vehicle');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onImportFileChange(file: File | null) {
     setImportResult(null);
     setImportError(null);
@@ -260,7 +345,13 @@ export default function AnprVehiclesPage() {
     try {
       setImportBusy(true);
       setImportError(null);
-      const resp = await importAnprVehiclesCsv({ godown_id: godownId, file: importFile });
+      const rowsToSend = importRows.length ? importRows : [];
+      const csvText = rowsToSend.length ? buildCsv(rowsToSend) : '';
+      const fileToSend =
+        rowsToSend.length
+          ? new File([csvText], importFile.name || 'vehicle_registry_import.csv', { type: 'text/csv' })
+          : importFile;
+      const resp = await importAnprVehiclesCsv({ godown_id: godownId, file: fileToSend });
       setImportResult(resp);
       await load();
     } catch (e: any) {
@@ -281,15 +372,24 @@ export default function AnprVehiclesPage() {
           </div>
           <div className="text-sm text-slate-300">Maintain lists, import CSVs, and manage plate status per godown.</div>
         </div>
-        <div className="hud-card p-4 min-w-[220px]">
-          <div className="hud-label">Active / Total</div>
-          <div className="hud-value">{stats.active} / {stats.total}</div>
-          <div className="text-xs text-slate-500">Scope: {godownId ? godownId : 'Select godown'}</div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="hud-card p-4 min-w-[220px]">
+            <div className="hud-label">Active / Total</div>
+            <div className="hud-value">{stats.active} / {stats.total}</div>
+            <div className="text-xs text-slate-500">Scope: {godownId ? godownId : 'Select godown'}</div>
+          </div>
+          <Button
+            variant="outline"
+            className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]"
+            onClick={() => setImportOpen(true)}
+          >
+            Import CSV
+          </Button>
         </div>
       </div>
       {error && <ErrorBanner message={error} />}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <Card className="hud-card">
           <CardHeader className="flex items-center justify-between">
             <div className="text-lg font-semibold font-display">Add Vehicle</div>
@@ -336,27 +436,6 @@ export default function AnprVehiclesPage() {
                 Status: {stats.active} active | {stats.total} total
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="hud-card">
-          <CardHeader className="flex items-center justify-between">
-            <div className="text-lg font-semibold font-display">Import Vehicles (CSV)</div>
-            <div className="hud-pill">Bulk load</div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-sm text-slate-300">
-              Upload a CSV to add/update plates in bulk. Preview rows before import.
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => setImportOpen(true)}>Open Import</Button>
-              <div className="text-xs text-slate-400">Columns: plate_text, list_type, transporter, notes, is_active</div>
-            </div>
-            {importResult && (
-              <div className="text-xs text-slate-300">
-                Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
@@ -437,14 +516,46 @@ export default function AnprVehiclesPage() {
                         >
                           Toggle
                         </Button>
-                        <Button
-                          variant="outline"
-                          className="px-3 py-1.5 text-xs"
-                          onClick={() => onQuickEdit(v)}
-                          disabled={busy}
-                        >
-                          Edit
-                        </Button>
+                        <div className="relative inline-flex">
+                          <button
+                            type="button"
+                            className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100 hover:bg-white/10"
+                            aria-label="Open actions"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId((prev) => (prev === v.id ? null : v.id));
+                            }}
+                          >
+                            ...
+                          </button>
+                          {openMenuId === v.id && (
+                            <div
+                              className="absolute right-0 z-20 mt-2 w-32 rounded-lg border border-white/10 bg-slate-950/95 p-1 shadow-xl"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="block w-full rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/10"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  onQuickEdit(v);
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="block w-full rounded-md px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-500/20"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  onDelete(v);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </TD>
                     </TR>
                   ))
@@ -456,19 +567,20 @@ export default function AnprVehiclesPage() {
       </Card>
     </div>
     {importOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <button
-          className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
-          onClick={() => setImportOpen(false)}
-          aria-label="Close import"
-        />
-        <div
-          className="relative w-full max-w-3xl hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="p-6 sm:p-8 space-y-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="min-h-full px-4 py-8">
+          <button
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+            onClick={() => setImportOpen(false)}
+            aria-label="Close import"
+          />
+          <div
+            className="relative mx-auto w-full max-w-3xl hud-card animate-fade-up border border-white/10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xl font-semibold font-display text-white">Import Vehicles (CSV)</div>
@@ -524,17 +636,60 @@ export default function AnprVehiclesPage() {
                         <TH>Notes</TH>
                         <TH>Active</TH>
                         <TH>Issue</TH>
+                        <TH>Actions</TH>
                       </TR>
                     </THead>
                     <TBody>
                       {importRows.map((r, idx) => (
                         <TR key={`${r.plate_text}-${idx}`}>
-                          <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
-                          <TD>{r.list_type || 'N/A'}</TD>
-                          <TD>{r.transporter || 'N/A'}</TD>
-                          <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
-                          <TD>{r.is_active || 'N/A'}</TD>
+                          <TD className="font-semibold min-w-[160px]">{r.plate_text || 'N/A'}</TD>
+                          <TD className="min-w-[140px]">{r.list_type || 'N/A'}</TD>
+                          <TD className="min-w-[180px]">{r.transporter || 'N/A'}</TD>
+                          <TD className="min-w-[220px]">{r.notes || 'N/A'}</TD>
+                          <TD className="min-w-[120px]">{r.is_active || 'N/A'}</TD>
                           <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
+                          <TD className="w-[70px]">
+                            <div className="relative inline-flex">
+                              <button
+                                type="button"
+                                className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100 hover:bg-white/10"
+                                aria-label="Open row actions"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setImportMenuId((prev) => (prev === idx ? null : idx));
+                                }}
+                              >
+                                ...
+                              </button>
+                              {importMenuId === idx && (
+                                <div
+                                  className="absolute right-0 z-20 mt-2 w-32 rounded-lg border border-white/10 bg-slate-950/95 p-1 shadow-xl"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    className="block w-full rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/10"
+                                    onClick={() => {
+                                      setImportMenuId(null);
+                                      openEditRow(idx);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="block w-full rounded-md px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-500/20"
+                                    onClick={() => {
+                                      setImportMenuId(null);
+                                      deleteRow(idx);
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </TD>
                         </TR>
                       ))}
                     </TBody>
@@ -548,6 +703,88 @@ export default function AnprVehiclesPage() {
                 Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
               </div>
             )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {editRowDraft && editRowIndex !== null && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <button
+          className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+          onClick={() => {
+            setEditRowIndex(null);
+            setEditRowDraft(null);
+          }}
+          aria-label="Close edit"
+        />
+        <div
+          className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-lg font-semibold font-display text-white">Edit CSV Row</div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Label>Plate</Label>
+              <Input
+                value={editRowDraft.plate_text}
+                onChange={(e) => setEditRowDraft({ ...editRowDraft, plate_text: e.target.value })}
+                placeholder="plate_text"
+              />
+            </div>
+            <div>
+              <Label>List Type</Label>
+              <Select
+                value={(editRowDraft.list_type || 'WHITELIST').toUpperCase()}
+                onChange={(e) => setEditRowDraft({ ...editRowDraft, list_type: e.target.value })}
+                options={[
+                  { label: 'WHITELIST', value: 'WHITELIST' },
+                  { label: 'BLACKLIST', value: 'BLACKLIST' }
+                ]}
+              />
+            </div>
+            <div>
+              <Label>Active</Label>
+              <Select
+                value={(editRowDraft.is_active || '').toUpperCase()}
+                onChange={(e) => setEditRowDraft({ ...editRowDraft, is_active: e.target.value })}
+                options={[
+                  { label: 'TRUE', value: 'true' },
+                  { label: 'FALSE', value: 'false' },
+                  { label: 'N/A', value: '' }
+                ]}
+              />
+            </div>
+            <div>
+              <Label>Transporter</Label>
+              <Input
+                value={editRowDraft.transporter || ''}
+                onChange={(e) => setEditRowDraft({ ...editRowDraft, transporter: e.target.value })}
+                placeholder="transporter"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                value={editRowDraft.notes || ''}
+                onChange={(e) => setEditRowDraft({ ...editRowDraft, notes: e.target.value })}
+                placeholder="notes"
+              />
+            </div>
+          </div>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditRowIndex(null);
+                setEditRowDraft(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={applyEditRow}>Save</Button>
           </div>
         </div>
       </div>

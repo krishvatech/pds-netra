@@ -11,6 +11,7 @@ import {
     getGodowns
 } from '@/lib/api';
 import type { AuthorizedUserItem, GodownListItem } from '@/lib/types';
+import { formatUtcDate } from '@/lib/formatters';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ErrorBanner } from '@/components/ui/error-banner';
@@ -466,7 +467,7 @@ export default function AuthorizedUsersPage() {
                                                         )}
                                                     </td>
                                                     <td className="py-3 px-2 text-slate-400 text-xs">
-                                                        {new Date(user.created_at).toLocaleDateString()}
+                                                        {formatUtcDate(user.created_at)}
                                                     </td>
                                                     <td className="py-3 px-2 text-right space-x-2">
                                                         <button
