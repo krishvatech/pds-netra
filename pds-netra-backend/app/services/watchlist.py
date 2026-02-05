@@ -19,6 +19,7 @@ from ..schemas.watchlist import FaceMatchEventIn, WatchlistEmbeddingIn
 from .storage import get_storage_provider
 from .notifications import notify_blacklist_alert
 from .mqtt_publisher import publish_watchlist_sync
+from .incident_lifecycle import touch_detection_timestamp
 
 
 def _utc_now() -> datetime:
@@ -342,6 +343,7 @@ def _ensure_blacklist_alert(
         link = AlertEventLink(alert_id=existing.id, event_id=event.id)
         db.add(link)
         existing.end_time = event.timestamp_utc
+        touch_detection_timestamp(existing, event.timestamp_utc)
         db.commit()
         return existing, False
 
@@ -367,6 +369,7 @@ def _ensure_blacklist_alert(
             "correlation_id": correlation_id,
         },
     )
+    touch_detection_timestamp(alert, event.timestamp_utc)
     db.add(alert)
     db.flush()
     link = AlertEventLink(alert_id=alert.id, event_id=event.id)

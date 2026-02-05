@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
 from .after_hours import get_after_hours_policy, is_after_hours
+from .incident_lifecycle import touch_detection_timestamp
 from .notifications import (
     notify_alert,
     notify_after_hours_alert,
@@ -238,6 +239,7 @@ def apply_rules(db: Session, event: Event) -> None:
         link = AlertEventLink(alert_id=existing_alert.id, event_id=event.id)
         db.add(link)
         existing_alert.end_time = event.timestamp_utc
+        touch_detection_timestamp(existing_alert, event.timestamp_utc)
 
         if _severity_rank(severity_final) > _severity_rank(existing_alert.severity_final):
             existing_alert.severity_final = severity_final
@@ -273,6 +275,8 @@ def apply_rules(db: Session, event: Event) -> None:
             alert_type=alert_type,
             severity_final=severity_final,
             start_time=event.timestamp_utc,
+            first_detected_at=event.timestamp_utc,
+            last_detection_at=event.timestamp_utc,
             end_time=None,
             status="OPEN",
             summary=_build_alert_summary(alert_type, event),
@@ -357,6 +361,7 @@ def _handle_after_hours_presence(db: Session, event: Event) -> bool:
         link = AlertEventLink(alert_id=existing.id, event_id=event.id)
         db.add(link)
         existing.end_time = now
+        touch_detection_timestamp(existing, now)
         extra = dict(existing.extra or {})
         extra["last_seen_at"] = now.isoformat()
         extra["detected_count"] = count
@@ -395,6 +400,8 @@ def _handle_after_hours_presence(db: Session, event: Event) -> bool:
         alert_type=alert_type,
         severity_final="critical",
         start_time=now,
+        first_detected_at=now,
+        last_detection_at=now,
         end_time=None,
         status="OPEN",
         title="After-hours Presence Detected",
@@ -616,6 +623,7 @@ def _handle_fire_detected(db: Session, event: Event) -> bool:
         link = AlertEventLink(alert_id=existing.id, event_id=event.id)
         db.add(link)
         existing.end_time = event.timestamp_utc
+        touch_detection_timestamp(existing, event.timestamp_utc)
         extra = dict(existing.extra or {})
         extra["fire_classes"] = classes
         extra["fire_confidence"] = confidence
@@ -651,6 +659,8 @@ def _handle_fire_detected(db: Session, event: Event) -> bool:
         alert_type="FIRE_DETECTED",
         severity_final="critical",
         start_time=event.timestamp_utc,
+        first_detected_at=event.timestamp_utc,
+        last_detection_at=event.timestamp_utc,
         end_time=None,
         status="OPEN",
         summary=_build_alert_summary("FIRE_DETECTED", event),
@@ -775,6 +785,7 @@ def _handle_animal_intrusion(db: Session, event: Event) -> bool:
         link = AlertEventLink(alert_id=existing.id, event_id=event.id)
         db.add(link)
         existing.end_time = event.timestamp_utc
+        touch_detection_timestamp(existing, event.timestamp_utc)
 
         extra = dict(existing.extra or {})
         extra["animal_species"] = species_key
@@ -814,6 +825,8 @@ def _handle_animal_intrusion(db: Session, event: Event) -> bool:
         alert_type="ANIMAL_INTRUSION",
         severity_final=severity,
         start_time=event.timestamp_utc,
+        first_detected_at=event.timestamp_utc,
+        last_detection_at=event.timestamp_utc,
         end_time=None,
         status="OPEN",
         summary=_build_alert_summary("ANIMAL_INTRUSION", event),

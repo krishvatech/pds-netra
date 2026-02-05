@@ -21,6 +21,7 @@ from ..models.event import EventModel, HealthModel
 from ..schemas.watchlist import FaceMatchEvent
 from ..schemas.presence import PresenceEvent
 from ..config import Settings
+from .confirm import ConfirmGate
 
 
 class MQTTClient:
@@ -39,6 +40,7 @@ class MQTTClient:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.settings = settings
         self.client = mqtt.Client(client_id=client_id)
+        self._confirm_gate = ConfirmGate()
         if settings.mqtt_username:
             # Set username/password if provided
             self.client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
@@ -90,6 +92,21 @@ class MQTTClient:
 
     def publish_event(self, event: EventModel) -> None:
         """Publish an event message to the configured events topic."""
+        rule_id = event.meta.rule_id if event.meta else event.event_type
+        if not self._confirm_gate.push(
+            camera_id=event.camera_id,
+            rule_id=rule_id,
+            now=time.time(),
+            track_id=event.track_id,
+        ):
+            self.logger.debug(
+                "Event dropped by confirm gate event=%s type=%s rule=%s track=%s",
+                event.event_id,
+                event.event_type,
+                rule_id,
+                event.track_id,
+            )
+            return
         topic = f"pds/{event.godown_id}/events"
         payload = event.json()
         self.logger.info(

@@ -65,12 +65,14 @@ def test_enqueue_alert_notifications_idempotent():
     alert = _create_alert(db)
 
     created = enqueue_alert_notifications(db, alert)
-    assert created == 1
+    assert created == 2
     created_again = enqueue_alert_notifications(db, alert)
     assert created_again == 0
     rows = db.query(NotificationOutbox).all()
-    assert len(rows) == 1
-    assert rows[0].channel == "WHATSAPP"
+    assert len(rows) == 2
+    channels = {row.channel for row in rows}
+    assert "WHATSAPP" in channels
+    assert "EMAIL" in channels
 
 
 def test_enqueue_alert_notifications_combines_env_call_with_endpoints():

@@ -431,6 +431,31 @@ def _parse_mapping(raw: str, godown_id: str, channel: str) -> list[tuple[str, st
     return targets
 
 
+WHATSAPP_COOLDOWN = datetime.timedelta(minutes=5)
+CALL_COOLDOWN = datetime.timedelta(minutes=20)
+
+CHANNEL_COOLDOWNS: dict[str, datetime.timedelta | None] = {
+    "WHATSAPP": WHATSAPP_COOLDOWN,
+    "CALL": CALL_COOLDOWN,
+    "EMAIL": None,
+}
+
+
+def _get_channel_cooldown(channel: str) -> datetime.timedelta | None:
+    return CHANNEL_COOLDOWNS.get(channel)
+
+
+def _cooldown_ok(alert: Alert, channel: str, now: datetime.datetime) -> bool:
+    cooldown = _get_channel_cooldown(channel)
+    if cooldown is None:
+        return True
+    last_attr = f"last_{channel.lower()}_at"
+    last_seen = getattr(alert, last_attr, None)
+    if not last_seen:
+        return True
+    return (now - last_seen) >= cooldown
+
+
 def resolve_notification_targets(
     db: Session,
     *,
@@ -474,9 +499,12 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
     event = _find_event_for_alert(db, alert, event)
     content = build_alert_notification(db, alert, event)
     created = 0
+    now = datetime.datetime.now(datetime.timezone.utc)
     for channel, target in targets:
         channel_norm = channel.upper()
         if channel_norm not in {"WHATSAPP", "EMAIL", "CALL"}:
+            continue
+        if not _cooldown_ok(alert, channel_norm, now):
             continue
         exists = (
             db.query(NotificationOutbox)

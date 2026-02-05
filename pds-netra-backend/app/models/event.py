@@ -51,7 +51,10 @@ class Alert(Base):
     alert_type: Mapped[str] = mapped_column(String(64), index=True)
     severity_final: Mapped[str] = mapped_column(String(16))
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    first_detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_detection_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="OPEN")  # OPEN, ACK, or CLOSED
     title: Mapped[str | None] = mapped_column(String(256), nullable=True)
     summary: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -66,6 +69,9 @@ class Alert(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_whatsapp_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_call_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AlertEventLink(Base):

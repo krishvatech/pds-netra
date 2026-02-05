@@ -10,6 +10,8 @@ import os
 import time
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 def _load_env_file(env_path: Path) -> None:
     if not env_path.exists():
         raise RuntimeError(f".env not found at: {env_path}")
@@ -24,17 +26,43 @@ def _load_env_file(env_path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        current = os.environ.get(key)
-        if current in (None, ""):
-            os.environ[key] = value
+        os.environ[key] = value
 
 # Force-load .env from pds-netra-backend/.env no matter where module is imported from
 backend_root = Path(__file__).resolve().parents[1]  # .../pds-netra-backend
 env_path = backend_root / ".env"
 _load_env_file(env_path)
 
+QUIET_DEFAULT = datetime.timedelta(seconds=60)
+QUIET_FIRE = datetime.timedelta(seconds=120)
+FIRE_ALERT_TYPES = {"FIRE_DETECTED"}
+
+
+def close_stale_incidents(db: Session, *, now: datetime.datetime | None = None) -> int:
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    closed = 0
+    rows = (
+        db.query(Alert)
+        .filter(Alert.status.in_(["OPEN", "ACK"]))
+        .all()
+    )
+    for alert in rows:
+        last_seen = alert.last_detection_at or alert.start_time
+        if last_seen is None:
+            continue
+        quiet = QUIET_FIRE if alert.alert_type in FIRE_ALERT_TYPES else QUIET_DEFAULT
+        if (now - last_seen) >= quiet:
+            mark_alert_closed(alert, now)
+            db.add(alert)
+            closed += 1
+    if closed:
+        db.commit()
+    return closed
+
 from .core.config import settings  # ensures .env is loaded for standalone worker
 from .core.db import SessionLocal
+from .models.event import Alert
+from .services.incident_lifecycle import mark_alert_closed
 from .services.notification_worker import _build_providers, process_outbox_batch
 from .services.alert_reports import generate_hq_report, IST
 
@@ -72,6 +100,9 @@ def main() -> int:
                 if processed:
                     logger.info("Outbox processed=%s", processed)
                 now_utc = datetime.datetime.now(datetime.timezone.utc)
+                closed = close_stale_incidents(db, now=now_utc)
+                if closed:
+                    logger.info("Incidents auto-closed=%s", closed)
                 now_ist = now_utc.astimezone(IST)
                 if daily_enabled:
                     try:

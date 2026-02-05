@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..models.event import Alert
 from ..models.vehicle_gate_session import VehicleGateSession
 from .notifications import notify_dispatch_movement_delay
+from .incident_lifecycle import touch_detection_timestamp, mark_alert_closed
 
 
 def _normalize_plate(text: str) -> str:
@@ -93,8 +94,7 @@ def _close_alerts_for_session(db: Session, session: VehicleGateSession, closed_a
             continue
         if extra.get("plate_norm") != session.plate_norm:
             continue
-        alert.status = "CLOSED"
-        alert.end_time = closed_at
+        mark_alert_closed(alert, closed_at)
         db.add(alert)
 
 
@@ -242,6 +242,7 @@ def process_vehicle_gate_sessions(db: Session, logger: Optional[logging.Logger] 
                 if session.last_snapshot_url:
                     extra["snapshot_url"] = session.last_snapshot_url
                 existing.extra = extra
+                touch_detection_timestamp(existing, now)
                 db.add(existing)
                 reminders[key] = now.isoformat()
                 session.reminders_sent = reminders
@@ -268,6 +269,7 @@ def process_vehicle_gate_sessions(db: Session, logger: Optional[logging.Logger] 
                     "snapshot_url": session.last_snapshot_url,
                 },
             )
+            touch_detection_timestamp(alert, now)
             db.add(alert)
             db.flush()
             reminders[key] = now.isoformat()

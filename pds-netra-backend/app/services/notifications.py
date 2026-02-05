@@ -19,6 +19,7 @@ from ..models.event import Alert, Event
 from ..models.notification_recipient import NotificationRecipient
 from .notification_outbox import enqueue_alert_notifications
 from ..core.config import settings
+from ..integrations.twilio_client import get_twilio_voice_client
 
 
 def _webhook_urls() -> list[str]:
@@ -99,6 +100,11 @@ class MockNotificationProvider(NotificationProvider):
 
     def send_email(self, to: str, subject: str, html: str) -> None:
         logging.getLogger("notifications").info("Mock Email to=%s subject=%s", to, subject)
+    
+    def send_call(self, to: str, script: str) -> Optional[str]:
+        logging.getLogger("notifications").info("Mock Call to=%s script=%s", to, script)
+        return None
+
 
 
 class WebhookWhatsAppProvider(NotificationProvider):
@@ -153,6 +159,47 @@ class SmtpEmailProvider(NotificationProvider):
         except Exception as exc:
             logging.getLogger("notifications").warning("SMTP notify failed: %s", exc)
 
+ 
+class TwilioVoiceProvider(NotificationProvider):
+    def __init__(self) -> None:
+        self.from_number = settings.TWILIO_VOICE_FROM or os.getenv("TWILIO_CALL_FROM_NUMBER")
+        if not self.from_number:
+            raise RuntimeError("Twilio voice 'from' number is missing.")
+        self.voice_webhook_url = settings.TWILIO_VOICE_WEBHOOK_URL or os.getenv("TWILIO_VOICE_WEBHOOK_URL")
+        self.voice = os.getenv("TWILIO_CALL_VOICE", "alice")
+        self.language = os.getenv("TWILIO_CALL_LANGUAGE", "en-US")
+        self.client = get_twilio_voice_client()
+
+    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> None:
+        return
+
+    def send_email(self, to: str, subject: str, html: str) -> None:
+        return
+
+    def send_call(self, to: str, script: str) -> Optional[str]:
+        body = script or "PDS Netra alert"
+        escaped = (body or "").replace("<", "&lt;").replace(">", "&gt;")
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+<Say voice="{self.voice}" language="{self.language}">{escaped}</Say>
+</Response>"""
+        params: dict[str, str] = {"to": to, "from_": self.from_number}
+        if self.voice_webhook_url:
+            params["url"] = self.voice_webhook_url
+        else:
+            params["twiml"] = twiml
+        try:
+            call = self.client.calls.create(**params)
+            logging.getLogger("notifications").info(
+                "Twilio call created sid=%s to=%s",
+                getattr(call, "sid", None),
+                to,
+            )
+            return getattr(call, "sid", None)
+        except Exception as exc:
+            logging.getLogger("notifications").exception("Twilio call failed: %s", exc)
+            raise
+
 
 class NotificationService:
     def __init__(self, providers: Iterable[NotificationProvider]) -> None:
@@ -171,6 +218,17 @@ class NotificationService:
                 provider.send_email(to, subject, html)
             except Exception as exc:
                 logging.getLogger("notifications").warning("Email provider failed: %s", exc)
+    
+    def send_call(self, to: str, script: str) -> Optional[str]:
+        provider_id: Optional[str] = None
+        for provider in self.providers:
+            try:
+                out = provider.send_call(to, script)
+                if out:
+                    provider_id = out
+            except Exception as exc:
+                logging.getLogger("notifications").warning("Call provider failed: %s", exc)
+        return provider_id
 
 
 def _parse_mapping(raw: str, godown_id: str, channel: str) -> list[NotificationTarget]:

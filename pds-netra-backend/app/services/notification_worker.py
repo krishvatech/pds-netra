@@ -4,25 +4,23 @@ Outbox worker for sending notifications with retries.
 
 from __future__ import annotations
 
-import base64
 import datetime
 import html
 import json
 import logging
 import os
 import smtplib
-import urllib.parse
-import urllib.request
-import urllib.error
 from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Optional
 from urllib.parse import urlparse
 from ..core.config import settings
+from ..integrations.twilio_client import get_twilio_messaging_client, get_twilio_voice_client
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..models.notification_outbox import NotificationOutbox
+from ..models.event import Alert
 
 
 logger = logging.getLogger("notification_worker")
@@ -85,21 +83,12 @@ class WhatsAppHttpProvider(NotificationProvider):
 
 class WhatsAppTwilioProvider(NotificationProvider):
     def __init__(self) -> None:
-        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        self.from_whatsapp = os.getenv("TWILIO_WHATSAPP_FROM")
-
-        if not self.account_sid or not self.auth_token or not self.from_whatsapp:
-            raise RuntimeError(
-                "Twilio WhatsApp config missing. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM."
-            )
-
-        try:
-            from twilio.rest import Client  # type: ignore
-        except Exception as exc:
-            raise RuntimeError("Twilio SDK not installed. Run: pip install twilio") from exc
-
-        self.client = Client(self.account_sid, self.auth_token)
+        self.from_whatsapp = (
+            settings.TWILIO_WHATSAPP_FROM or os.getenv("TWILIO_WHATSAPP_FROM")
+        )
+        if not self.from_whatsapp:
+            raise RuntimeError("Twilio WhatsApp 'from' number is missing (TWILIO_WHATSAPP_FROM).")
+        self.client = get_twilio_messaging_client()
 
     def _normalize_to(self, to: str) -> str:
         t = (to or "").strip()
@@ -152,21 +141,27 @@ class CallLogProvider(NotificationProvider):
 
 class TwilioCallProvider(NotificationProvider):
     """
-    Twilio Voice call using TwiML passed directly (no public webhook URL needed).
+    Twilio Voice call using TwiML or a webhook.
 
     Env:
-        TWILIO_ACCOUNT_SID
-        TWILIO_AUTH_TOKEN
-        TWILIO_CALL_FROM_NUMBER   (Twilio voice-capable number, E.164)
+        TWILIO_VOICE_ACCOUNT_SID
+        TWILIO_VOICE_AUTH_TOKEN
+        TWILIO_VOICE_FROM
+        TWILIO_VOICE_WEBHOOK_URL
         TWILIO_CALL_VOICE         (default alice)
         TWILIO_CALL_LANGUAGE      (default en-US)
         TWILIO_CALL_TIMEOUT       (default 15)
     """
 
     def __init__(self) -> None:
-        self.account_sid = (os.getenv("TWILIO_ACCOUNT_SID") or "").strip()
-        self.auth_token = (os.getenv("TWILIO_AUTH_TOKEN") or "").strip()
-        self.from_number = (os.getenv("TWILIO_CALL_FROM_NUMBER") or "").strip()
+        self.from_number = (
+            settings.TWILIO_VOICE_FROM or os.getenv("TWILIO_CALL_FROM_NUMBER", "")
+        ).strip()
+        if not self.from_number:
+            raise RuntimeError("Twilio voice 'from' number is missing (TWILIO_VOICE_FROM).")
+        self.voice_webhook = (
+            settings.TWILIO_VOICE_WEBHOOK_URL or os.getenv("TWILIO_VOICE_WEBHOOK_URL")
+        )
         self.voice = os.getenv("TWILIO_CALL_VOICE", "alice")
         self.language = os.getenv("TWILIO_CALL_LANGUAGE", "en-US")
         try:
@@ -174,10 +169,7 @@ class TwilioCallProvider(NotificationProvider):
         except ValueError:
             self.timeout = 15
 
-        if not (self.account_sid and self.auth_token and self.from_number):
-            raise RuntimeError("Twilio voice call configuration is incomplete")
-
-        self.url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls.json"
+        self.client = get_twilio_voice_client()
 
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
         return None
@@ -186,59 +178,25 @@ class TwilioCallProvider(NotificationProvider):
         return None
 
     def send_call(self, to: str, message: str) -> Optional[str]:
-        # normalize message
         body = " ".join((message or "").split()) or "PDS Netra alert."
         escaped = html.escape(body)
-
-        # TwiML (no external URL required)
         twiml = f"<Response><Say voice=\"{self.voice}\" language=\"{self.language}\">{escaped}</Say></Response>"
 
-        payload = {"To": to, "From": self.from_number, "Twiml": twiml}
-        data = urllib.parse.urlencode(payload).encode("utf-8")
-
-        auth = base64.b64encode(f"{self.account_sid}:{self.auth_token}".encode("ascii")).decode("ascii")
-        headers = {
-            "Authorization": f"Basic {auth}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        req = urllib.request.Request(self.url, data=data, headers=headers, method="POST")
+        params: dict[str, str] = {"to": to, "from_": self.from_number}
+        if self.voice_webhook:
+            params["url"] = self.voice_webhook
+        else:
+            params["twiml"] = twiml
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8")
-            try:
-                parsed = json.loads(raw)
-            except Exception:
-                parsed = None
-
-            # Always log response basics (helps debugging)
+            call = self.client.calls.create(**params)
             logging.getLogger("notifications").info(
-                "Twilio call API success http=200 to=%s from=%s sid=%s",
+                "Twilio call sent to=%s from=%s sid=%s",
                 to,
                 self.from_number,
-                (parsed or {}).get("sid") if isinstance(parsed, dict) else None,
+                getattr(call, "sid", None),
             )
-
-            if isinstance(parsed, dict):
-                return parsed.get("sid")
-            return None
-
-        except urllib.error.HTTPError as e:
-            # This is the MOST important improvement: read Twilio error body
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = "<unable to read error body>"
-            logging.getLogger("notifications").error(
-                "Twilio call HTTPError status=%s reason=%s body=%s",
-                getattr(e, "code", None),
-                getattr(e, "reason", None),
-                body,
-            )
-            raise RuntimeError(f"Twilio call failed HTTP {getattr(e, 'code', None)}: {body}") from e
-
+            return getattr(call, "sid", None)
         except Exception as exc:
             logging.getLogger("notifications").exception("Twilio call failed: %s", exc)
             raise RuntimeError(f"Twilio call failed: {exc}") from exc
@@ -373,9 +331,21 @@ def _build_providers() -> ProviderSet:
     email = EmailSMTPProvider()
 
     # Call (Twilio)
-    sid = (os.getenv("TWILIO_ACCOUNT_SID") or "").strip()
-    token = (os.getenv("TWILIO_AUTH_TOKEN") or "").strip()
-    from_number = (os.getenv("TWILIO_CALL_FROM_NUMBER") or "").strip()
+    sid = (
+        settings.TWILIO_VOICE_ACCOUNT_SID
+        or os.getenv("TWILIO_ACCOUNT_SID")
+        or ""
+    ).strip()
+    token = (
+        settings.TWILIO_VOICE_AUTH_TOKEN
+        or os.getenv("TWILIO_AUTH_TOKEN")
+        or ""
+    ).strip()
+    from_number = (
+        settings.TWILIO_VOICE_FROM
+        or os.getenv("TWILIO_CALL_FROM_NUMBER")
+        or ""
+    ).strip()
 
     missing = []
     if not sid:
@@ -465,10 +435,25 @@ def process_outbox_batch(
 
             row.status = "SENT"
             row.provider_message_id = message_id
-            row.sent_at = datetime.datetime.now(datetime.timezone.utc)
+            now_sent = datetime.datetime.now(datetime.timezone.utc)
+            row.sent_at = now_sent
             row.provider_message_id = message_id
             row.last_error = None
             row.next_retry_at = None
+            if row.alert_id:
+                alert = (
+                    db.query(Alert)
+                    .filter(Alert.public_id == row.alert_id)
+                    .first()
+                )
+                if alert:
+                    if row.channel == "WHATSAPP":
+                        alert.last_whatsapp_at = now_sent
+                    elif row.channel == "CALL":
+                        alert.last_call_at = now_sent
+                    elif row.channel == "EMAIL":
+                        alert.last_email_at = now_sent
+                    db.add(alert)
         except Exception as exc:
             row.last_error = str(exc)
             if row.attempts >= max_attempts:

@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     smtp_user: str | None = Field(default=None, env="SMTP_USER")
     smtp_password: str | None = Field(default=None, env="SMTP_PASSWORD")
     smtp_from: str | None = Field(default=None, env="SMTP_FROM")
+    # Twilio messaging / WhatsApp account
+    TWILIO_MSG_ACCOUNT_SID: str | None = Field(default=None, env="TWILIO_MSG_ACCOUNT_SID")
+    TWILIO_MSG_AUTH_TOKEN: str | None = Field(default=None, env="TWILIO_MSG_AUTH_TOKEN")
+    TWILIO_WHATSAPP_FROM: str | None = Field(default=None, env="TWILIO_WHATSAPP_FROM")
+    # Twilio voice account
+    TWILIO_VOICE_ACCOUNT_SID: str | None = Field(default=None, env="TWILIO_VOICE_ACCOUNT_SID")
+    TWILIO_VOICE_AUTH_TOKEN: str | None = Field(default=None, env="TWILIO_VOICE_AUTH_TOKEN")
+    TWILIO_VOICE_FROM: str | None = Field(default=None, env="TWILIO_VOICE_FROM")
+    TWILIO_VOICE_WEBHOOK_URL: str | None = Field(default=None, env="TWILIO_VOICE_WEBHOOK_URL")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

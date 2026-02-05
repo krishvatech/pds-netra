@@ -18,6 +18,7 @@ from ..models.dispatch_issue import DispatchIssue
 from ..models.event import Event, Alert
 from .notifications import notify_alert
 from .vehicle_gate import process_vehicle_gate_sessions
+from .incident_lifecycle import touch_detection_timestamp
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -92,6 +93,7 @@ def _process_issues(db: Session, logger: logging.Logger) -> None:
             zone_id=issue.zone_id,
             extra=None,
         )
+        touch_detection_timestamp(alert, now)
         db.add(alert)
         db.flush()
         issue.status = "ALERTED"
