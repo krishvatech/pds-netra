@@ -146,7 +146,9 @@ class SmtpEmailProvider(NotificationProvider):
         msg["Subject"] = subject
         msg["From"] = self.sender
         msg["To"] = to
-        msg.set_content(html)
+        # Provide both plain-text and HTML bodies so clients render images.
+        msg.set_content("This is an HTML email. Please view in an HTML-capable email client.")
+        msg.add_alternative(html, subtype="html")
         try:
             with smtplib.SMTP(self.host, self.port, timeout=5) as server:
                 server.ehlo()

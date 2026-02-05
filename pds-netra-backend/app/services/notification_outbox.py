@@ -299,7 +299,12 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         f"<p><strong>Details:</strong> {details}</p>"
     )
     if evidence:
-        email_body += f"<p><strong>Evidence:</strong> <a href=\"{evidence}\">{evidence}</a></p>"
+        evidence_escaped = html.escape(evidence, quote=True)
+        email_body += (
+            f"<p><strong>Evidence:</strong> <a href=\"{evidence_escaped}\">{evidence_escaped}</a></p>"
+            f"<p><img src=\"{evidence_escaped}\" alt=\"Evidence snapshot\" "
+            "style=\"max-width:100%;height:auto;border:1px solid #1f2937;border-radius:6px;\" /></p>"
+        )
     if link:
         email_body += f"<p><strong>Dashboard:</strong> <a href=\"{link}\">{link}</a></p>"
 
@@ -510,6 +515,7 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
             db.query(NotificationOutbox)
             .filter(
                 NotificationOutbox.alert_id == alert.public_id,
+                NotificationOutbox.kind == "ALERT",
                 NotificationOutbox.channel == channel_norm,
                 NotificationOutbox.target == target,
             )

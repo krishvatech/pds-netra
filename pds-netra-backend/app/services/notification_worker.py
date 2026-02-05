@@ -9,9 +9,11 @@ import html
 import json
 import logging
 import os
+import re
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
+from email.utils import make_msgid
 from typing import Optional
 from urllib.parse import urlparse
 from ..core.config import settings
@@ -180,6 +182,7 @@ class TwilioCallProvider(NotificationProvider):
     def send_call(self, to: str, message: str) -> Optional[str]:
         body = " ".join((message or "").split()) or "PDS Netra alert."
         escaped = html.escape(body)
+        # TwiML (no external URL required)
         twiml = f"<Response><Say voice=\"{self.voice}\" language=\"{self.language}\">{escaped}</Say></Response>"
 
         params: dict[str, str] = {"to": to, "from_": self.from_number}
@@ -246,8 +249,36 @@ class EmailSMTPProvider(NotificationProvider):
         msg["Subject"] = subject
         msg["From"] = self.sender
         msg["To"] = to
-        msg.set_content("PDS Netra notification")         # plain text fallback
-        msg.add_alternative(html, subtype="html")         # html
+        msg.set_content("PDS Netra notification")  # plain text fallback
+
+        # Try to inline the first external image so MailHog and clients with CSP show it.
+        html_body = html
+        related_bytes: Optional[bytes] = None
+        related_type: Optional[str] = None
+        related_subtype: Optional[str] = None
+        related_cid: Optional[str] = None
+        try:
+            match = re.search(r"<img[^>]+src=[\"']([^\"']+)[\"']", html, flags=re.IGNORECASE)
+            if match:
+                src_url = match.group(1)
+                if src_url.startswith("http://") or src_url.startswith("https://"):
+                    with urllib.request.urlopen(src_url, timeout=6) as resp:
+                        data = resp.read()
+                        content_type = resp.headers.get_content_type()
+                    # Guard against huge downloads (5 MB cap)
+                    if data and len(data) <= 5 * 1024 * 1024 and content_type.startswith("image/"):
+                        related_bytes = data
+                        related_type, related_subtype = content_type.split("/", 1)
+                        cid = make_msgid(domain="pdsnetra.local")
+                        related_cid = cid
+                        cid_ref = cid[1:-1]
+                        html_body = html_body.replace(src_url, f"cid:{cid_ref}")
+        except Exception as exc:
+            logging.getLogger("notification_worker").warning("Inline image fetch failed: %s", exc)
+
+        html_part = msg.add_alternative(html_body, subtype="html")
+        if related_bytes and related_type and related_subtype and related_cid:
+            html_part.add_related(related_bytes, maintype=related_type, subtype=related_subtype, cid=related_cid)
 
         try:
             with smtplib.SMTP(self.host, self.port, timeout=8) as server:
@@ -274,9 +305,9 @@ class ProviderSet:
 
     def send(self, outbox: NotificationOutbox) -> Optional[str]:
         if outbox.channel == "WHATSAPP":
-            media_url = outbox.media_url
+            media_url = _normalize_media_url(outbox.media_url)
             # Avoid media URLs that are only reachable locally (Twilio can't fetch them).
-            if _is_local_media_url(media_url):
+            if isinstance(self.whatsapp, WhatsAppTwilioProvider) and _is_local_media_url(media_url):
                 media_url = None
             return self.whatsapp.send_whatsapp(outbox.target, outbox.message, media_url)
         if outbox.channel == "EMAIL":
@@ -296,6 +327,29 @@ def _is_local_media_url(url: Optional[str]) -> bool:
     except Exception:
         return False
     return host in {"localhost", "127.0.0.1", "0.0.0.0"} or host.startswith("127.")
+
+
+def _normalize_media_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    if parsed.scheme and parsed.netloc and not _is_local_media_url(url):
+        return url
+    base = (os.getenv("MEDIA_PUBLIC_BASE_URL") or os.getenv("BACKEND_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        return url
+    if _is_local_media_url(base):
+        return url
+    path = parsed.path or ""
+    if not path.startswith("/"):
+        path = f"/{path}"
+    normalized = f"{base}{path}"
+    if parsed.query:
+        normalized = f"{normalized}?{parsed.query}"
+    return normalized
 
 
 def _build_providers() -> ProviderSet:
@@ -372,8 +426,6 @@ def _build_providers() -> ProviderSet:
     )
 
     return ProviderSet(whatsapp=whatsapp, email=email, call=call_provider)
-
-    
 
 
 def _backoff_seconds(attempt: int) -> int:
