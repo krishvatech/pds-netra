@@ -27,6 +27,10 @@ docker compose -f docker-compose.prod.yml build
 
 docker compose -f docker-compose.prod.yml up -d
 
+# Run DB migrations (required after backend schema changes)
+
+docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+
 # Stop services
 
 docker compose -f docker-compose.prod.yml down
@@ -104,6 +108,9 @@ Common errors and fixes
 
 5) Dashboard 401 Unauthorized
    - Set PDS_AUTH_DISABLED=true for PoC.
+
+6) Backend error: "column alerts.last_whatsapp_at does not exist"
+   - DB schema is behind. Run: docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
 Security reminders
 ------------------
