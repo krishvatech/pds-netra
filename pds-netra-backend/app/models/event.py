@@ -62,6 +62,9 @@ class Alert(Base):
     extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ack_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ack_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ack_token_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     events: Mapped[list[AlertEventLink]] = relationship(
         "AlertEventLink", back_populates="alert", cascade="all, delete-orphan"

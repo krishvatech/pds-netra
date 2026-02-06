@@ -1,3 +1,5 @@
+# pds/backend/app/api/v1/events.py
+
 """
 API endpoints for accessing raw events and alerts.
 
@@ -8,14 +10,15 @@ responses used by the dashboard.
 from __future__ import annotations
 
 from typing import List, Optional
-from datetime import datetime
-from urllib.parse import urlparse
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from ...core.db import get_db
 from ...core.auth import get_optional_user
@@ -25,6 +28,7 @@ from ...models.alert_action import AlertAction
 from ...models.notification_outbox import NotificationOutbox
 from ...schemas.alert_action import AlertActionCreate, AlertActionOut
 from ...schemas.notifications import NotificationDeliveryOut
+from ...services.ack_tokens import verify_raw_token
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
@@ -525,3 +529,46 @@ def create_alert_action(
     db.commit()
     db.refresh(action)
     return AlertActionOut.model_validate(action)
+
+@router.get("/alerts/{public_id}/ack-link", response_class=HTMLResponse)
+def acknowledge_alert_via_link(
+    public_id: str,
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Acknowledge an alert via one-time token embedded in WhatsApp/Email link."""
+    alert = db.query(Alert).filter(Alert.public_id == public_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    if alert.status == "ACK" or alert.acknowledged_at is not None:
+        return HTMLResponse("<h3>✅ Alert already acknowledged</h3>", status_code=200)
+
+    if alert.ack_token_used_at is not None:
+        return HTMLResponse("<h3>✅ Link already used</h3>", status_code=200)
+
+    now_utc = datetime.now(timezone.utc)
+    if alert.ack_token_expires_at is not None and alert.ack_token_expires_at < now_utc:
+        raise HTTPException(status_code=410, detail="Token expired")
+
+    if not verify_raw_token(token, alert.ack_token_hash):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Mark ACK + record action
+    alert.status = "ACK"
+    alert.acknowledged_by = "link"
+    alert.acknowledged_at = datetime.now(timezone.utc)
+    alert.ack_token_used_at = datetime.now(timezone.utc)
+
+    action = AlertAction(alert_id=alert.id, action_type="ACK", actor="link", note="ack via link")
+    db.add(action)
+    db.add(alert)
+    db.commit()
+
+    return HTMLResponse(
+        """<html><body style="font-family: Arial; padding: 20px;">
+        <h2>✅ Alert acknowledged</h2>
+        <p>You can close this page.</p>
+        </body></html>""",
+        status_code=200,
+    )

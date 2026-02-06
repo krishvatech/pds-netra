@@ -6,7 +6,6 @@ application. The API is versioned under ``/api/v1``.
 """
 
 from fastapi import APIRouter
-
 from .v1.events import router as events_router
 from .v1.reports import router as reports_router
 from .v1.auth import router as auth_router
