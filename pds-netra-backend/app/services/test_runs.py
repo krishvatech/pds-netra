@@ -7,6 +7,7 @@ Stores uploaded MP4 files and lightweight metadata on local disk for PoC usage.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +15,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
+from ..core.errors import safe_json_dump_atomic, safe_json_load
 
 @dataclass
 class TestRunPaths:
@@ -59,6 +61,9 @@ def _paths_for_run(godown_id: str, run_id: str, camera_id: str) -> TestRunPaths:
         meta_path=meta_path,
         config_path=config_path,
     )
+
+
+logger = logging.getLogger("test_runs")
 
 
 def create_test_run(
@@ -123,7 +128,8 @@ def _auto_deactivate_if_missing(run: Dict[str, Any], meta_path: Path) -> Dict[st
     # MP4 is missing -> clear override and mark status
     try:
         override_path = write_edge_override(run, mode="live")
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to clear edge override run_id=%s err=%s", run.get("run_id"), exc)
         override_path = None
 
     now = _utc_now()
@@ -134,10 +140,9 @@ def _auto_deactivate_if_missing(run: Dict[str, Any], meta_path: Path) -> Dict[st
     if override_path:
         run["override_path"] = str(override_path.resolve())
 
-    try:
-        meta_path.write_text(json.dumps(run, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    ok = safe_json_dump_atomic(meta_path, run, logger=logger, context={"run_id": run.get("run_id")})
+    if not ok:
+        logger.warning("Failed to persist missing-video status run_id=%s", run.get("run_id"))
 
     return run
 
@@ -159,7 +164,8 @@ def list_test_runs() -> List[Dict[str, Any]]:
                 run = _auto_deactivate_if_missing(run, meta_path)
                 run = _apply_completion_status(run)
                 runs.append(run)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to read test run metadata path=%s err=%s", meta_path, exc)
                 continue
     runs.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return runs
@@ -183,13 +189,11 @@ def get_test_run(run_id: str) -> Optional[Dict[str, Any]]:
     meta_path = run_dir / "test_run.json"
     if not meta_path.exists():
         return None
-    try:
-        with meta_path.open("r", encoding="utf-8") as f:
-            run = json.load(f)
-        run = _auto_deactivate_if_missing(run, meta_path)
-        return _apply_completion_status(run)
-    except Exception:
+    run = safe_json_load(meta_path, None, logger=logger, context={"run_id": run_id})
+    if not isinstance(run, dict):
         return None
+    run = _auto_deactivate_if_missing(run, meta_path)
+    return _apply_completion_status(run)
 
 
 def update_test_run(run_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -202,8 +206,9 @@ def update_test_run(run_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, 
     if run_dir is None:
         return None
     meta_path = run_dir / "test_run.json"
-    with meta_path.open("w", encoding="utf-8") as f:
-        json.dump(run, f, indent=2)
+    ok = safe_json_dump_atomic(meta_path, run, logger=logger, context={"run_id": run_id})
+    if not ok:
+        logger.warning("Failed to update test run metadata run_id=%s", run_id)
     return run
 
 
@@ -218,11 +223,9 @@ def write_edge_override(run: Dict[str, Any], *, mode: str) -> Path:
     # Load existing to merge
     data = {"mode": "live", "godown_id": godown_id, "camera_overrides": {}, "active_run_id": None}
     if override_path.exists():
-        try:
-            with override_path.open("r", encoding="utf-8") as f:
-                data.update(json.load(f))
-        except Exception:
-            pass
+        loaded = safe_json_load(override_path, {}, logger=logger, context={"godown_id": godown_id})
+        if isinstance(loaded, dict):
+            data.update(loaded)
 
     overrides = data.get("camera_overrides", {})
     if mode == "test":
@@ -243,8 +246,9 @@ def write_edge_override(run: Dict[str, Any], *, mode: str) -> Path:
         data["mode"] = "live"
         data["active_run_id"] = None
 
-    with override_path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    ok = safe_json_dump_atomic(override_path, data, logger=logger, context={"godown_id": godown_id})
+    if not ok:
+        logger.warning("Failed to write edge override godown_id=%s camera_id=%s", godown_id, camera_id)
     return override_path
 
 

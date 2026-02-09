@@ -8,9 +8,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import logging
 from typing import List, Dict, Any
+
+from app.core.errors import safe_json_dump_atomic, safe_json_load
 
 try:
     import numpy as np  # type: ignore
@@ -26,18 +28,14 @@ except ImportError as exc:  # pragma: no cover
 def load_known_faces(path: str) -> List[Dict[str, Any]]:
     if not os.path.exists(path):
         return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    data = safe_json_load(path, [], logger=logging.getLogger("known_faces"))
+    return data if isinstance(data, list) else []
 
 
 def save_known_faces(path: str, data: List[Dict[str, Any]]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    ok = safe_json_dump_atomic(path, data, logger=logging.getLogger("known_faces"))
+    if not ok:
+        logging.getLogger("known_faces").warning("Failed to save known faces path=%s", path)
 
 
 def compute_embedding(image_path: str) -> List[float]:

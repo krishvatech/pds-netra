@@ -12,6 +12,7 @@ import paho.mqtt.client as mqtt
 
 from ..config import Settings
 from .manager import WatchlistManager
+from ..core.errors import log_exception
 
 
 class WatchlistSyncSubscriber:
@@ -36,7 +37,13 @@ class WatchlistSyncSubscriber:
     def on_message(self, client: mqtt.Client, userdata, msg) -> None:  # type: ignore
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
-        except Exception:
+        except Exception as exc:
+            self.logger.warning(
+                "Invalid watchlist sync payload topic=%s payload_len=%s err=%s",
+                getattr(msg, "topic", None),
+                len(msg.payload) if getattr(msg, "payload", None) is not None else None,
+                exc,
+            )
             return
         if isinstance(payload, dict) and payload.get("event_type") == "WATCHLIST_SYNC":
             try:
@@ -55,5 +62,5 @@ class WatchlistSyncSubscriber:
         try:
             self.client.loop_stop()
             self.client.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            log_exception(self.logger, "Watchlist sync MQTT shutdown failed", exc=exc)

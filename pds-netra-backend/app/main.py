@@ -10,6 +10,7 @@ and sets up middleware such as CORS if needed. Run with:
 
 from __future__ import annotations
 
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
@@ -27,7 +28,8 @@ from .services.dispatch_watchdog import run_dispatch_watchdog
 from .services.dispatch_plan_sync import run_dispatch_plan_sync
 
 from .api import api_router
-from .core.config import settings
+from .core.config import settings, get_app_env
+from .core.errors import log_exception
 
 
 def create_app() -> FastAPI:
@@ -50,12 +52,19 @@ def create_app() -> FastAPI:
     # Ensure tables exist for PoC/local use
     @app.on_event("startup")
     def _init_db() -> None:
+        logger = logging.getLogger("startup")
+        env = get_app_env()
         media_root.mkdir(parents=True, exist_ok=True)
         annotated_root.mkdir(parents=True, exist_ok=True)
         live_root.mkdir(parents=True, exist_ok=True)
         watchlist_root.mkdir(parents=True, exist_ok=True)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
-            Base.metadata.create_all(bind=engine)
+            try:
+                Base.metadata.create_all(bind=engine)
+            except Exception as exc:
+                log_exception(logger, "DB create_all failed", exc=exc)
+                if env == "prod":
+                    raise
         try:
             inspector = inspect(engine)
             if "cameras" in inspector.get_table_names():
@@ -68,7 +77,9 @@ def create_app() -> FastAPI:
                     if "modules_json" not in cols:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN modules_json TEXT"))
         except Exception:
-            pass
+            log_exception(logger, "DB schema sync failed")
+            if env == "prod":
+                raise
         if os.getenv("AUTO_SEED_GODOWNS", "true").lower() in {"1", "true", "yes"}:
             seed_path = os.getenv("SEED_GODOWNS_PATH", "")
             if seed_path:
@@ -78,8 +89,10 @@ def create_app() -> FastAPI:
             try:
                 with SessionLocal() as db:
                     seed_godowns(db, path)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception(logger, "Seed godowns failed", extra={"path": str(path)}, exc=exc)
+                if env == "prod":
+                    raise
         if os.getenv("AUTO_SEED_CAMERAS_FROM_EDGE", "true").lower() in {"1", "true", "yes"}:
             edge_path = os.getenv("EDGE_CONFIG_PATH", "")
             if edge_path:
@@ -89,14 +102,18 @@ def create_app() -> FastAPI:
             try:
                 with SessionLocal() as db:
                     seed_cameras_from_edge_config(db, path)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception(logger, "Seed cameras failed", extra={"path": str(path)}, exc=exc)
+                if env == "prod":
+                    raise
         if os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
             try:
                 with SessionLocal() as db:
                     seed_rules(db)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception(logger, "Seed rules failed", exc=exc)
+                if env == "prod":
+                    raise
         if os.getenv("ENABLE_MQTT_CONSUMER", "true").lower() in {"1", "true", "yes"}:
             consumer = MQTTConsumer()
             consumer.start()

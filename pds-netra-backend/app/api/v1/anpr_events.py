@@ -17,6 +17,7 @@ from sqlalchemy import and_, desc
 from ...core.db import get_db
 from ...models.anpr_event import AnprEvent
 from ...models.anpr_vehicle import AnprVehicle
+from ...core.pagination import clamp_limit
 
 try:
     from zoneinfo import ZoneInfo
@@ -71,9 +72,10 @@ def get_anpr_events(
     match_status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    limit: int = Query(200, ge=1, le=2000),
+    limit: int = Query(200, ge=1),
     db: Session = Depends(get_db),
 ):
+    limit = clamp_limit(limit)
     start_utc, end_utc = _local_range_to_utc(timezone_name, date_from, date_to)
 
     filters = [

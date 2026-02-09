@@ -57,17 +57,18 @@ docker compose -f docker-compose.prod.yml logs caddy --tail=50
 
 Backend config (backend.env)
 ----------------------------
-DATABASE_URL=postgresql://doadmin:show-password@db-postgresql-blr1-86288-do-user-32882899-0.j.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+DATABASE_URL=postgresql://USER:PASS@HOST:PORT/DBNAME?sslmode=require
 MQTT_BROKER_HOST=mosquitto
 MQTT_BROKER_PORT=1883
-MQTT_USERNAME=mqtt_user
-MQTT_PASSWORD=mqtt_pass
-PDS_AUTH_DISABLED=true
+MQTT_USERNAME=your_mqtt_user
+MQTT_PASSWORD=your_mqtt_pass
+PDS_AUTH_DISABLED=false
+PDS_AUTH_TOKEN=change-me-strong-token
 
 Caddy config (.env)
 -------------------
-CADDY_DOMAIN=cv.krishvatech.com
-CADDY_EMAIL=info@krishvatech.com
+CADDY_DOMAIN=your-domain.example
+CADDY_EMAIL=you@example.com
 
 Mosquitto credentials
 ---------------------
@@ -76,7 +77,7 @@ Mosquitto credentials
 docker run --rm -it --user 0:0 \
   -v /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile:/mosquitto/config/pwfile \
   eclipse-mosquitto:2 \
-  mosquitto_passwd -b /mosquitto/config/pwfile mqtt_user mqtt_pass
+  mosquitto_passwd -b /mosquitto/config/pwfile your_mqtt_user your_mqtt_pass
 
 # Fix pwfile permissions
 
@@ -85,12 +86,13 @@ sudo chmod 0600 /opt/krishvatech/pds-netra/deployment/mosquitto/pwfile
 
 Jetson edge .env
 ----------------
-MQTT_BROKER_HOST=cv.krishvatech.com
+MQTT_BROKER_HOST=your-domain.example
 MQTT_BROKER_PORT=1883
-MQTT_USERNAME=mqtt_user
-MQTT_PASSWORD=mqtt_pass
-EDGE_BACKEND_URL=https://cv.krishvatech.com
-EDGE_SNAPSHOT_BASE_URL=https://cv.krishvatech.com/media/snapshots
+MQTT_USERNAME=your_mqtt_user
+MQTT_PASSWORD=your_mqtt_pass
+EDGE_BACKEND_URL=https://your-domain.example
+EDGE_SNAPSHOT_BASE_URL=https://your-domain.example/media/snapshots
+EDGE_BACKEND_TOKEN=<same as PDS_AUTH_TOKEN>
 
 Common errors and fixes
 -----------------------

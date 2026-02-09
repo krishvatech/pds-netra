@@ -5,7 +5,7 @@ This package aggregates all API routers to be included in the FastAPI
 application. The API is versioned under ``/api/v1``.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from .v1.events import router as events_router
 from .v1.reports import router as reports_router
 from .v1.auth import router as auth_router
@@ -26,25 +26,28 @@ from .v1.authorized_users import router as authorized_users_router
 from .v1.anpr_sessions import router as anpr_sessions
 from .v1.anpr_events import router as anpr_events_router
 from .v1.anpr_management import router as anpr_management_router
+from ..core.auth import get_current_user
+from ..core.rate_limit import rate_limit_dependency
 
 api_router = APIRouter()
-api_router.include_router(events_router)
-api_router.include_router(reports_router)
-api_router.include_router(auth_router)
-api_router.include_router(godowns_router)
+protected = [Depends(get_current_user), Depends(rate_limit_dependency)]
+api_router.include_router(events_router, dependencies=protected)
+api_router.include_router(reports_router, dependencies=protected)
+api_router.include_router(auth_router, dependencies=[Depends(rate_limit_dependency)])
+api_router.include_router(godowns_router, dependencies=protected)
 api_router.include_router(health_router)
-api_router.include_router(overview_router)
-api_router.include_router(test_runs_router)
-api_router.include_router(live_router)
-api_router.include_router(cameras_router)
-api_router.include_router(dispatch_issues_router)
-api_router.include_router(rules_router)
-api_router.include_router(watchlist_router)
-api_router.include_router(edge_events_router)
-api_router.include_router(after_hours_router)
-api_router.include_router(vehicle_gate_sessions_router)
-api_router.include_router(notifications_router)
-api_router.include_router(authorized_users_router)
-api_router.include_router(anpr_sessions)
-api_router.include_router(anpr_events_router)
-api_router.include_router(anpr_management_router)
+api_router.include_router(overview_router, dependencies=protected)
+api_router.include_router(test_runs_router, dependencies=protected)
+api_router.include_router(live_router, dependencies=protected)
+api_router.include_router(cameras_router, dependencies=protected)
+api_router.include_router(dispatch_issues_router, dependencies=protected)
+api_router.include_router(rules_router, dependencies=protected)
+api_router.include_router(watchlist_router, dependencies=protected)
+api_router.include_router(edge_events_router, dependencies=protected)
+api_router.include_router(after_hours_router, dependencies=protected)
+api_router.include_router(vehicle_gate_sessions_router, dependencies=protected)
+api_router.include_router(notifications_router, dependencies=protected)
+api_router.include_router(authorized_users_router, dependencies=protected)
+api_router.include_router(anpr_sessions, dependencies=protected)
+api_router.include_router(anpr_events_router, dependencies=protected)
+api_router.include_router(anpr_management_router, dependencies=protected)

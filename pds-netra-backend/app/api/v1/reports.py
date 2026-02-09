@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from ...models.notification_outbox import NotificationOutbox
 from ...schemas.alert_report import AlertReportListItem, AlertReportOut
 from ...schemas.notifications import NotificationDeliveryOut
 from ...services.alert_reports import generate_hq_report
+from ...core.pagination import clamp_page_size, clamp_limit, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -204,9 +205,12 @@ def dispatch_trace(
     status: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
     """Return dispatch trace details including first movement and SLA."""
+    page_size = clamp_page_size(page_size)
     query = db.query(DispatchIssue)
     if godown_id:
         query = query.filter(DispatchIssue.godown_id == godown_id)
@@ -216,7 +220,13 @@ def dispatch_trace(
         query = query.filter(DispatchIssue.issue_time_utc >= _ensure_utc(date_from))
     if date_to:
         query = query.filter(DispatchIssue.issue_time_utc <= _ensure_utc(date_to))
-    issues = query.order_by(DispatchIssue.issue_time_utc.desc()).all()
+    total = query.count()
+    issues = (
+        query.order_by(DispatchIssue.issue_time_utc.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     items: list[dict] = []
     for issue in issues:
         issue_time = _ensure_utc(issue.issue_time_utc)
@@ -253,7 +263,7 @@ def dispatch_trace(
                 "delay_minutes": delay_minutes,
             }
         )
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/alerts/export")
@@ -335,15 +345,14 @@ def list_hq_reports(
     limit: int = Query(30),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    response: Response | None = None,
 ):
-    limit = max(1, min(int(limit), 200))
-    rows = (
-        db.query(AlertReport)
-        .filter(AlertReport.scope == "HQ")
-        .order_by(AlertReport.generated_at.desc())
-        .limit(limit)
-        .all()
-    )
+    limit = clamp_limit(int(limit))
+    base_query = db.query(AlertReport).filter(AlertReport.scope == "HQ")
+    total = base_query.count()
+    rows = base_query.order_by(AlertReport.generated_at.desc()).limit(limit).all()
+    if response:
+        set_pagination_headers(response, total=total, page=1, page_size=limit)
     return rows
 
 
@@ -362,18 +371,29 @@ def get_hq_report(
 @router.get("/hq/{report_id}/deliveries", response_model=list[NotificationDeliveryOut])
 def get_hq_report_deliveries(
     report_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    response: Response | None = None,
 ):
+    page_size = clamp_page_size(page_size)
     report = db.get(AlertReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    rows = (
+    base_query = (
         db.query(NotificationOutbox)
         .filter(NotificationOutbox.report_id == report.id)
-        .order_by(NotificationOutbox.created_at.desc())
+    )
+    total = base_query.count()
+    rows = (
+        base_query.order_by(NotificationOutbox.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
+    if response:
+        set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return rows
 
 

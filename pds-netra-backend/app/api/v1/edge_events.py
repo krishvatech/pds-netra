@@ -14,6 +14,7 @@ from ...schemas.presence import PresenceEventIn
 from ...services.watchlist import ingest_face_match_event
 from ...services.presence import ingest_presence_event
 from ...services.event_ingest import handle_incoming_event
+from ...core.request_limits import enforce_json_body_limit
 
 
 router = APIRouter(prefix="/api/v1/edge", tags=["edge"])
@@ -28,7 +29,11 @@ ANPR_EVENT_TYPES = {
 
 
 @router.post("/events")
-def ingest_edge_event(payload: dict = Body(...), db: Session = Depends(get_db)) -> dict:
+def ingest_edge_event(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    request=Depends(enforce_json_body_limit),
+) -> dict:
     event_type = payload.get("event_type") if isinstance(payload, dict) else None
     if event_type == "FACE_MATCH":
         face_event = FaceMatchEventIn.model_validate(payload)

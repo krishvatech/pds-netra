@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -17,6 +17,7 @@ from ...core.db import get_db
 from ...models.godown import Godown, Camera
 from ...models.event import Alert, Event
 from ...models.vehicle_gate_session import VehicleGateSession
+from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1", tags=["overview"])
@@ -31,7 +32,12 @@ def _status_for(open_critical: int, open_warning: int, cameras_offline: int) -> 
 
 
 @router.get("/overview")
-def overview(db: Session = Depends(get_db)) -> dict:
+def overview(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    page_size = clamp_page_size(page_size)
     # Core counts
     godowns_monitored = db.query(func.count(Godown.id)).scalar() or 0
     open_alerts_critical = (
@@ -154,7 +160,13 @@ def overview(db: Session = Depends(get_db)) -> dict:
     )
 
     # Godown summary cards
-    godown_rows = db.query(Godown).order_by(Godown.id.asc()).all()
+    godown_rows = (
+        db.query(Godown)
+        .order_by(Godown.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     godown_items: List[dict] = []
     for g in godown_rows:
         cameras_total = db.query(func.count(Camera.id)).filter(Camera.godown_id == g.id).scalar() or 0
@@ -220,4 +232,7 @@ def overview(db: Session = Depends(get_db)) -> dict:
             "open_gate_sessions": open_gate_sessions,
         },
         "godowns": godown_items,
+        "page": page,
+        "page_size": page_size,
+        "total_godowns": godowns_monitored,
     }

@@ -8,10 +8,11 @@ godown facilities. Includes sync functionality with edge known_faces.json.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form, Response
 import shutil
 import os
 import requests
@@ -19,6 +20,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ...core.db import get_db
+from ...core.errors import log_exception
+from ...core.fileio import locked_json_update
+from ...core.pagination import clamp_page_size, set_pagination_headers
+from ...core.request_limits import enforce_upload_limit, read_upload_bytes_async
 from ...models.authorized_user import AuthorizedUser
 from ...models.godown import Godown
 from ...schemas.authorized_user import (
@@ -29,6 +34,7 @@ from ...schemas.authorized_user import (
 
 
 router = APIRouter(prefix="/api/v1/authorized-users", tags=["authorized-users"])
+logger = logging.getLogger("authorized_users")
 
 
 @router.get("", response_model=List[AuthorizedUserResponse])
@@ -36,9 +42,13 @@ def list_authorized_users(
     godown_id: str | None = Query(None),
     role: str | None = Query(None),
     is_active: bool | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    response: Response | None = None,
 ) -> List[AuthorizedUser]:
     """List all authorized users with optional filters."""
+    page_size = clamp_page_size(page_size)
     query = db.query(AuthorizedUser)
     
     if godown_id:
@@ -47,8 +57,16 @@ def list_authorized_users(
         query = query.filter(AuthorizedUser.role == role)
     if is_active is not None:
         query = query.filter(AuthorizedUser.is_active == is_active)
-    
-    return query.order_by(AuthorizedUser.name.asc()).all()
+    total = query.count()
+    users = (
+        query.order_by(AuthorizedUser.name.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    if response:
+        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    return users
 
 
 @router.get("/{person_id}", response_model=AuthorizedUserResponse)
@@ -100,28 +118,28 @@ def create_authorized_user(
     db.refresh(new_user)
 
     # Sync create to edge config if exists
-    try:
-        edge_path = _get_edge_config_path()
-        if edge_path.exists():
-            with open(edge_path, "r") as f:
-                known_faces = json.load(f)
-            
-            # Check if already in json (shouldn't be, but robust check)
-            exists_in_json = any(f.get("person_id") == person_id for f in known_faces)
-            
+    edge_path = _get_edge_config_path()
+    if edge_path.exists():
+        def _create_update(faces: list) -> list:
+            items = list(faces) if isinstance(faces, list) else []
+            exists_in_json = any(
+                isinstance(f, dict) and f.get("person_id") == person_id for f in items
+            )
             if not exists_in_json:
-                new_entry = {
-                    "person_id": person_id,
-                    "name": req.name,
-                    "role": req.role,
-                    "godown_id": req.godown_id,
-                    "embedding": []  # Placeholder, needs enrollment
-                }
-                known_faces.append(new_entry)
-                with open(edge_path, "w") as f:
-                    json.dump(known_faces, f, indent=2)
-    except Exception:
-        pass
+                items.append(
+                    {
+                        "person_id": person_id,
+                        "name": req.name,
+                        "role": req.role,
+                        "godown_id": req.godown_id,
+                        "embedding": [],  # Placeholder, needs enrollment
+                    }
+                )
+            return items
+        try:
+            locked_json_update(edge_path, _create_update)
+        except Exception as exc:
+            logger.warning("Edge known_faces sync failed op=create person_id=%s err=%s", person_id, exc)
     
     return new_user
 
@@ -163,30 +181,26 @@ def update_authorized_user(
     db.refresh(user)
 
     # Sync update to edge config if exits
-    try:
-        edge_path = _get_edge_config_path()
-        if edge_path.exists():
-            with open(edge_path, "r") as f:
-                known_faces = json.load(f)
-            
-            changed = False
-            for face in known_faces:
+    edge_path = _get_edge_config_path()
+    if edge_path.exists():
+        def _update_update(faces: list) -> list:
+            items = list(faces) if isinstance(faces, list) else []
+            for face in items:
+                if not isinstance(face, dict):
+                    continue
                 if face.get("person_id") == person_id:
                     if req.name is not None:
                         face["name"] = req.name
                     if req.role is not None:
                         face["role"] = req.role
-                    # Update godown_id in JSON
                     if req.godown_id is not None:
                         face["godown_id"] = req.godown_id if req.godown_id else None
-                    changed = True
                     break
-            
-            if changed:
-                with open(edge_path, "w") as f:
-                    json.dump(known_faces, f, indent=2)
-    except Exception:
-        pass
+            return items
+        try:
+            locked_json_update(edge_path, _update_update)
+        except Exception as exc:
+            logger.warning("Edge known_faces sync failed op=update person_id=%s err=%s", person_id, exc)
     
     return user
 
@@ -202,20 +216,18 @@ def delete_authorized_user(person_id: str, db: Session = Depends(get_db)) -> dic
     db.commit()
 
     # Remove from edge config
-    try:
-        edge_path = _get_edge_config_path()
-        if edge_path.exists():
-            with open(edge_path, "r") as f:
-                known_faces = json.load(f)
-            
-            initial_count = len(known_faces)
-            known_faces = [f for f in known_faces if f.get("person_id") != person_id]
-            
-            if len(known_faces) < initial_count:
-                with open(edge_path, "w") as f:
-                    json.dump(known_faces, f, indent=2)
-    except Exception:
-        pass
+    edge_path = _get_edge_config_path()
+    if edge_path.exists():
+        def _delete_update(faces: list) -> list:
+            items = list(faces) if isinstance(faces, list) else []
+            return [
+                f for f in items
+                if not isinstance(f, dict) or f.get("person_id") != person_id
+            ]
+        try:
+            locked_json_update(edge_path, _delete_update)
+        except Exception as exc:
+            logger.warning("Edge known_faces sync failed op=delete person_id=%s err=%s", person_id, exc)
     
     return {
         "status": "success",
@@ -366,6 +378,7 @@ async def register_authorized_user_with_face(
     is_active: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    request=Depends(enforce_upload_limit),
 ) -> AuthorizedUser:
     """
     Create a new authorized user and generate face embedding from uploaded photo.
@@ -396,7 +409,7 @@ async def register_authorized_user_with_face(
                 detail=f"Godown {godown_id} not found"
             )
 
-    file_bytes = await file.read()
+    file_bytes = await read_upload_bytes_async(file)
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty file upload.")
 
@@ -452,12 +465,7 @@ async def register_authorized_user_with_face(
                 sys.path.append(str(edge_path))
 
             try:
-                from tools.generate_face_embedding import (
-                    compute_embedding,
-                    load_known_faces,
-                    upsert_person,
-                    save_known_faces,
-                )
+                from tools.generate_face_embedding import compute_embedding
             except (ImportError, SystemExit) as e:
                 raise HTTPException(
                     status_code=500,
@@ -474,9 +482,31 @@ async def register_authorized_user_with_face(
 
                 # Update edge config (local dev only)
                 config_path = edge_path / "config" / "known_faces.json"
-                data = load_known_faces(str(config_path))
-                data = upsert_person(data, person_id, name, role or "", embedding)
-                save_known_faces(str(config_path), data)
+
+                def _upsert_update(faces: list) -> list:
+                    items = list(faces) if isinstance(faces, list) else []
+                    updated = False
+                    for item in items:
+                        if isinstance(item, dict) and item.get("person_id") == person_id:
+                            item["name"] = name
+                            item["role"] = role or ""
+                            item["godown_id"] = godown_id or None
+                            item["embedding"] = embedding
+                            updated = True
+                            break
+                    if not updated:
+                        items.append(
+                            {
+                                "person_id": person_id,
+                                "name": name,
+                                "role": role or "",
+                                "godown_id": godown_id or None,
+                                "embedding": embedding,
+                            }
+                        )
+                    return items
+
+                locked_json_update(config_path, _upsert_update)
 
             except ValueError as ve:
                 raise HTTPException(status_code=400, detail=f"Face processing error: {str(ve)}")
@@ -488,8 +518,8 @@ async def register_authorized_user_with_face(
             if temp_file_path.exists():
                 try:
                     os.remove(temp_file_path)
-                except:
-                    pass
+                except Exception as exc:
+                    log_exception(logger, "Failed to cleanup temp face upload", extra={"path": str(temp_file_path)}, exc=exc)
 
     # Create new user in DB
     new_user = AuthorizedUser(

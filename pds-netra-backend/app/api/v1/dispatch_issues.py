@@ -17,6 +17,7 @@ from ...schemas.dispatch_issue import (
     DispatchIssueOut,
     DispatchIssueUpdate,
 )
+from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1/dispatch-issues", tags=["dispatch-issues"])
@@ -51,16 +52,29 @@ def create_dispatch_issue(
 def list_dispatch_issues(
     godown_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     query = db.query(DispatchIssue)
     if godown_id:
         query = query.filter(DispatchIssue.godown_id == godown_id)
     if status:
         query = query.filter(DispatchIssue.status == status)
     total = query.count()
-    issues = query.order_by(DispatchIssue.issue_time_utc.desc()).all()
-    return {"items": [DispatchIssueOut.model_validate(i).model_dump() for i in issues], "total": total}
+    issues = (
+        query.order_by(DispatchIssue.issue_time_utc.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [DispatchIssueOut.model_validate(i).model_dump() for i in issues],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.put("/{issue_id}", response_model=DispatchIssueOut)

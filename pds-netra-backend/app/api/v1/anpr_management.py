@@ -23,6 +23,8 @@ from ...models.anpr_vehicle import AnprVehicle
 from ...models.anpr_event import AnprEvent
 from ...models.anpr_daily_plan import AnprDailyPlan
 from ...models.anpr_daily_plan_item import AnprDailyPlanItem
+from ...core.pagination import clamp_page_size
+from ...core.request_limits import enforce_upload_limit, read_upload_bytes_sync
 from ...schemas.anpr_management import (
     AnprVehicleCreate,
     AnprVehicleOut,
@@ -109,7 +111,7 @@ def _parse_time(value: Optional[str]) -> Optional[datetime.time]:
 
 
 def _read_csv_rows(upload: UploadFile) -> list[dict[str, str]]:
-    raw = upload.file.read()
+    raw = read_upload_bytes_sync(upload)
     if not raw:
         return []
     text = raw.decode("utf-8-sig")
@@ -200,10 +202,11 @@ def list_anpr_vehicles(
     q: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     godown_id = _enforce_godown_scope(user, godown_id)
     query = db.query(AnprVehicle).filter(AnprVehicle.godown_id == godown_id)
     if is_active is not None:
@@ -340,6 +343,7 @@ def import_anpr_vehicles_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
+    request=Depends(enforce_upload_limit),
 ) -> CsvImportSummary:
     godown_id = _enforce_godown_scope(user, godown_id)
     rows = _read_csv_rows(file)
@@ -607,6 +611,7 @@ def import_daily_plan_items_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
+    request=Depends(enforce_upload_limit),
 ) -> CsvImportSummary:
     godown_id = _enforce_godown_scope(user, godown_id)
     plan = (

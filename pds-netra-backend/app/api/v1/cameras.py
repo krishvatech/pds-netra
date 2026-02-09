@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from ...core.db import get_db
 import os
 from ...models.godown import Camera, Godown
 from ...services.rule_seed import seed_rules_for_camera
+from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/cameras", tags=["cameras"])
@@ -146,8 +147,12 @@ def list_cameras(
     godown_id: Optional[str] = Query(default=None),
     role: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    response: Response | None = None,
 ) -> list[dict]:
+    page_size = clamp_page_size(page_size)
     query = db.query(Camera)
     if godown_id:
         query = query.filter(Camera.godown_id == godown_id)
@@ -155,7 +160,15 @@ def list_cameras(
         query = query.filter(Camera.role == role)
     if is_active is not None:
         query = query.filter(Camera.is_active == is_active)
-    cameras = query.order_by(Camera.godown_id.asc(), Camera.id.asc()).all()
+    total = query.count()
+    cameras = (
+        query.order_by(Camera.godown_id.asc(), Camera.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    if response:
+        set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return [_camera_payload(camera) for camera in cameras]
 
 

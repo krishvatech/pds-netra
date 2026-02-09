@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -29,6 +29,7 @@ from ...models.notification_outbox import NotificationOutbox
 from ...schemas.alert_action import AlertActionCreate, AlertActionOut
 from ...schemas.notifications import NotificationDeliveryOut
 from ...services.ack_tokens import verify_raw_token
+from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
@@ -155,12 +156,13 @@ def list_events(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1),
     start_time: Optional[datetime] = Query(None),
     end_time: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
 ) -> dict:
     """List raw events with optional filters."""
+    page_size = clamp_page_size(page_size)
     query = db.query(Event)
     if godown_id:
         query = query.filter(Event.godown_id == godown_id)
@@ -216,11 +218,12 @@ def list_alerts(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
 ) -> dict:
     """List alerts with optional filters."""
+    page_size = clamp_page_size(page_size)
     query = db.query(Alert, Godown.district, Godown.name).join(
         Godown, Godown.id == Alert.godown_id, isouter=True
     )
@@ -454,19 +457,34 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
 
 
 @router.get("/alerts/{alert_id}/deliveries", response_model=list[NotificationDeliveryOut])
-def get_alert_deliveries(alert_id: int, db: Session = Depends(get_db), user=Depends(get_optional_user)):
+def get_alert_deliveries(
+    alert_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
+    user=Depends(get_optional_user),
+    response: Response | None = None,
+):
+    page_size = clamp_page_size(page_size)
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
         if alert.godown_id != user.godown_id:
             raise HTTPException(status_code=403, detail="Forbidden")
-    deliveries = (
+    base_query = (
         db.query(NotificationOutbox)
         .filter(NotificationOutbox.alert_id == alert.public_id)
-        .order_by(NotificationOutbox.created_at.desc())
+    )
+    total = base_query.count()
+    deliveries = (
+        base_query.order_by(NotificationOutbox.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
+    if response:
+        set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return deliveries
 
 
@@ -488,14 +506,27 @@ def acknowledge_alert(alert_id: int, db: Session = Depends(get_db), user=Depends
 
 
 @router.get("/alerts/{alert_id}/actions", response_model=dict)
-def list_alert_actions(alert_id: int, db: Session = Depends(get_db)) -> dict:
+def list_alert_actions(
+    alert_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    page_size = clamp_page_size(page_size)
+    base_query = db.query(AlertAction).filter(AlertAction.alert_id == alert_id)
+    total = base_query.count()
     actions = (
-        db.query(AlertAction)
-        .filter(AlertAction.alert_id == alert_id)
-        .order_by(AlertAction.created_at.asc())
+        base_query.order_by(AlertAction.created_at.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
-    return {"items": [AlertActionOut.model_validate(a).model_dump() for a in actions], "total": len(actions)}
+    return {
+        "items": [AlertActionOut.model_validate(a).model_dump() for a in actions],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.post("/alerts/{alert_id}/actions", response_model=AlertActionOut)

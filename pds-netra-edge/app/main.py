@@ -26,6 +26,7 @@ from .logging_config import setup_logging
 from .events.mqtt_client import MQTTClient
 from .runtime.camera_loop import start_camera_loops
 from .runtime.scheduler import Scheduler
+from .runtime.watchdog import EdgeWatchdog
 from .preflight import main as preflight_main
 from .rules.remote import fetch_rule_configs
 from .cameras.remote import fetch_camera_configs
@@ -111,11 +112,21 @@ def main(argv: List[str] | None = None) -> int:
     # Initialize MQTT client
     mqtt_client = MQTTClient(settings)
     mqtt_client.connect()
+    mqtt_client.start_outbox()
     # Start camera processing loops and obtain camera health state mapping
-    threads, camera_states = start_camera_loops(settings, mqtt_client, device=args.device)
+    threads, camera_states, restart_camera = start_camera_loops(settings, mqtt_client, device=args.device)
+    mqtt_client.set_camera_states(camera_states)
     # Start periodic scheduler, passing camera state for health monitoring
     scheduler = Scheduler(settings, mqtt_client, camera_states=camera_states)
     scheduler.start()
+    watchdog = EdgeWatchdog(
+        settings=settings,
+        camera_states=camera_states,
+        restart_camera=restart_camera,
+        mqtt_client=mqtt_client,
+        outbox=mqtt_client.outbox,
+    )
+    watchdog.start()
     logger.info("Edge node started; press Ctrl+C to stop")
     try:
         while True:
@@ -124,6 +135,7 @@ def main(argv: List[str] | None = None) -> int:
     except KeyboardInterrupt:
         logger.info("Shutting down edge node…")
     finally:
+        watchdog.stop()
         scheduler.stop()
         mqtt_client.stop()
         # Threads are daemon threads; they will exit automatically when main exits

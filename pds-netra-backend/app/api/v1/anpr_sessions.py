@@ -10,6 +10,7 @@ from sqlalchemy import and_, desc
 from ...core.db import get_db
 from ...models.vehicle_gate_session import VehicleGateSession
 from ...services.vehicle_gate import _ensure_utc
+from ...core.pagination import clamp_limit
 
 try:
     from zoneinfo import ZoneInfo
@@ -27,9 +28,10 @@ def anpr_sessions(
     status: Optional[str] = Query(None, description="OPEN/CLOSED"),
     camera_id: Optional[str] = Query(None),
     plate_text: Optional[str] = Query(None),
-    limit: int = Query(200, ge=1, le=2000),
+    limit: int = Query(200, ge=1),
     db: Session = Depends(get_db),
 ):
+    limit = clamp_limit(limit)
     tz = ZoneInfo(timezone_name) if ZoneInfo else datetime.timezone.utc
 
     filters = [VehicleGateSession.godown_id == godown_id]

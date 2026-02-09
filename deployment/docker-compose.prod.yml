@@ -23,6 +23,17 @@ services:
       - mosquitto
     volumes:
       - ./data/backend:/opt/app/data
+  
+  migrate:
+    build:
+      context: ../pds-netra-backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./env/backend.env
+    command: ["python", "-m", "app.scripts.run_migrations"]
+    profiles: ["migrate"]
+    depends_on:
+      - mosquitto
 
   dashboard:
     build:

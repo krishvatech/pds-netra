@@ -16,7 +16,10 @@ services:
     environment:
       # Override MQTT broker host to point at the mosquitto service in the compose network
       - MQTT_BROKER_HOST=mosquitto
+      # Set to match backend PDS_AUTH_TOKEN when auth is enabled
+      - EDGE_BACKEND_TOKEN=${EDGE_BACKEND_TOKEN}
     volumes:
       - ./:/opt/app
     depends_on:
       - mosquitto
+

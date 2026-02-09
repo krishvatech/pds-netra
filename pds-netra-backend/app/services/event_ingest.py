@@ -24,6 +24,9 @@ from .rule_engine import apply_rules
 from .vehicle_gate import handle_anpr_hit_event
 
 
+logger = logging.getLogger("event_ingest")
+
+
 def _point_in_polygon(x: float, y: float, polygon: List[Tuple[float, float]]) -> bool:
     num = len(polygon)
     j = num - 1
@@ -225,7 +228,14 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         try:
             _upsert_anpr_event(db, event_in=event_in, meta=meta)
             db.commit()
-        except Exception:
+        except Exception as exc:
+            logger.exception(
+                "ANPR upsert failed event_id=%s godown=%s camera=%s err=%s",
+                event_in.event_id,
+                event_in.godown_id,
+                event_in.camera_id,
+                exc,
+            )
             db.rollback()
 
     if event.event_type in ANPR_EDGE_EVENT_TYPES:
@@ -243,7 +253,14 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
                     image_url=event.image_url,
                 )
                 db.commit()
-            except Exception:
+            except Exception as exc:
+                logger.exception(
+                    "ANPR gate session failed event_id=%s godown=%s camera=%s err=%s",
+                    event_in.event_id,
+                    event_in.godown_id,
+                    event_in.camera_id,
+                    exc,
+                )
                 db.rollback()
         else:
             logging.getLogger("event_ingest").info(

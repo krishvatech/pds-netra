@@ -19,7 +19,7 @@ import json
 import datetime
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Tuple, Any
+from typing import Optional, Dict, Tuple, Any, Callable
 
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.bag_movement import BagMovementProcessor
@@ -68,6 +68,8 @@ class CameraHealthState:
     started_at_utc: Optional[datetime.datetime] = None
     # Last UTC time when a frame was successfully processed
     last_frame_utc: Optional[datetime.datetime] = None
+    # Last UTC time when an event was emitted for this camera
+    last_event_utc: Optional[datetime.datetime] = None
     # Monotonic timestamp for FPS estimation
     last_frame_monotonic: Optional[float] = None
     # Smoothed FPS estimate
@@ -101,7 +103,7 @@ def start_camera_loops(
     settings: Settings,
     mqtt_client: MQTTClient,
     device: str = "cpu",
-) -> Tuple[list[threading.Thread], Dict[str, CameraHealthState]]:
+) -> Tuple[list[threading.Thread], Dict[str, CameraHealthState], Callable[[str], bool]]:
     """
     Start processing threads for each configured camera.
 
@@ -118,6 +120,10 @@ def start_camera_loops(
     -------
     List[threading.Thread]
         A list of threads running the pipeline for each camera.
+    Dict[str, CameraHealthState]
+        Mapping of camera IDs to mutable health state.
+    Callable[[str], bool]
+        Restart callback for a given camera ID.
     """
     logger = logging.getLogger("camera_loop")
     threads: list[threading.Thread] = []
@@ -175,6 +181,16 @@ def start_camera_loops(
             restart_tokens[camera_id] = restart_tokens.get(camera_id, 0) + 1
             if camera_id in started_cameras:
                 started_cameras.remove(camera_id)
+
+    def restart_camera(camera_id: str) -> bool:
+        with camera_lock:
+            cam = next((c for c in settings.cameras if c.id == camera_id), None)
+        if not cam:
+            logger.warning("Restart requested for unknown camera: %s", camera_id)
+            return False
+        _request_restart(cam.id)
+        _start_camera(cam)
+        return True
                 
     # -------------------- Helpers --------------------
     def _read_bool_env(name: str, default: str = "false") -> bool:
@@ -1112,8 +1128,8 @@ def start_camera_loops(
                                 if bbox:
                                     label = f"Plate: {text}" if text else "Plate"
                                     dets.append((label, float(conf), bbox, -1))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("ANPR overlay parse failed camera=%s err=%s", camera_obj.id, exc)
 
                     # Face overlays
                     for face in face_overlays:
@@ -1140,8 +1156,8 @@ def start_camera_loops(
                                 1,
                                 cv2.LINE_AA,
                             )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Zone overlay failed camera=%s err=%s", camera_obj.id, exc)
                     if annotated_writer is not None:
                         annotated_writer.write_frame(frame, dets)
                     if live_writer is not None:
@@ -1530,7 +1546,7 @@ def start_camera_loops(
         t_rules.start()
 
     # Return threads and camera health state mapping
-    return threads, camera_states
+    return threads, camera_states, restart_camera
 
 
 # The previous dummy callback has been removed in favour of rule-based evaluation

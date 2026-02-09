@@ -16,6 +16,8 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Optional
 from urllib.parse import urlparse
+import urllib.request
+import urllib.error
 from ..core.config import settings
 from ..integrations.twilio_client import get_twilio_messaging_client, get_twilio_voice_client
 from sqlalchemy import or_
@@ -68,12 +70,20 @@ class WhatsAppHttpProvider(NotificationProvider):
         req = urllib.request.Request(self.url, data=body, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=8) as resp:
+                status = getattr(resp, "status", None) or resp.getcode()
                 data = resp.read().decode("utf-8")
             try:
                 payload = json.loads(data)
                 return payload.get("message_id") or payload.get("id")
             except Exception:
+                logging.getLogger("notification_worker").warning(
+                    "WhatsApp HTTP response parse failed status=%s response_len=%s",
+                    status,
+                    len(data) if data else 0,
+                )
                 return None
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"WhatsApp HTTP send failed status={exc.code}") from exc
         except Exception as exc:
             raise RuntimeError(f"WhatsApp HTTP send failed: {exc}") from exc
 
@@ -353,6 +363,7 @@ def _normalize_media_url(url: Optional[str]) -> Optional[str]:
 
 
 def _build_providers() -> ProviderSet:
+    logger = logging.getLogger("notification_worker")
     # WhatsApp (keep as-is)
     provider = (os.getenv("WHATSAPP_PROVIDER", "") or "").lower().strip()
     http_url = (os.getenv("WHATSAPP_HTTP_URL") or os.getenv("WHATSAPP_WEBHOOK_URL") or "").strip()
@@ -361,10 +372,18 @@ def _build_providers() -> ProviderSet:
         provider = "http" if http_url else "log"
 
     if provider == "twilio":
-        whatsapp = WhatsAppTwilioProvider()
+        try:
+            whatsapp = WhatsAppTwilioProvider()
+        except Exception as exc:
+            logger.error("WhatsApp Twilio disabled: %s", exc)
+            whatsapp = WhatsAppLogProvider()
     elif provider in {"http", "meta"}:
-        token = (os.getenv("WHATSAPP_HTTP_TOKEN") or "").strip()
-        whatsapp = WhatsAppHttpProvider(http_url or "", token or None)
+        if not http_url:
+            logger.error("WHATSAPP_PROVIDER=%s but WHATSAPP_HTTP_URL missing; using log provider.", provider)
+            whatsapp = WhatsAppLogProvider()
+        else:
+            token = (os.getenv("WHATSAPP_HTTP_TOKEN") or "").strip()
+            whatsapp = WhatsAppHttpProvider(http_url, token or None)
     else:
         whatsapp = WhatsAppLogProvider()
 
@@ -375,14 +394,11 @@ def _build_providers() -> ProviderSet:
         _ = settings
         smtp_host = (os.getenv("SMTP_HOST") or "").strip()
 
-    # If you want MailHog always, DO NOT silently fall back
     if not smtp_host:
-        raise RuntimeError(
-            "SMTP_HOST is not set in this worker process. "
-            "Worker would use EmailLogProvider. Fix .env loading / start worker from backend."
-        )
-
-    email = EmailSMTPProvider()
+        logger.error("SMTP_HOST missing; using EmailLogProvider.")
+        email = EmailLogProvider()
+    else:
+        email = EmailSMTPProvider()
 
     # Call (Twilio)
     sid = (
@@ -410,15 +426,17 @@ def _build_providers() -> ProviderSet:
         missing.append("TWILIO_CALL_FROM_NUMBER")
 
     if not missing:
-        call_provider: NotificationProvider = TwilioCallProvider()
+        try:
+            call_provider = TwilioCallProvider()
+        except Exception as exc:
+            logger.error("Twilio CALL disabled: %s", exc)
+            call_provider = CallLogProvider()
     else:
-        logging.getLogger("notification_worker").warning(
-            "Twilio CALL disabled (missing env): %s", ", ".join(missing)
-        )
+        logger.error("Twilio CALL disabled (missing env): %s", ", ".join(missing))
         call_provider = CallLogProvider()
 
     # 🔥 Very important log: tells you exactly what providers are active
-    logging.getLogger("notification_worker").info(
+    logger.info(
         "Providers selected: whatsapp=%s email=%s call=%s",
         type(whatsapp).__name__,
         type(email).__name__,
@@ -476,14 +494,9 @@ def process_outbox_batch(
             continue
 
         # Send
+        message_id: Optional[str] = None
         try:
             message_id = providers.send(row)
-            if row.channel == "EMAIL" and isinstance(providers.email, EmailLogProvider):
-                raise RuntimeError("EMAIL provider is EmailLogProvider (SMTP_HOST not loaded).")
-            if row.channel == "CALL" and not message_id:
-                raise RuntimeError(
-                    "CALL provider returned no SID. Twilio env likely missing, so CallLogProvider was used."
-                )
 
             row.status = "SENT"
             row.provider_message_id = message_id
@@ -508,6 +521,16 @@ def process_outbox_batch(
                     db.add(alert)
         except Exception as exc:
             row.last_error = str(exc)
+            logger.warning(
+                "Notification send failed id=%s channel=%s target=%s alert_id=%s attempts=%s message_id=%s err=%s",
+                row.id,
+                row.channel,
+                row.target,
+                row.alert_id,
+                row.attempts,
+                message_id or row.provider_message_id,
+                exc,
+            )
             if row.attempts >= max_attempts:
                 row.status = "FAILED"
                 row.next_retry_at = None

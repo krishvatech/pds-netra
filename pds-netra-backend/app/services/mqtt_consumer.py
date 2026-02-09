@@ -14,6 +14,7 @@ import paho.mqtt.client as mqtt
 
 from ..core.config import settings
 from ..core.db import SessionLocal
+from ..core.errors import log_exception
 from ..schemas.event import EventIn
 from ..schemas.watchlist import FaceMatchEventIn
 from ..schemas.presence import PresenceEventIn
@@ -73,13 +74,23 @@ class MQTTConsumer:
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
         except Exception as exc:
-            self.logger.warning("Invalid event payload: %s", exc)
+            self.logger.warning(
+                "Invalid event payload topic=%s payload_len=%s err=%s",
+                getattr(msg, "topic", None),
+                len(msg.payload) if getattr(msg, "payload", None) is not None else None,
+                exc,
+            )
             return
         if isinstance(payload, dict) and payload.get("event_type") == "FACE_MATCH":
             try:
                 face_event = FaceMatchEventIn.model_validate(payload)
             except Exception as exc:
-                self.logger.warning("Invalid face match payload: %s", exc)
+                self.logger.warning(
+                    "Invalid face match payload topic=%s payload_len=%s err=%s",
+                    getattr(msg, "topic", None),
+                    len(msg.payload) if getattr(msg, "payload", None) is not None else None,
+                    exc,
+                )
                 return
             with SessionLocal() as db:
                 try:
@@ -91,7 +102,12 @@ class MQTTConsumer:
             try:
                 presence_event = PresenceEventIn.model_validate(payload)
             except Exception as exc:
-                self.logger.warning("Invalid presence payload: %s", exc)
+                self.logger.warning(
+                    "Invalid presence payload topic=%s payload_len=%s err=%s",
+                    getattr(msg, "topic", None),
+                    len(msg.payload) if getattr(msg, "payload", None) is not None else None,
+                    exc,
+                )
                 return
             with SessionLocal() as db:
                 try:
@@ -102,7 +118,12 @@ class MQTTConsumer:
         try:
             event_in = EventIn.parse_obj(payload)
         except Exception as exc:
-            self.logger.warning("Invalid event payload: %s", exc)
+            self.logger.warning(
+                "Invalid event payload topic=%s payload_len=%s err=%s",
+                getattr(msg, "topic", None),
+                len(msg.payload) if getattr(msg, "payload", None) is not None else None,
+                exc,
+            )
             return
         with SessionLocal() as db:
             try:
@@ -130,8 +151,8 @@ class MQTTConsumer:
         try:
             self.client.loop_stop()
             self.client.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            log_exception(self.logger, "MQTT shutdown failed", exc=exc)
 
     def is_connected(self) -> bool:
         return self._connected.is_set()

@@ -193,9 +193,7 @@ class AfterHoursPresenceProcessor:
             payload=payload,
             correlation_id=str(uuid.uuid4()),
         )
-        mqtt_client.publish_presence(event)
-        if self.config.http_fallback:
-            self._post_http(event)
+        mqtt_client.publish_presence(event, http_fallback=self.config.http_fallback)
         setattr(self, last_emit_ref, now_utc)
         setattr(self, present_ref, True)
         self.logger.info(
@@ -205,23 +203,3 @@ class AfterHoursPresenceProcessor:
             count,
             after_hours,
         )
-
-    def _post_http(self, event: PresenceEvent) -> None:
-        import json
-        import os
-        import urllib.request
-
-        backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
-        url = f"{backend_url}/api/v1/edge/events"
-        token = os.getenv("EDGE_BACKEND_TOKEN")
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-            headers["X-User-Role"] = "STATE_ADMIN"
-        data = event.model_dump()
-        req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=3):
-                pass
-        except Exception as exc:
-            self.logger.warning("HTTP presence post failed: %s", exc)

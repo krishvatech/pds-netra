@@ -11,7 +11,7 @@ from typing import List, Optional
 from pathlib import Path
 import json
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -19,6 +19,7 @@ from sqlalchemy import func
 from ...core.db import get_db
 from ...models.godown import Godown, Camera
 from ...models.event import Alert, Event
+from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/godowns", tags=["godowns"])
@@ -46,12 +47,22 @@ def _parse_modules(modules_json: str | None) -> Optional[dict]:
 def list_godowns(
     district: str | None = Query(None),
     status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    response: Response | None = None,
 ) -> List[dict]:
+    page_size = clamp_page_size(page_size)
     query = db.query(Godown)
     if district:
         query = query.filter(Godown.district == district)
-    godowns = query.order_by(Godown.id.asc()).all()
+    total = query.count()
+    godowns = (
+        query.order_by(Godown.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     results: List[dict] = []
     for g in godowns:
         cameras_total = db.query(func.count(Camera.id)).filter(Camera.godown_id == g.id).scalar() or 0
@@ -102,6 +113,8 @@ def list_godowns(
                 "status": status_val,
             }
         )
+    if response:
+        set_pagination_headers(response, total=(total if not status else None), page=page, page_size=page_size)
     return results
 
 

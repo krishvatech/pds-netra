@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import os
 import uuid
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -15,6 +14,7 @@ from ..events.mqtt_client import MQTTClient
 from ..schemas.watchlist import FaceMatchEvent, FaceMatchPayload, FaceMatchCandidate, FaceMatchEvidence
 from .manager import WatchlistManager
 from ..cv.zones import is_bbox_in_zone
+from ..core.errors import log_exception
 
 
 @dataclass
@@ -88,7 +88,13 @@ class WatchlistProcessor:
                 try:
                     snapshot_url = snapshotter(frame, event_id, now_utc, bbox=bbox, label=match.person_name)
                     local_path = snapshot_url if snapshot_url and snapshot_url.startswith("/") else None
-                except Exception:
+                except Exception as exc:
+                    log_exception(
+                        self.logger,
+                        "Watchlist snapshot failed",
+                        extra={"camera_id": self.camera_id, "person_id": match.person_id},
+                        exc=exc,
+                    )
                     snapshot_url = None
                     local_path = None
             payload = FaceMatchPayload(
@@ -113,9 +119,7 @@ class WatchlistProcessor:
                 payload=payload,
                 correlation_id=str(uuid.uuid4()),
             )
-            mqtt_client.publish_face_match(event)
-            if self.http_fallback:
-                self._post_http(event)
+            mqtt_client.publish_face_match(event, http_fallback=self.http_fallback)
             self.logger.warning(
                 "Watchlist match: person=%s camera=%s score=%.3f",
                 match.person_id,
@@ -140,22 +144,3 @@ class WatchlistProcessor:
             match_score=score,
             embedding_hash=emb_hash,
         )
-
-    def _post_http(self, event: FaceMatchEvent) -> None:
-        import urllib.request
-        import json
-
-        backend_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8001").rstrip("/")
-        url = f"{backend_url}/api/v1/edge/events"
-        token = os.getenv("EDGE_BACKEND_TOKEN")
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-            headers["X-User-Role"] = "STATE_ADMIN"
-        data = event.model_dump()
-        req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=3):
-                pass
-        except Exception as exc:
-            self.logger.warning("HTTP face match post failed: %s", exc)

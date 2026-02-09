@@ -7,24 +7,40 @@ from __future__ import annotations
 from pathlib import Path
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
+from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
 
 @router.get("/{godown_id}")
-def list_live_cameras(godown_id: str) -> dict:
+def list_live_cameras(
+    godown_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+) -> dict:
+    page_size = clamp_page_size(page_size)
     live_root = Path(__file__).resolve().parents[3] / "data" / "live"
     godown_dir = live_root / godown_id
     if not godown_dir.exists():
-        return {"godown_id": godown_id, "cameras": []}
+        return {"godown_id": godown_id, "cameras": [], "total": 0, "page": page, "page_size": page_size}
     cameras = []
     for item in godown_dir.glob("*_latest.jpg"):
         camera_id = item.name.replace("_latest.jpg", "")
         cameras.append(camera_id)
-    return {"godown_id": godown_id, "cameras": sorted(cameras)}
+    cameras_sorted = sorted(cameras)
+    total = len(cameras_sorted)
+    start = max((page - 1) * page_size, 0)
+    end = start + page_size
+    return {
+        "godown_id": godown_id,
+        "cameras": cameras_sorted[start:end],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/{godown_id}/{camera_id}")

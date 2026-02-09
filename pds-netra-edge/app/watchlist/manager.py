@@ -33,6 +33,7 @@ except Exception:
     cv2 = None  # type: ignore
 
 from ..cv.face_id import detect_faces
+from ..core.errors import log_exception, safe_json_dump_atomic, safe_json_load
 
 
 @dataclass
@@ -121,9 +122,8 @@ class WatchlistManager:
     def _load_cached(self) -> None:
         if not self.cache_path.exists():
             return
-        try:
-            payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-        except Exception:
+        payload = safe_json_load(self.cache_path, None, logger=self.logger, context={"op": "watchlist_cache_load"})
+        if not isinstance(payload, dict):
             return
         checksum = payload.get("checksum")
         items = payload.get("items") if isinstance(payload, dict) else []
@@ -179,7 +179,14 @@ class WatchlistManager:
                 else:
                     self._index.ids = []
             self._checksum = checksum
-        self.cache_path.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
+        ok = safe_json_dump_atomic(
+            self.cache_path,
+            payload,
+            logger=self.logger,
+            context={"op": "watchlist_cache_write"},
+        )
+        if not ok:
+            self.logger.warning("Failed to persist watchlist cache")
         if self.auto_embed:
             self._auto_generate_embeddings(items)
         self.logger.info("Watchlist synced: %s entries", len(entries))
@@ -264,7 +271,8 @@ class WatchlistManager:
                     data = resp.read()
                 arr = np.frombuffer(data, dtype=np.uint8)
                 return cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            except Exception:
+            except Exception as exc:
+                log_exception(self.logger, "Watchlist image fetch failed", extra={"url": source}, exc=exc)
                 return None
         path = Path(str(source))
         if not path.is_absolute():
@@ -306,7 +314,8 @@ class WatchlistManager:
                 return None
             try:
                 candidate = np.array(embedding, dtype="float32")
-            except Exception:
+            except Exception as exc:
+                log_exception(self.logger, "Invalid embedding vector", exc=exc)
                 return None
             result = self._index.query(candidate, k=1)
             if result is None:

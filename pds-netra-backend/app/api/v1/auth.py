@@ -7,6 +7,8 @@ and user profile for the dashboard to use.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -21,9 +23,14 @@ class LoginIn(BaseModel):
 
 @router.post("/login")
 def login(payload: LoginIn) -> dict:
-    # PoC-only: accept any credentials and return a demo token
+    # PoC-only: accept any credentials and return configured token
+    auth_disabled = os.getenv("PDS_AUTH_DISABLED", "true").lower() in {"1", "true", "yes"}
+    if auth_disabled:
+        token = "demo-token"
+    else:
+        token = os.getenv("PDS_AUTH_TOKEN") or "demo-token"
     return {
-        "access_token": "demo-token",
+        "access_token": token,
         "token_type": "bearer",
         "user": {
             "username": payload.username,

@@ -33,11 +33,36 @@ Log out and back in after adding yourself to the docker group.
 ```bash
 git clone <your-repo-url>
 cd pds-netra/deployment
-cp env/backend.env.example env/backend.env
-cp env/dashboard.env.example env/dashboard.env
+cp env/backend.env.prod.example env/backend.env
+cp env/dashboard.env.prod.example env/dashboard.env
 ```
 
 Edit `env/backend.env` with your **managed Postgres** connection and domain.
+For local/PoC use, copy from the `*.dev.example` files instead.
+
+## 2.1) Run DB migrations (required)
+
+Run Alembic migrations against your configured database:
+
+```bash
+cd /path/to/pds-netra/pds-netra-backend
+python -m app.scripts.run_migrations
+```
+
+Or via Docker Compose one-off service:
+
+```bash
+cd /path/to/pds-netra/deployment
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+```
+
+To create a new migration (backend changes):
+
+```bash
+cd /path/to/pds-netra/pds-netra-backend
+alembic revision --autogenerate -m "describe_change"
+alembic upgrade head
+```
 
 ## 3) Configure Mosquitto auth
 
@@ -86,6 +111,7 @@ MQTT_USERNAME=your_mqtt_user
 MQTT_PASSWORD=your_mqtt_pass
 EDGE_BACKEND_URL=https://your-domain.example
 EDGE_SNAPSHOT_BASE_URL=https://your-domain.example/media/snapshots
+EDGE_BACKEND_TOKEN=<same as PDS_AUTH_TOKEN>
 ```
 
 Restart edge after updating.
@@ -99,4 +125,32 @@ If you need to debug backend quickly (optional):
 
 ```bash
 docker compose -f deployment/docker-compose.prod.yml logs -f backend
+```
+
+## Production checklist
+
+- Set `PDS_ENV=prod`.
+- `PDS_AUTH_DISABLED=false` and a strong `PDS_AUTH_TOKEN` (>=20 chars, not demo/change-me).
+- `AUTO_CREATE_DB=false`, `AUTO_SEED_* = false` unless explicitly needed.
+- `ENABLE_MQTT_CONSUMER=false` and `ENABLE_DISPATCH_*` disabled unless explicitly required.
+- Supply secrets via env/secret store; never commit real values.
+- Set `EDGE_BACKEND_TOKEN` on Jetson to match `PDS_AUTH_TOKEN`.
+- MQTT port `1883` is exposed for edge connectivity. Restrict it with firewall rules and plan TLS/ACLs if public.
+
+## PoC local quickstart
+
+```bash
+cd pds-netra/deployment
+cp env/backend.env.dev.example env/backend.env
+cp env/dashboard.env.dev.example env/dashboard.env
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+## Manual DB setup / seeding (optional)
+
+Run these from `pds-netra-backend/` when you want explicit control:
+
+```bash
+python -m app.scripts.create_db
+python -m app.scripts.seed_demo_data
 ```

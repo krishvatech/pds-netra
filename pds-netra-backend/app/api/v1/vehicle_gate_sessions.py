@@ -15,6 +15,7 @@ from ...core.db import get_db
 from ...core.auth import get_optional_user
 from ...models.vehicle_gate_session import VehicleGateSession
 from ...services.vehicle_gate import compute_next_threshold, _ensure_utc
+from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1/vehicle-gate-sessions", tags=["vehicle-gate-sessions"])
@@ -37,10 +38,11 @@ def list_vehicle_gate_sessions(
     date_from: Optional[str] = Query(default=None),
     date_to: Optional[str] = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     query = db.query(VehicleGateSession)
     if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
         if godown_id and godown_id != user.godown_id:

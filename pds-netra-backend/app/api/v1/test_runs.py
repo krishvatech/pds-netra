@@ -8,7 +8,7 @@ import shutil
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Query, Depends
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 import time
@@ -23,6 +23,8 @@ from ...services.test_runs import (
 )
 from ...core.db import SessionLocal
 from ...models.event import Alert
+from ...core.pagination import clamp_page_size
+from ...core.request_limits import enforce_upload_limit, copy_upload_file
 
 
 router = APIRouter(prefix="/api/v1/test-runs", tags=["test-runs"])
@@ -63,12 +65,13 @@ async def upload_test_run(
     camera_id: str = Form(...),
     zone_id: Optional[str] = Form(None),
     run_name: Optional[str] = Form(None),
+    request=Depends(enforce_upload_limit),
 ) -> dict:
     if not file:
         raise HTTPException(status_code=400, detail="Missing file")
 
     def _write_video(dest):
-        shutil.copyfileobj(file.file, dest)
+        copy_upload_file(file, dest)
 
     meta = create_test_run(
         godown_id=godown_id,
@@ -96,8 +99,13 @@ async def upload_test_run(
 
 
 @router.get("")
-def list_runs() -> list[dict]:
-    return list_test_runs()
+def list_runs(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1)) -> dict:
+    page_size = clamp_page_size(page_size)
+    items = list_test_runs()
+    total = len(items)
+    start = max((page - 1) * page_size, 0)
+    end = start + page_size
+    return {"items": items[start:end], "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/{run_id}")
@@ -255,7 +263,13 @@ def stream_annotated(run_id: str, camera_id: str) -> StreamingResponse:
 
 
 @router.get("/{run_id}/snapshots/{camera_id}")
-def list_snapshots(run_id: str, camera_id: str, page: int = 1, page_size: int = 12) -> dict:
+def list_snapshots(
+    run_id: str,
+    camera_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(12, ge=1),
+) -> dict:
+    page_size = clamp_page_size(page_size)
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")

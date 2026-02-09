@@ -4,7 +4,7 @@ Notification endpoints API.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
@@ -15,6 +15,7 @@ from ...schemas.notifications import (
     NotificationEndpointOut,
     NotificationEndpointUpdate,
 )
+from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/notification", tags=["notification"])
@@ -25,9 +26,13 @@ def list_endpoints(
     scope: str | None = Query(None),
     godown_id: str | None = Query(None),
     channel: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    response: Response | None = None,
 ) -> list[NotificationEndpointOut]:
+    page_size = clamp_page_size(page_size)
     query = db.query(NotificationEndpoint)
     if scope:
         scope_norm = scope.upper()
@@ -38,7 +43,16 @@ def list_endpoints(
         query = query.filter(NotificationEndpoint.godown_id == godown_id)
     if channel:
         query = query.filter(NotificationEndpoint.channel == channel.upper())
-    return query.order_by(NotificationEndpoint.created_at.desc()).all()
+    total = query.count()
+    items = (
+        query.order_by(NotificationEndpoint.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    if response:
+        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    return items
 
 
 @router.post("/endpoints", response_model=NotificationEndpointOut)

@@ -19,6 +19,8 @@ from ...schemas.watchlist import (
     FaceMatchEventOut,
 )
 from ...services import watchlist as watchlist_service
+from ...core.pagination import clamp_page_size
+from ...core.request_limits import enforce_upload_limit, read_upload_bytes_sync
 
 
 router = APIRouter(prefix="/api/v1/watchlist", tags=["watchlist"])
@@ -29,10 +31,11 @@ def list_persons(
     status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     persons, total = watchlist_service.list_persons(db, status=status, query=q, page=page, page_size=page_size)
     return {
         "items": [WatchlistPersonOut.model_validate(p).model_dump() for p in persons],
@@ -51,13 +54,14 @@ def create_person(
     reference_images: Optional[Union[UploadFile, List[UploadFile]]] = File(None),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    request=Depends(enforce_upload_limit),
 ) -> dict:
     person = watchlist_service.create_person(db, name=name, alias=alias, reason=reason, notes=notes)
     if reference_images:
         images_payload = []
         images_list = reference_images if isinstance(reference_images, list) else [reference_images]
         for img in images_list:
-            data = img.file.read()
+            data = read_upload_bytes_sync(img)
             images_payload.append((data, img.content_type, img.filename))
         watchlist_service.add_person_images(db, person=person, images=images_payload)
         db.refresh(person)
@@ -109,6 +113,7 @@ def add_images(
     reference_images: Union[UploadFile, List[UploadFile]] = File(...),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    request=Depends(enforce_upload_limit),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
     if not person:
@@ -116,7 +121,7 @@ def add_images(
     images_payload = []
     images_list = reference_images if isinstance(reference_images, list) else [reference_images]
     for img in images_list:
-        data = img.file.read()
+        data = read_upload_bytes_sync(img)
         images_payload.append((data, img.content_type, img.filename))
     watchlist_service.add_person_images(db, person=person, images=images_payload)
     db.refresh(person)
@@ -144,10 +149,11 @@ def list_matches(
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     items, total = watchlist_service.list_person_matches(
         db,
         person_id=person_id,
@@ -165,5 +171,25 @@ def list_matches(
 
 
 @router.get("/sync")
-def sync_watchlist(db: Session = Depends(get_db)) -> dict:
-    return watchlist_service.build_sync_payload(db)
+def sync_watchlist(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    page_size = clamp_page_size(page_size)
+    payload = watchlist_service.build_sync_payload(db)
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if isinstance(items, list):
+        total = len(items)
+        start = max((page - 1) * page_size, 0)
+        end = start + page_size
+        page_items = items[start:end]
+        payload["items"] = page_items
+        payload["total"] = total
+        payload["page"] = page
+        payload["page_size"] = page_size
+        try:
+            payload["checksum"] = watchlist_service._checksum_payload(page_items)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    return payload

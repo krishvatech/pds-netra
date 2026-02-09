@@ -120,8 +120,8 @@ class Pipeline:
 
                     try:
                         cap.release()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        self.logger.warning("Failed to release capture for camera %s: %s", self.camera_id, exc)
 
                     time.sleep(delay)
 

@@ -16,6 +16,7 @@ from ...models.after_hours_policy import AfterHoursPolicy as AfterHoursPolicyMod
 from ...models.after_hours_policy_audit import AfterHoursPolicyAudit
 from ...schemas.after_hours import AfterHoursPolicyOut, AfterHoursPolicyUpdate, AfterHoursPolicyAuditOut
 from ...services.after_hours import default_policy
+from ...core.pagination import clamp_page_size, clamp_limit
 
 
 router = APIRouter(prefix="/api/v1/after-hours", tags=["after-hours"])
@@ -50,16 +51,27 @@ def _policy_snapshot(row: AfterHoursPolicyModel | None, fallback: dict) -> dict:
 @router.get("/policies")
 def list_policies(
     godown_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     q = db.query(AfterHoursPolicyModel)
     if godown_id:
         q = q.filter(AfterHoursPolicyModel.godown_id == godown_id)
-    rows = q.order_by(AfterHoursPolicyModel.godown_id.asc()).all()
+    total = q.count()
+    rows = (
+        q.order_by(AfterHoursPolicyModel.godown_id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return {
         "items": [_to_out(r, source="override") for r in rows],
-        "total": len(rows),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 
@@ -153,10 +165,11 @@ def upsert_policy(
 @router.get("/policies/{godown_id}/audit")
 def list_policy_audit(
     godown_id: str,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
 ) -> dict:
+    limit = clamp_limit(limit)
     rows = (
         db.query(AfterHoursPolicyAudit)
         .filter(AfterHoursPolicyAudit.godown_id == godown_id)

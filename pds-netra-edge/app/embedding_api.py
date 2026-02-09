@@ -18,6 +18,7 @@ from tools.generate_face_embedding import (
     load_known_faces,
     save_known_faces,
 )
+from app.core.errors import log_exception
 
 app = FastAPI(title="PDS Netra Edge Embedding API", version="1.0")
 
@@ -98,5 +99,5 @@ async def face_embedding(
         try:
             if temp_path.exists():
                 temp_path.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            log_exception(app.logger, "Failed to cleanup temp embedding file", extra={"path": str(temp_path)}, exc=exc)

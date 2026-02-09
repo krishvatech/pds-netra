@@ -15,6 +15,7 @@ from ...models.rule import Rule
 from ...models.anpr_vehicle import AnprVehicle
 from ...services.rule_seed import seed_rules_for_godown
 from ...schemas.rule import RuleCreate, RuleOut, RuleUpdate
+from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1/rules", tags=["rules"])
@@ -114,8 +115,11 @@ def list_rules(
     zone_id: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
     enabled: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     query = db.query(Rule)
     if godown_id:
         query = query.filter(Rule.godown_id == godown_id)
@@ -128,25 +132,49 @@ def list_rules(
     if enabled is not None:
         query = query.filter(Rule.enabled == enabled)
     total = query.count()
-    items = query.order_by(Rule.id.desc()).all()
-    return {"items": [_to_rule_out(r).model_dump() for r in items], "total": total}
+    items = (
+        query.order_by(Rule.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [_to_rule_out(r).model_dump() for r in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/active", response_model=dict)
 def list_active_rules(
     godown_id: Optional[str] = Query(None),
     camera_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
+    page_size = clamp_page_size(page_size)
     query = db.query(Rule).filter(Rule.enabled == True)  # noqa: E712
     if godown_id:
         query = query.filter(Rule.godown_id == godown_id)
     if camera_id:
         query = query.filter(Rule.camera_id == camera_id)
-    rules = query.order_by(Rule.id.asc()).all()
+    total = query.count()
+    rules = (
+        query.order_by(Rule.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     if not rules and godown_id and os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
         seed_rules_for_godown(db, godown_id)
-        rules = query.order_by(Rule.id.asc()).all()
+        rules = (
+            query.order_by(Rule.id.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
 
     items = [_to_active_payload(r) for r in rules]
 
@@ -154,6 +182,7 @@ def list_active_rules(
     # Edge consumes /api/v1/rules/active and derives whitelist/blacklist plates from:
     # - ANPR_WHITELIST_ONLY.allowed_plates
     # - ANPR_BLACKLIST_ALERT.blocked_plates
+    extra_items: list[dict] = []
     if godown_id:
         whitelist, blacklist = _active_anpr_vehicle_lists(db, godown_id=godown_id)
         if whitelist or blacklist:
@@ -166,7 +195,7 @@ def list_active_rules(
                     it.get("camera_id") == cam_id and str(it.get("type") or "").upper() == "ANPR_WHITELIST_ONLY"
                     for it in items
                 ):
-                    items.append(
+                    extra_items.append(
                         {
                             "id": f"ANPR_WHITELIST_ONLY:{godown_id}:{cam_id}",
                             "type": "ANPR_WHITELIST_ONLY",
@@ -179,7 +208,7 @@ def list_active_rules(
                     it.get("camera_id") == cam_id and str(it.get("type") or "").upper() == "ANPR_BLACKLIST_ALERT"
                     for it in items
                 ):
-                    items.append(
+                    extra_items.append(
                         {
                             "id": f"ANPR_BLACKLIST_ALERT:{godown_id}:{cam_id}",
                             "type": "ANPR_BLACKLIST_ALERT",
@@ -189,7 +218,11 @@ def list_active_rules(
                         }
                     )
 
-    return {"items": items, "total": len(items)}
+    items.extend(extra_items)
+    total = total + len(extra_items)
+    if len(items) > page_size:
+        items = items[:page_size]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("", response_model=RuleOut)
