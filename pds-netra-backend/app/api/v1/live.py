@@ -5,6 +5,7 @@ Live camera streaming endpoints.
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -13,10 +14,12 @@ from fastapi.responses import StreamingResponse, FileResponse
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
+def _live_root() -> Path:
+    return Path(os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[3] / "data" / "live"))).expanduser()
 
 @router.get("/{godown_id}")
 def list_live_cameras(godown_id: str) -> dict:
-    live_root = Path(__file__).resolve().parents[3] / "data" / "live"
+    live_root = _live_root()
     godown_dir = live_root / godown_id
     if not godown_dir.exists():
         return {"godown_id": godown_id, "cameras": []}
@@ -29,7 +32,7 @@ def list_live_cameras(godown_id: str) -> dict:
 
 @router.get("/{godown_id}/{camera_id}")
 def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
-    live_root = Path(__file__).resolve().parents[3] / "data" / "live"
+    live_root = _live_root()
     latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
     if not latest_path.parent.exists():
         raise HTTPException(status_code=404, detail="Live feed not available")
@@ -59,7 +62,7 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
 
 @router.get("/frame/{godown_id}/{camera_id}")
 def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
-    live_root = Path(__file__).resolve().parents[3] / "data" / "live"
+    live_root = _live_root()
     latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
     if not latest_path.exists():
         raise HTTPException(status_code=404, detail="Live frame not available")
