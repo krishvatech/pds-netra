@@ -60,16 +60,6 @@ def create_person(
             data = img.file.read()
             images_payload.append((data, img.content_type, img.filename))
         watchlist_service.add_person_images(db, person=person, images=images_payload)
-        # OPTION A: Auto-generate embeddings on upload
-        try:
-          embeddings = watchlist_service.compute_embeddings_from_uploads(images_payload)
-          if embeddings:
-             watchlist_service.add_embeddings(db, person=person, embeddings=embeddings)
-        except ValueError as e:
-          raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-          raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {e}")
-
         db.refresh(person)
     return WatchlistPersonOut.model_validate(person).model_dump()
 
@@ -129,16 +119,6 @@ def add_images(
         data = img.file.read()
         images_payload.append((data, img.content_type, img.filename))
     watchlist_service.add_person_images(db, person=person, images=images_payload)
-    # OPTION A: Auto-generate embeddings on upload
-    try:
-        embeddings = watchlist_service.compute_embeddings_from_uploads(images_payload)
-        if embeddings:
-            watchlist_service.add_embeddings(db, person=person, embeddings=embeddings)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {e}")
-
     db.refresh(person)
     return WatchlistPersonOut.model_validate(person).model_dump()
 

@@ -8,10 +8,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from typing import Iterable, Optional, Tuple
-import os
-import sys
-import uuid
-from pathlib import Path
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -28,87 +25,6 @@ from .incident_lifecycle import touch_detection_timestamp
 def _utc_now() -> datetime:
     return datetime.utcnow()
 
-def _resolve_edge_root() -> Optional[Path]:
-    """Find edge project root so we can import tools.generate_face_embedding."""
-    here = Path(__file__).resolve()
-
-    # repo layout in your zip: pds/backend + pds/edge
-    for up in range(1, 8):
-        base = here.parents[up]
-
-        cand = base / "edge"
-        if cand.exists() and (cand / "tools").exists():
-            return cand
-
-        cand2 = base / "pds-netra-edge"
-        if cand2.exists() and (cand2 / "tools").exists():
-            return cand2
-
-    return None
-
-
-def _import_face_tools():
-    edge_root = _resolve_edge_root()
-    if not edge_root:
-        raise RuntimeError(
-            "Unable to locate edge root to import face tools. "
-            "Expected an 'edge/tools' or 'pds-netra-edge/tools' folder next to backend."
-        )
-
-    if str(edge_root) not in sys.path:
-        sys.path.append(str(edge_root))
-
-    try:
-        from tools.generate_face_embedding import compute_embedding  # type: ignore
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to import face embedding tool from {edge_root}/tools. "
-            "Install: insightface, numpy, opencv-python-headless in backend env. "
-            f"Root error: {e}"
-        ) from e
-
-    return compute_embedding
-
-
-def _hash_embedding(embedding: list[float]) -> str:
-    raw = json.dumps(embedding, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
-
-
-def compute_embeddings_from_uploads(
-    images: Iterable[Tuple[bytes, Optional[str], Optional[str]]],
-    *,
-    embedding_version: str = "insightface-antelopev2",
-) -> list[WatchlistEmbeddingIn]:
-    """Compute embeddings for uploaded images and return WatchlistEmbeddingIn list."""
-    compute_embedding = _import_face_tools()
-
-    tmp_dir = Path("/tmp/pds-watchlist-embeddings")
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    out: list[WatchlistEmbeddingIn] = []
-    for data, _content_type, filename in images:
-        ext = (Path(filename).suffix if filename else "") or ".jpg"
-        tmp_path = tmp_dir / f"wl_{uuid.uuid4().hex}{ext}"
-        try:
-            with open(tmp_path, "wb") as f:
-                f.write(data)
-
-            emb = compute_embedding(str(tmp_path))  # raises ValueError if no face / multiple faces
-            out.append(
-                WatchlistEmbeddingIn(
-                    embedding=emb,
-                    embedding_version=embedding_version,
-                    embedding_hash=_hash_embedding(emb),
-                )
-            )
-        finally:
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
-
-    return out
 
 def create_person(
     db: Session,

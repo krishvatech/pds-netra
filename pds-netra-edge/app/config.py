@@ -121,9 +121,8 @@ class WatchlistConfig:
     min_match_confidence: float = 0.6
     cooldown_seconds: int = 120
     sync_interval_sec: int = 300
-    auto_embed: bool = False
+    auto_embed: bool = True
     http_fallback: bool = False
-
 
 @dataclass
 class AfterHoursPresenceConfig:
@@ -604,7 +603,7 @@ def _load_watchlist_config(data: dict) -> WatchlistConfig:
         sync_sec = int(os.getenv("EDGE_WATCHLIST_SYNC_SEC", wl_data.get("sync_interval_sec", 300)))
     except Exception:
         sync_sec = 300
-    auto_embed = os.getenv("EDGE_WATCHLIST_AUTO_EMBED", str(wl_data.get("auto_embed", False))).lower() in {"1", "true", "yes"}
+    auto_embed = os.getenv("EDGE_WATCHLIST_AUTO_EMBED", str(wl_data.get("auto_embed", True))).lower() in {"1", "true", "yes"}
     http_fallback = os.getenv("EDGE_WATCHLIST_HTTP_FALLBACK", str(wl_data.get("http_fallback", False))).lower() in {"1", "true", "yes"}
     return WatchlistConfig(
         enabled=enabled,
