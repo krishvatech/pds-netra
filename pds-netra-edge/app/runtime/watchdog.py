@@ -153,7 +153,7 @@ class EdgeWatchdog:
             )
 
         health = {
-            "timestamp_utc": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "ts_utc": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "mqtt_connected": mqtt_connected,
             "outbox": outbox_stats,
             "outbox_pending": outbox_pending,

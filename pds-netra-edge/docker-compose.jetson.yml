@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  pds-edge:
+  pds_netra_edge:
     build:
       context: .
       dockerfile: docker/Dockerfile.jetson
@@ -16,6 +16,7 @@ services:
     volumes:
       - /opt/pds-netra-edge/config:/opt/app/config
       - /opt/pds-netra-edge/data:/opt/app/data
+    runtime: nvidia
     device_requests:
       - driver: nvidia
         count: all

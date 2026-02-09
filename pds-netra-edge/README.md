@@ -2,6 +2,8 @@
 
 This repository contains a minimal yet functional edge node implementation for the **PDS Netra** smart CCTV surveillance system. The edge node connects to RTSP or file-based video sources, performs basic object detection and tracking using Ultralytics YOLO, and publishes structured events and health heartbeats to a central MQTT broker.
 
+For Jetson deployment, auto-start, watchdog, and outbox operations, use the consolidated runbook in `deployment/edge/README.md`.
+
 ## Repository layout
 
 The project follows a standard Python package layout:
@@ -67,20 +69,6 @@ python -m app.main --config config/pds_netra_config.yaml --device cpu --log-leve
 ```
 
 This will start the MQTT client, spawn a processing thread per camera, and emit dummy events to the configured broker. Logs will be printed to the console. Modify `config/pds_netra_config.yaml` or set environment variables (see `.env.example`) to point to your own cameras or broker.
-
-## Outbox simulation (MQTT outage test)
-
-To validate disk-backed buffering and replay, use the helper script:
-
-```bash
-python tools/simulate_outage.py \
-  --config config/pds_netra_config.yaml \
-  --events 25 \
-  --offline-host 127.0.0.1 \
-  --offline-port 1884 \
-  --online-host 127.0.0.1 \
-  --online-port 1883
-```
 
 ## Using Docker
 

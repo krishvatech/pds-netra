@@ -60,6 +60,8 @@ class MQTTClient:
         self._outbox_thread: Optional[threading.Thread] = None
         self._outbox_stop = threading.Event()
         self._outbox_last_success: Optional[float] = None
+        self._outbox_flush_ok = 0
+        self._outbox_flush_fail = 0
         if self._outbox_settings.enabled:
             self.outbox = self._init_outbox(self._outbox_settings)
 
@@ -334,11 +336,14 @@ class MQTTClient:
                 if self._outbox_last_success:
                     last_ok = int(time.time() - self._outbox_last_success)
                 self.logger.info(
-                    "Outbox summary pending=%s sent=%s dead=%s last_success_sec=%s",
+                    "Outbox summary mqtt_connected=%s pending=%s sent=%s dead=%s last_success_sec=%s flush_ok=%s flush_fail=%s",
+                    self.is_connected(),
                     stats.get("pending", 0),
                     stats.get("sent", 0),
                     stats.get("dead", 0),
                     last_ok,
+                    self._outbox_flush_ok,
+                    self._outbox_flush_fail,
                 )
                 last_summary = now
             self._outbox_stop.wait(timeout=self._outbox_settings.flush_interval_sec)
@@ -346,7 +351,7 @@ class MQTTClient:
     def _flush_outbox_once(self) -> None:
         if not self.outbox:
             return
-        rows = self.outbox.dequeue_batch(limit=100)
+        rows = self.outbox.dequeue_batch(limit=self._outbox_settings.batch_size)
         for row in rows:
             ok = False
             err = ""
@@ -371,7 +376,9 @@ class MQTTClient:
             if ok:
                 self.outbox.mark_sent(row["id"])
                 self._outbox_last_success = time.time()
+                self._outbox_flush_ok += 1
             else:
+                self._outbox_flush_fail += 1
                 self.outbox.mark_failed(
                     row["id"],
                     attempts=row.get("attempts", 0),

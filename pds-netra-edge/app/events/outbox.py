@@ -44,6 +44,7 @@ class OutboxSettings:
     enabled: bool
     db_path: Path
     flush_interval_sec: float
+    batch_size: int
     max_attempts: int
     max_queue: int
     max_payload_bytes: int
@@ -62,6 +63,7 @@ def load_outbox_settings() -> OutboxSettings:
         enabled=enabled,
         db_path=db_path,
         flush_interval_sec=_read_float("EDGE_OUTBOX_FLUSH_INTERVAL_SEC", 2.0),
+        batch_size=_read_int("EDGE_OUTBOX_BATCH_SIZE", 100),
         max_attempts=_read_int("EDGE_OUTBOX_MAX_ATTEMPTS", 20),
         max_queue=_read_int("EDGE_OUTBOX_MAX_QUEUE", 50000),
         max_payload_bytes=_read_int("EDGE_OUTBOX_MAX_PAYLOAD_BYTES", 512 * 1024),
@@ -228,6 +230,9 @@ class Outbox:
         # Backward-compatible alias
         return self.dequeue_batch(limit=limit)
 
+    def dequeue_due(self, limit: int = 100) -> list[Dict[str, Any]]:
+        return self.dequeue_batch(limit=limit)
+
     def mark_sent(self, row_id: int) -> None:
         with self._lock:
             self._conn.execute(
@@ -242,6 +247,7 @@ class Outbox:
         attempts: Optional[int] = None,
         error: str,
         max_attempts: int,
+        backoff_seconds: Optional[int] = None,
     ) -> None:
         if attempts is None:
             with self._lock:
@@ -249,8 +255,11 @@ class Outbox:
                 row = cur.fetchone()
                 attempts = int(row["attempts"]) if row else 0
         attempts = int(attempts) + 1
-        delay = min(60, 2 ** min(attempts, 6))
-        next_dt = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
+        if backoff_seconds is None:
+            backoff_seconds = min(60, 2 ** min(attempts, 6))
+        else:
+            backoff_seconds = min(60, max(1, int(backoff_seconds)))
+        next_dt = datetime.datetime.utcnow() + datetime.timedelta(seconds=backoff_seconds)
         next_attempt = next_dt.replace(microsecond=0).isoformat() + "Z"
         status = "pending"
         if attempts >= max_attempts:
@@ -284,6 +293,9 @@ class Outbox:
             if status in stats:
                 stats[status] = int(row["cnt"])
         return stats
+
+    def pending_count(self) -> int:
+        return int(self.stats().get("pending", 0))
 
     def close(self) -> None:
         with self._lock:
