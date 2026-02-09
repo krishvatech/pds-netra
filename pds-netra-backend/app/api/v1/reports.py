@@ -345,14 +345,13 @@ def list_hq_reports(
     limit: int = Query(30),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response | None = None,
+    response: Response,
 ):
     limit = clamp_limit(int(limit))
     base_query = db.query(AlertReport).filter(AlertReport.scope == "HQ")
     total = base_query.count()
     rows = base_query.order_by(AlertReport.generated_at.desc()).limit(limit).all()
-    if response:
-        set_pagination_headers(response, total=total, page=1, page_size=limit)
+    set_pagination_headers(response, total=total, page=1, page_size=limit)
     return rows
 
 
@@ -375,7 +374,7 @@ def get_hq_report_deliveries(
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response | None = None,
+    response: Response,
 ):
     page_size = clamp_page_size(page_size)
     report = db.get(AlertReport, report_id)
@@ -392,8 +391,7 @@ def get_hq_report_deliveries(
         .limit(page_size)
         .all()
     )
-    if response:
-        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return rows
 
 

@@ -50,7 +50,7 @@ def list_godowns(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response | None = None,
+    response: Response,
 ) -> List[dict]:
     page_size = clamp_page_size(page_size)
     query = db.query(Godown)
@@ -113,8 +113,7 @@ def list_godowns(
                 "status": status_val,
             }
         )
-    if response:
-        set_pagination_headers(response, total=(total if not status else None), page=page, page_size=page_size)
+    set_pagination_headers(response, total=(total if not status else None), page=page, page_size=page_size)
     return results
 
 

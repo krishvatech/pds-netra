@@ -45,7 +45,7 @@ def list_authorized_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response | None = None,
+    response: Response,
 ) -> List[AuthorizedUser]:
     """List all authorized users with optional filters."""
     page_size = clamp_page_size(page_size)
@@ -64,8 +64,7 @@ def list_authorized_users(
         .limit(page_size)
         .all()
     )
-    if response:
-        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return users
 
 

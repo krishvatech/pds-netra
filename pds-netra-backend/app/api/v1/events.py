@@ -463,7 +463,7 @@ def get_alert_deliveries(
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
-    response: Response | None = None,
+    response: Response,
 ):
     page_size = clamp_page_size(page_size)
     alert = db.get(Alert, alert_id)
@@ -483,8 +483,7 @@ def get_alert_deliveries(
         .limit(page_size)
         .all()
     )
-    if response:
-        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return deliveries
 
 

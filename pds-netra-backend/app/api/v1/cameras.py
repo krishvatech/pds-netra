@@ -150,7 +150,7 @@ def list_cameras(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response | None = None,
+    response: Response,
 ) -> list[dict]:
     page_size = clamp_page_size(page_size)
     query = db.query(Camera)
@@ -167,8 +167,7 @@ def list_cameras(
         .limit(page_size)
         .all()
     )
-    if response:
-        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return [_camera_payload(camera) for camera in cameras]
 
 

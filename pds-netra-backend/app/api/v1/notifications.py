@@ -30,7 +30,7 @@ def list_endpoints(
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response | None = None,
+    response: Response,
 ) -> list[NotificationEndpointOut]:
     page_size = clamp_page_size(page_size)
     query = db.query(NotificationEndpoint)
@@ -50,8 +50,7 @@ def list_endpoints(
         .limit(page_size)
         .all()
     )
-    if response:
-        set_pagination_headers(response, total=total, page=page, page_size=page_size)
+    set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return items
 
 
