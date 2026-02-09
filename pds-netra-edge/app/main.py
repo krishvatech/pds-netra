@@ -92,6 +92,17 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("Failed to load configuration: %s", exc)
         return 1
     logger.info("Loaded settings for godown %s", settings.godown_id)
+    logger.info("Inference device requested: %s", args.device)
+    if args.device == "cuda":
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                logger.info("CUDA available: %s", torch.cuda.get_device_name(0))
+            else:
+                logger.warning("CUDA requested but not available; continuing anyway")
+        except Exception as exc:
+            logger.warning("CUDA check failed: %s", exc)
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
         backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))

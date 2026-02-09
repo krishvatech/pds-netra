@@ -7,6 +7,7 @@ Stores events locally so they can be retried when MQTT/HTTP is unavailable.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import os
 import sqlite3
@@ -100,13 +101,12 @@ class Outbox:
                 CREATE TABLE IF NOT EXISTS outbox (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at_utc TEXT NOT NULL,
+                    event_id TEXT,
                     event_type TEXT,
                     camera_id TEXT,
                     godown_id TEXT,
                     payload_json TEXT NOT NULL,
-                    topic TEXT,
                     transport TEXT,
-                    http_fallback INTEGER DEFAULT 0,
                     attempts INTEGER DEFAULT 0,
                     next_attempt_at_utc TEXT,
                     last_error TEXT,
@@ -117,8 +117,10 @@ class Outbox:
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_outbox_status_next ON outbox(status, next_attempt_at_utc)"
             )
-            self._ensure_column("topic", "TEXT")
+            self._ensure_column("event_id", "TEXT")
             self._ensure_column("transport", "TEXT")
+            # Backward-compatible columns from previous schema revisions
+            self._ensure_column("topic", "TEXT")
             self._ensure_column("http_fallback", "INTEGER DEFAULT 0")
 
     def _ensure_column(self, name: str, ddl: str) -> None:
@@ -127,24 +129,23 @@ class Outbox:
             return
         self._conn.execute(f"ALTER TABLE outbox ADD COLUMN {name} {ddl}")
 
-    def enqueue(
-        self,
-        *,
-        event_type: str,
-        camera_id: Optional[str],
-        godown_id: Optional[str],
-        payload_json: str,
-        topic: Optional[str],
-        transport: str = "mqtt",
-        http_fallback: bool = False,
-    ) -> bool:
+    def enqueue(self, payload: Dict[str, Any], *, transport_hint: str = "mqtt") -> bool:
+        try:
+            payload_json = json.dumps(payload, default=str)
+        except Exception:
+            payload_json = "{}"
         payload_bytes = len(payload_json.encode("utf-8"))
+        event_id = _get_payload_value(payload, "event_id", "eventId")
+        event_type = _get_payload_value(payload, "event_type", "eventType") or "UNKNOWN"
+        camera_id = _get_payload_value(payload, "camera_id", "cameraId")
+        godown_id = _get_payload_value(payload, "godown_id", "godownId")
         if payload_bytes > self.max_payload_bytes:
             self.logger.warning(
-                "Outbox drop: payload too large bytes=%s event_type=%s camera=%s",
+                "Outbox drop: payload too large bytes=%s event_type=%s camera=%s event_id=%s",
                 payload_bytes,
                 event_type,
                 camera_id,
+                event_id,
             )
             return False
         created_at = _utcnow_iso()
@@ -155,37 +156,36 @@ class Outbox:
                     """
                     INSERT INTO outbox (
                         created_at_utc,
+                        event_id,
                         event_type,
                         camera_id,
                         godown_id,
                         payload_json,
-                        topic,
                         transport,
-                        http_fallback,
                         attempts,
                         next_attempt_at_utc,
                         last_error,
                         status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 'pending')
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 'pending')
                     """,
                     (
                         created_at,
+                        event_id,
                         event_type,
                         camera_id,
                         godown_id,
                         payload_json,
-                        topic,
-                        transport,
-                        1 if http_fallback else 0,
+                        transport_hint,
                         created_at,
                     ),
                 )
                 return True
             except Exception as exc:
                 self.logger.error(
-                    "Outbox enqueue failed event_type=%s camera=%s: %s",
+                    "Outbox enqueue failed event_type=%s camera=%s event_id=%s: %s",
                     event_type,
                     camera_id,
+                    event_id,
                     exc,
                 )
                 return False
@@ -206,12 +206,12 @@ class Outbox:
         )
         self.logger.warning("Outbox full; dropped %s oldest events", drop)
 
-    def get_due(self, limit: int = 100) -> list[Dict[str, Any]]:
-        now = _utcnow_iso()
+    def dequeue_batch(self, now_utc: Optional[str] = None, limit: int = 100) -> list[Dict[str, Any]]:
+        now = now_utc or _utcnow_iso()
         with self._lock:
             cur = self._conn.execute(
                 """
-                SELECT id, event_type, camera_id, godown_id, payload_json, topic, transport,
+                SELECT id, event_id, event_type, camera_id, godown_id, payload_json, topic, transport,
                        http_fallback, attempts, next_attempt_at_utc, last_error, status
                 FROM outbox
                 WHERE status = 'pending'
@@ -224,6 +224,10 @@ class Outbox:
             rows = cur.fetchall()
         return [dict(row) for row in rows]
 
+    def get_due(self, limit: int = 100) -> list[Dict[str, Any]]:
+        # Backward-compatible alias
+        return self.dequeue_batch(limit=limit)
+
     def mark_sent(self, row_id: int) -> None:
         with self._lock:
             self._conn.execute(
@@ -235,11 +239,15 @@ class Outbox:
         self,
         row_id: int,
         *,
-        attempts: int,
+        attempts: Optional[int] = None,
         error: str,
         max_attempts: int,
     ) -> None:
-        next_attempt = _utcnow_iso()
+        if attempts is None:
+            with self._lock:
+                cur = self._conn.execute("SELECT attempts FROM outbox WHERE id=?", (int(row_id),))
+                row = cur.fetchone()
+                attempts = int(row["attempts"]) if row else 0
         attempts = int(attempts) + 1
         delay = min(60, 2 ** min(attempts, 6))
         next_dt = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
@@ -255,6 +263,13 @@ class Outbox:
                 WHERE id=?
                 """,
                 (attempts, next_attempt, (error or "")[:300], status, int(row_id)),
+            )
+
+    def mark_dead(self, row_id: int, *, error: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE outbox SET status='dead', last_error=? WHERE id=?",
+                ((error or "")[:300], int(row_id)),
             )
 
     def stats(self) -> Dict[str, int]:
@@ -276,3 +291,13 @@ class Outbox:
                 self._conn.close()
             except Exception:
                 pass
+
+
+def _get_payload_value(payload: Dict[str, Any], *keys: str) -> Optional[str]:
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            try:
+                return str(payload[key])
+            except Exception:
+                return None
+    return None

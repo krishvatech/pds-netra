@@ -10,6 +10,7 @@ JSON. QoS=1 is used to ensure messages are delivered at least once.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import os
 import threading
@@ -136,7 +137,7 @@ class MQTTClient:
             )
             return
         topic = f"pds/{event.godown_id}/events"
-        payload = self._serialize_payload(event)
+        payload_dict, payload_json = self._serialize_payload(event)
         self.logger.info(
             "Publishing event %s type=%s camera=%s track=%s",
             event.event_id,
@@ -146,7 +147,8 @@ class MQTTClient:
         )
         self._publish_or_enqueue(
             topic=topic,
-            payload=payload,
+            payload_json=payload_json,
+            payload_dict=payload_dict,
             event_type=event.event_type,
             camera_id=event.camera_id,
             godown_id=event.godown_id,
@@ -156,8 +158,8 @@ class MQTTClient:
     def publish_health(self, health: HealthModel) -> None:
         """Publish a health heartbeat message to the configured health topic."""
         topic = f"pds/{health.godown_id}/health"
-        payload = self._serialize_payload(health)
-        result = self.client.publish(topic, payload, qos=1)
+        _, payload_json = self._serialize_payload(health)
+        result = self.client.publish(topic, payload_json, qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             self.logger.error(
                 "Failed to publish health rc=%s godown=%s",
@@ -168,10 +170,11 @@ class MQTTClient:
     def publish_face_match(self, event: FaceMatchEvent, *, http_fallback: bool = False) -> None:
         """Publish a face match event to the watchlist topic."""
         topic = f"pds/{event.godown_id}/face-match"
-        payload = self._serialize_payload(event)
+        payload_dict, payload_json = self._serialize_payload(event)
         self._publish_or_enqueue(
             topic=topic,
-            payload=payload,
+            payload_json=payload_json,
+            payload_dict=payload_dict,
             event_type=event.event_type,
             camera_id=event.camera_id,
             godown_id=event.godown_id,
@@ -181,10 +184,11 @@ class MQTTClient:
     def publish_presence(self, event: PresenceEvent, *, http_fallback: bool = False) -> None:
         """Publish an after-hours presence event to the presence topic."""
         topic = f"pds/{event.godown_id}/presence"
-        payload = self._serialize_payload(event)
+        payload_dict, payload_json = self._serialize_payload(event)
         self._publish_or_enqueue(
             topic=topic,
-            payload=payload,
+            payload_json=payload_json,
+            payload_dict=payload_dict,
             event_type=event.event_type,
             camera_id=event.camera_id,
             godown_id=event.godown_id,
@@ -208,10 +212,26 @@ class MQTTClient:
     def is_connected(self) -> bool:
         return self._connected.is_set()
 
-    def _serialize_payload(self, event) -> str:
+    def _serialize_payload(self, event) -> tuple[dict, str]:
         if hasattr(event, "model_dump_json"):
-            return event.model_dump_json()
-        return event.json()
+            payload_json = event.model_dump_json()
+            try:
+                payload_dict = json.loads(payload_json)
+            except Exception:
+                payload_dict = event.model_dump() if hasattr(event, "model_dump") else {}
+            return payload_dict, payload_json
+        if hasattr(event, "json"):
+            payload_json = event.json()
+            try:
+                payload_dict = json.loads(payload_json)
+            except Exception:
+                payload_dict = event.dict() if hasattr(event, "dict") else {}
+            return payload_dict, payload_json
+        if isinstance(event, dict):
+            payload_json = json.dumps(event, default=str)
+            return event, payload_json
+        payload_dict = {"payload": str(event)}
+        return payload_dict, json.dumps(payload_dict, default=str)
 
     def _publish_raw(self, topic: str, payload: str) -> bool:
         try:
@@ -252,7 +272,8 @@ class MQTTClient:
         self,
         *,
         topic: str,
-        payload: str,
+        payload_json: str,
+        payload_dict: dict,
         event_type: str,
         camera_id: Optional[str],
         godown_id: Optional[str],
@@ -260,12 +281,12 @@ class MQTTClient:
     ) -> None:
         published = False
         if self.is_connected():
-            published = self._publish_raw(topic, payload)
+            published = self._publish_raw(topic, payload_json)
         if published:
             self._record_event(camera_id)
             return
 
-        if http_fallback and self._post_http_payload(payload):
+        if http_fallback and self._post_http_payload(payload_json):
             self._record_event(camera_id)
             self.logger.info(
                 "HTTP fallback delivered event type=%s camera=%s",
@@ -275,15 +296,8 @@ class MQTTClient:
             return
 
         if self.outbox:
-            queued = self.outbox.enqueue(
-                event_type=event_type,
-                camera_id=camera_id,
-                godown_id=godown_id,
-                payload_json=payload,
-                topic=topic,
-                transport="mqtt",
-                http_fallback=http_fallback,
-            )
+            transport_hint = "http" if http_fallback else "mqtt"
+            queued = self.outbox.enqueue(payload_dict, transport_hint=transport_hint)
             if queued:
                 self._record_event(camera_id)
                 self.logger.warning(
@@ -332,20 +346,24 @@ class MQTTClient:
     def _flush_outbox_once(self) -> None:
         if not self.outbox:
             return
-        rows = self.outbox.get_due(limit=100)
+        rows = self.outbox.dequeue_batch(limit=100)
         for row in rows:
             ok = False
             err = ""
-            if row.get("topic"):
+            topic = row.get("topic") or self._topic_for_event(
+                row.get("event_type"),
+                row.get("godown_id"),
+            )
+            if topic:
                 if self.is_connected():
-                    ok = self._publish_raw(row["topic"], row["payload_json"])
+                    ok = self._publish_raw(topic, row["payload_json"])
                     if not ok:
                         err = "mqtt_publish_failed"
                 else:
                     err = "mqtt_disconnected"
             else:
                 err = "missing_topic"
-            if not ok and row.get("http_fallback"):
+            if not ok and self._allow_http_fallback(row):
                 if self._post_http_payload(row["payload_json"]):
                     ok = True
                 else:
@@ -360,6 +378,22 @@ class MQTTClient:
                     error=err,
                     max_attempts=self._outbox_settings.max_attempts,
                 )
+
+    def _allow_http_fallback(self, row: dict) -> bool:
+        if row.get("transport") == "http":
+            return True
+        if row.get("http_fallback"):
+            return True
+        return False
+
+    def _topic_for_event(self, event_type: Optional[str], godown_id: Optional[str]) -> Optional[str]:
+        if not godown_id:
+            return None
+        if event_type == "FACE_MATCH":
+            return f"pds/{godown_id}/face-match"
+        if event_type in {"PERSON_DETECTED", "VEHICLE_DETECTED"}:
+            return f"pds/{godown_id}/presence"
+        return f"pds/{godown_id}/events"
 
     def _init_outbox(self, settings: OutboxSettings) -> Optional[Outbox]:
         try:

@@ -1,16 +1,16 @@
 [Unit]
-Description=PDS Netra Edge Node
-After=network-online.target
-Wants=network-online.target
+Description=PDS Netra Edge Node (Docker Compose)
+After=docker.service network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/pds-netra/pds-netra-edge
-EnvironmentFile=/opt/pds-netra/pds-netra-edge/.env
-ExecStart=/opt/pds-netra/pds-netra-edge/.venv/bin/python -m app.main --config config/pds_netra_config.yaml --device cuda
+WorkingDirectory=/opt/pds-netra-edge
+ExecStart=/usr/bin/docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.yml up
+ExecStop=/usr/bin/docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.yml down
 Restart=always
 RestartSec=3
-KillSignal=SIGINT
+TimeoutStartSec=0
 TimeoutStopSec=10
 
 [Install]

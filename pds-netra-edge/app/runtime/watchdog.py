@@ -51,11 +51,15 @@ class EdgeWatchdog:
         self.restart_camera = restart_camera
         self.mqtt_client = mqtt_client
         self.outbox = outbox
+        self.enabled = _read_bool("EDGE_WATCHDOG_ENABLED", "true")
         self.interval_sec = _read_float("EDGE_WATCHDOG_INTERVAL_SEC", 5.0)
         self.stall_sec = _read_int("EDGE_WATCHDOG_CAMERA_STALL_SEC", 45)
         self.fatal_sec = _read_int("EDGE_WATCHDOG_FATAL_SEC", 180)
         self.health_path = self._resolve_health_path(
-            os.getenv("EDGE_HEALTH_PATH", "/opt/app/data/edge_health.json")
+            os.getenv(
+                "EDGE_WATCHDOG_HEARTBEAT_PATH",
+                os.getenv("EDGE_HEALTH_PATH", "/opt/app/data/edge_health.json"),
+            )
         )
         self.http_enabled = _read_bool("EDGE_HEALTH_HTTP_ENABLED", "false")
         self.http_port = _read_int("EDGE_HEALTH_HTTP_PORT", 9100)
@@ -69,6 +73,9 @@ class EdgeWatchdog:
         self._http_thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
+        if not self.enabled:
+            self.logger.info("Watchdog disabled via EDGE_WATCHDOG_ENABLED")
+            return
         if self._thread is not None and self._thread.is_alive():
             return
         self._thread = threading.Thread(target=self._run, name="EdgeWatchdog", daemon=True)
@@ -84,6 +91,8 @@ class EdgeWatchdog:
         )
 
     def stop(self) -> None:
+        if not self.enabled:
+            return
         self._stop.set()
         if self._http_server is not None:
             try:
@@ -113,6 +122,7 @@ class EdgeWatchdog:
         except Exception:
             mqtt_connected = False
         outbox_stats = self.outbox.stats() if self.outbox else {}
+        outbox_pending = int(outbox_stats.get("pending", 0))
 
         for cam_id, state in self.camera_states.items():
             last_frame = getattr(state, "last_frame_utc", None)
@@ -126,6 +136,9 @@ class EdgeWatchdog:
                 last_frame_age = (now - state.started_at_utc).total_seconds()
             if not suppress:
                 self._check_stall(cam_id, state, now, last_frame_age)
+            status = "unknown"
+            if last_frame_age is not None:
+                status = "stalled" if last_frame_age > self.stall_sec else "ok"
 
             cameras_health.append(
                 {
@@ -133,6 +146,7 @@ class EdgeWatchdog:
                     "last_frame_utc": last_frame.isoformat().replace("+00:00", "Z") if last_frame else None,
                     "last_event_utc": last_event.isoformat().replace("+00:00", "Z") if last_event else None,
                     "last_frame_age_sec": int(last_frame_age) if last_frame_age is not None else None,
+                    "status": status,
                     "fps_estimate": fps_estimate,
                     "suppress_offline_events": suppress,
                 }
@@ -142,6 +156,7 @@ class EdgeWatchdog:
             "timestamp_utc": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "mqtt_connected": mqtt_connected,
             "outbox": outbox_stats,
+            "outbox_pending": outbox_pending,
             "cameras": cameras_health,
         }
         with self._health_lock:
