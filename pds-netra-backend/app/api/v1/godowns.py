@@ -45,12 +45,12 @@ def _parse_modules(modules_json: str | None) -> Optional[dict]:
 
 @router.get("")
 def list_godowns(
+    response: Response,
     district: str | None = Query(None),
     status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response,
 ) -> List[dict]:
     page_size = clamp_page_size(page_size)
     query = db.query(Godown)

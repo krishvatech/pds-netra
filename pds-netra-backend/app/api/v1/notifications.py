@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/v1/notification", tags=["notification"])
 
 @router.get("/endpoints", response_model=list[NotificationEndpointOut])
 def list_endpoints(
+    response: Response,
     scope: str | None = Query(None),
     godown_id: str | None = Query(None),
     channel: str | None = Query(None),
@@ -30,7 +31,6 @@ def list_endpoints(
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response,
 ) -> list[NotificationEndpointOut]:
     page_size = clamp_page_size(page_size)
     query = db.query(NotificationEndpoint)

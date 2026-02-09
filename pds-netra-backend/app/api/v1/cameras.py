@@ -144,13 +144,13 @@ def update_camera_zones(
 
 @router.get("")
 def list_cameras(
+    response: Response,
     godown_id: Optional[str] = Query(default=None),
     role: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response,
 ) -> list[dict]:
     page_size = clamp_page_size(page_size)
     query = db.query(Camera)

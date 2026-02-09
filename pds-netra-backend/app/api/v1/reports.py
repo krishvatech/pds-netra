@@ -342,10 +342,10 @@ def export_movement_csv(
 
 @router.get("/hq", response_model=list[AlertReportListItem])
 def list_hq_reports(
+    response: Response,
     limit: int = Query(30),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response,
 ):
     limit = clamp_limit(int(limit))
     base_query = db.query(AlertReport).filter(AlertReport.scope == "HQ")
@@ -370,11 +370,11 @@ def get_hq_report(
 @router.get("/hq/{report_id}/deliveries", response_model=list[NotificationDeliveryOut])
 def get_hq_report_deliveries(
     report_id: str,
+    response: Response,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
-    response: Response,
 ):
     page_size = clamp_page_size(page_size)
     report = db.get(AlertReport, report_id)

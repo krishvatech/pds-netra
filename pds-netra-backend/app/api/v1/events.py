@@ -459,11 +459,11 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
 @router.get("/alerts/{alert_id}/deliveries", response_model=list[NotificationDeliveryOut])
 def get_alert_deliveries(
     alert_id: int,
+    response: Response,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
     user=Depends(get_optional_user),
-    response: Response,
 ):
     page_size = clamp_page_size(page_size)
     alert = db.get(Alert, alert_id)

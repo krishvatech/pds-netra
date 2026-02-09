@@ -39,13 +39,13 @@ logger = logging.getLogger("authorized_users")
 
 @router.get("", response_model=List[AuthorizedUserResponse])
 def list_authorized_users(
+    response: Response,
     godown_id: str | None = Query(None),
     role: str | None = Query(None),
     is_active: bool | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    response: Response,
 ) -> List[AuthorizedUser]:
     """List all authorized users with optional filters."""
     page_size = clamp_page_size(page_size)
