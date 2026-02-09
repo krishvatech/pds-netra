@@ -29,6 +29,10 @@
 From `/opt/pds-netra-edge`:
 - `docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.yml up --build`
 
+## Outbox Simulation
+Use the helper script to simulate an MQTT outage and verify that the outbox buffers and replays events:
+- `python /opt/pds-netra-edge/pds-netra-edge/tools/simulate_outage.py --config /opt/pds-netra-edge/config/pds_netra_config.yaml --events 25 --offline-host 127.0.0.1 --offline-port 1884 --online-host 127.0.0.1 --online-port 1883`
+
 ## Notes
 - The compose file uses NVIDIA GPU access and runs with `--device cuda`.
 - Outbox data and watchdog heartbeat are written to `/opt/pds-netra-edge/data/` so they survive reboots.

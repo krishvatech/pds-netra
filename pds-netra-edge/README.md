@@ -68,6 +68,20 @@ python -m app.main --config config/pds_netra_config.yaml --device cpu --log-leve
 
 This will start the MQTT client, spawn a processing thread per camera, and emit dummy events to the configured broker. Logs will be printed to the console. Modify `config/pds_netra_config.yaml` or set environment variables (see `.env.example`) to point to your own cameras or broker.
 
+## Outbox simulation (MQTT outage test)
+
+To validate disk-backed buffering and replay, use the helper script:
+
+```bash
+python tools/simulate_outage.py \
+  --config config/pds_netra_config.yaml \
+  --events 25 \
+  --offline-host 127.0.0.1 \
+  --offline-port 1884 \
+  --online-host 127.0.0.1 \
+  --online-port 1883
+```
+
 ## Using Docker
 
 A `docker-compose.yml` file is provided for local development. It starts a Mosquitto broker and the edge node container. To build and run the stack:
