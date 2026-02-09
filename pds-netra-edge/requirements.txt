@@ -8,3 +8,6 @@ numpy>=1.23.0
 insightface>=0.7.3
 faiss-cpu>=1.7.4
 onnxruntime>=1.15.0
+fastapi>=0.104.0
+uvicorn>=0.23.0
+python-multipart>=0.0.9

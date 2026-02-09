@@ -14,6 +14,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
 import shutil
 import os
+import requests
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -395,52 +396,100 @@ async def register_authorized_user_with_face(
                 detail=f"Godown {godown_id} not found"
             )
 
-    # Save uploaded file temporarily
-    temp_dir = Path("/tmp/pds-faces")
-    temp_dir.mkdir(exist_ok=True)
-    ext = Path(file.filename).suffix or ".jpg"
-    temp_file_path = temp_dir / f"{person_id}_{uuid.uuid4()}{ext}"
-    
-    try:
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # Dynamically import edge tools to compute embedding
-        # We need the path to pds-netra-edge
-        edge_path = Path(__file__).resolve().parents[4] / "pds-netra-edge"
-        if str(edge_path) not in sys.path:
-            sys.path.append(str(edge_path))
-            
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file upload.")
+
+    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
+    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
+
+    # If an edge embedding service is configured, use it.
+    if edge_embedding_url:
+        headers = {}
+        if edge_embedding_token:
+            headers["Authorization"] = f"Bearer {edge_embedding_token}"
+        files = {
+            "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
+        }
+        data = {
+            "person_id": person_id,
+            "name": name,
+            "role": role or "",
+            "godown_id": godown_id or "",
+        }
         try:
-            from tools.generate_face_embedding import compute_embedding, load_known_faces, upsert_person, save_known_faces
-        except ImportError as e:
-             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to import face recognition tools: {str(e)}. Ensure prerequisites are met."
+            resp = requests.post(
+                edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
+                headers=headers,
+                files=files,
+                data=data,
+                timeout=30,
             )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"Edge embedding request failed: {exc}")
 
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Edge embedding failed ({resp.status_code}): {resp.text}",
+            )
+    else:
+        # Save uploaded file temporarily (cross-platform)
+        import tempfile
+        temp_dir = Path(tempfile.gettempdir()) / "pds-faces"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(file.filename).suffix or ".jpg"
+        temp_file_path = temp_dir / f"{person_id}_{uuid.uuid4()}{ext}"
+    
         try:
-            # Compute embedding
-            embedding = compute_embedding(str(temp_file_path))
-            
-            # Update edge config
-            config_path = edge_path / "config" / "known_faces.json"
-            data = load_known_faces(str(config_path))
-            data = upsert_person(data, person_id, name, role or "", embedding)
-            save_known_faces(str(config_path), data)
-            
-        except ValueError as ve:
-             raise HTTPException(status_code=400, detail=f"Face processing error: {str(ve)}")
-        except Exception as e:
-             raise HTTPException(status_code=500, detail=f"Failed to process face: {str(e)}")
+            with open(temp_file_path, "wb") as buffer:
+                buffer.write(file_bytes)
 
-    finally:
-        # Cleanup temp file
-        if temp_file_path.exists():
+            # Dynamically import edge tools to compute embedding
+            # We need the path to pds-netra-edge
+            edge_path = Path(__file__).resolve().parents[4] / "pds-netra-edge"
+            if str(edge_path) not in sys.path:
+                sys.path.append(str(edge_path))
+
             try:
-                os.remove(temp_file_path)
-            except:
-                pass
+                from tools.generate_face_embedding import (
+                    compute_embedding,
+                    load_known_faces,
+                    upsert_person,
+                    save_known_faces,
+                )
+            except (ImportError, SystemExit) as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "Face recognition dependencies are missing. "
+                        "Install edge requirements (numpy, insightface, opencv-python, etc.). "
+                        f"Details: {str(e)}"
+                    ),
+                )
+
+            try:
+                # Compute embedding
+                embedding = compute_embedding(str(temp_file_path))
+
+                # Update edge config (local dev only)
+                config_path = edge_path / "config" / "known_faces.json"
+                data = load_known_faces(str(config_path))
+                data = upsert_person(data, person_id, name, role or "", embedding)
+                save_known_faces(str(config_path), data)
+
+            except ValueError as ve:
+                raise HTTPException(status_code=400, detail=f"Face processing error: {str(ve)}")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to process face: {str(e)}")
+
+        finally:
+            # Cleanup temp file
+            if temp_file_path.exists():
+                try:
+                    os.remove(temp_file_path)
+                except:
+                    pass
 
     # Create new user in DB
     new_user = AuthorizedUser(
