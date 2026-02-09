@@ -686,7 +686,10 @@ export async function createTestRun(form: FormData): Promise<TestRunItem> {
 }
 
 export async function getTestRuns(): Promise<TestRunItem[]> {
-  return apiFetch('/api/v1/test-runs');
+  const data = await apiFetch('/api/v1/test-runs');
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
 }
 
 export async function getTestRunDetail(runId: string): Promise<TestRunDetail> {
