@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import sys
 from datetime import datetime, timedelta
-from typing import Iterable, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Iterable, Optional, Tuple
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -20,6 +23,10 @@ from .storage import get_storage_provider
 from .notifications import notify_blacklist_alert
 from .mqtt_publisher import publish_watchlist_sync
 from .incident_lifecycle import touch_detection_timestamp
+
+_logger = logging.getLogger("watchlist")
+_embedding_fn: Optional[Callable[[str], list[float]]] = None
+_embedding_fn_attempted = False
 
 
 def _utc_now() -> datetime:
@@ -92,6 +99,7 @@ def add_person_images(
     for img in saved:
         db.refresh(img)
     publish_watchlist_sync()
+    _auto_embed_from_images(db, person=person, images=saved)
     return saved
 
 
@@ -178,6 +186,74 @@ def _checksum_payload(items: list[dict]) -> str:
     payload = json.dumps(items, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
+
+def _hash_embedding_vector(embedding: Iterable[float]) -> str:
+    payload = ",".join(f"{float(v):.6f}" for v in embedding)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _get_embedding_fn() -> Optional[Callable[[str], list[float]]]:
+    global _embedding_fn, _embedding_fn_attempted
+    if _embedding_fn_attempted:
+        return _embedding_fn
+    _embedding_fn_attempted = True
+    edge_path = Path(__file__).resolve().parents[3] / "pds-netra-edge"
+    if not edge_path.exists():
+        return None
+    if str(edge_path) not in sys.path:
+        sys.path.append(str(edge_path))
+    try:
+        from tools.generate_face_embedding import compute_embedding
+
+        _embedding_fn = compute_embedding
+    except (ImportError, SystemExit) as exc:
+        _logger.debug("Watchlist embedding tool unavailable: %s", exc)
+        _embedding_fn = None
+    return _embedding_fn
+
+
+def _compute_embedding_from_image(image_path: Path) -> Optional[list[float]]:
+    fn = _get_embedding_fn()
+    if fn is None:
+        return None
+    if not image_path.exists():
+        return None
+    try:
+        return fn(str(image_path))
+    except ValueError as exc:
+        _logger.debug("Watchlist embedding skipped: %s", exc)
+        return None
+    except Exception as exc:
+        _logger.warning("Watchlist embedding generation failed for %s: %s", image_path, exc)
+        return None
+
+
+def _auto_embed_from_images(db: Session, person: WatchlistPerson, images: list[WatchlistPersonImage]) -> None:
+    if not images:
+        return
+    payloads: list[WatchlistEmbeddingIn] = []
+    for img in images:
+        storage_path = img.storage_path
+        if not storage_path:
+            continue
+        path = Path(storage_path)
+        if not path.exists():
+            continue
+        embedding = _compute_embedding_from_image(path)
+        if not embedding:
+            continue
+        payloads.append(
+            WatchlistEmbeddingIn(
+                embedding=embedding,
+                embedding_version="v1",
+                embedding_hash=_hash_embedding_vector(embedding),
+            )
+        )
+        break
+    if not payloads:
+        return
+    _logger.info("Auto-generated watchlist embedding for person %s", person.id)
+    add_embeddings(db, person=person, embeddings=payloads)
 
 def build_sync_payload(db: Session) -> dict:
     persons = (
