@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pathlib import Path
 import time
 
+from ...core.auth import UserContext, get_current_user
 from ...services.test_runs import (
     create_test_run,
     delete_test_run,
@@ -22,12 +23,38 @@ from ...services.test_runs import (
     write_edge_override,
 )
 from ...core.db import SessionLocal
+from ...models.godown import Godown
 from ...models.event import Alert
 from ...core.pagination import clamp_page_size
 from ...core.request_limits import enforce_upload_limit, copy_upload_file
 
 
 router = APIRouter(prefix="/api/v1/test-runs", tags=["test-runs"])
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
+
+
+def _can_access_godown(user: UserContext, godown_id: str) -> bool:
+    if _is_admin(user):
+        return True
+    if not user.user_id:
+        return False
+    with SessionLocal() as db:
+        godown = db.get(Godown, godown_id)
+        if not godown:
+            return False
+        return godown.created_by_user_id == user.user_id
+
+
+def _assert_run_access(user: UserContext, run: dict) -> None:
+    godown_id = str(run.get("godown_id") or "")
+    if not godown_id:
+        raise HTTPException(status_code=404, detail="Test run not found")
+    if not _can_access_godown(user, godown_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def _cleanup_media(godown_id: str, camera_id: str, keep_run_id: Optional[str] = None) -> None:
@@ -66,9 +93,12 @@ async def upload_test_run(
     zone_id: Optional[str] = Form(None),
     run_name: Optional[str] = Form(None),
     request=Depends(enforce_upload_limit),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
     if not file:
         raise HTTPException(status_code=400, detail="Missing file")
+    if not _can_access_godown(user, godown_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     def _write_video(dest):
         copy_upload_file(file, dest)
@@ -99,9 +129,15 @@ async def upload_test_run(
 
 
 @router.get("")
-def list_runs(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1)) -> dict:
+def list_runs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     page_size = clamp_page_size(page_size)
     items = list_test_runs()
+    if not _is_admin(user):
+        items = [r for r in items if _can_access_godown(user, str(r.get("godown_id") or ""))]
     total = len(items)
     start = max((page - 1) * page_size, 0)
     end = start + page_size
@@ -109,19 +145,21 @@ def list_runs(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1)) -> d
 
 
 @router.get("/{run_id}")
-def get_run(run_id: str) -> dict:
+def get_run(run_id: str, user: UserContext = Depends(get_current_user)) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
     run.setdefault("events_count", None)
     return run
 
 
 @router.post("/{run_id}/activate")
-def activate_run(run_id: str) -> dict:
+def activate_run(run_id: str, user: UserContext = Depends(get_current_user)) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
     saved_path = run.get("saved_path")
     if not saved_path or not Path(saved_path).exists():
         # keep system safe: ensure live mode
@@ -195,10 +233,11 @@ def activate_run(run_id: str) -> dict:
 
 
 @router.post("/{run_id}/deactivate")
-def deactivate_run(run_id: str) -> dict:
+def deactivate_run(run_id: str, user: UserContext = Depends(get_current_user)) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
     override_path = write_edge_override(run, mode="live")
     deactivated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     updated = update_test_run(
@@ -213,10 +252,11 @@ def deactivate_run(run_id: str) -> dict:
 
 
 @router.delete("/{run_id}")
-def delete_run(run_id: str) -> dict:
+def delete_run(run_id: str, user: UserContext = Depends(get_current_user)) -> dict:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
 
     # IMPORTANT: force edge back to live before deleting
     try:
@@ -231,10 +271,15 @@ def delete_run(run_id: str) -> dict:
 
 
 @router.get("/{run_id}/stream/{camera_id}")
-def stream_annotated(run_id: str, camera_id: str) -> StreamingResponse:
+def stream_annotated(
+    run_id: str,
+    camera_id: str,
+    user: UserContext = Depends(get_current_user),
+) -> StreamingResponse:
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
     godown_id = run["godown_id"]
     annotated_root = Path(__file__).resolve().parents[3] / "data" / "annotated"
     latest_path = annotated_root / godown_id / run_id / f"{camera_id}_latest.jpg"
@@ -268,11 +313,13 @@ def list_snapshots(
     camera_id: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(12, ge=1),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
     page_size = clamp_page_size(page_size)
     run = get_test_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    _assert_run_access(user, run)
     godown_id = run["godown_id"]
     snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
     snapshot_dir = snapshots_root / godown_id / run_id / camera_id

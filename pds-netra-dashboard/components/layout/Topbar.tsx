@@ -8,6 +8,7 @@ import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Label } from '../ui/label';
 import { clearSession, getUser } from '@/lib/auth';
+import { logout } from '@/lib/api';
 import type { LoginResponse } from '@/lib/types';
 import { getAlertCues, getAlertProfile, onAlertCuesChange, setAlertCues, setAlertProfile } from '@/lib/alertCues';
 import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
@@ -211,7 +212,12 @@ export function Topbar() {
             <Badge variant="outline">{user.role}</Badge>
             <Button
               variant="outline"
-              onClick={() => {
+              onClick={async () => {
+                try {
+                  await logout();
+                } catch {
+                  // ignore
+                }
                 clearSession();
                 router.replace('/dashboard/login');
               }}

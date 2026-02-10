@@ -43,7 +43,7 @@ import type {
   AnprDailyReportResponse,
   CsvImportSummary
 } from './types';
-import { getToken, getUser } from './auth';
+import { clearSession, getUser } from './auth';
 
 const BASE_URL = '';// Prefer Next.js rewrites (/api/...) to avoid CORS in local dev.
 
@@ -62,7 +62,6 @@ function buildQuery(query?: Query): string {
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${path}`;
-  const token = typeof window !== 'undefined' ? getToken() : null;
   const user = typeof window !== 'undefined' ? getUser() : null;
 
   const headers: Record<string, string> = {
@@ -75,7 +74,6 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   }
 
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   if (user?.role) headers['X-User-Role'] = user.role;
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
   if (user?.district) headers['X-User-District'] = String(user.district);
@@ -84,10 +82,17 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const resp = await fetch(url, {
     ...init,
     headers,
+    credentials: 'include',
     cache: 'no-store'
   });
 
   if (!resp.ok) {
+    if (resp.status === 401 && typeof window !== 'undefined' && !path.startsWith('/api/v1/auth/')) {
+      clearSession();
+      if (window.location.pathname !== '/dashboard/login') {
+        window.location.href = '/dashboard/login';
+      }
+    }
     const text = await resp.text().catch(() => '');
     throw new Error(`API ${resp.status}: ${text || resp.statusText}`);
   }
@@ -97,9 +102,8 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   const url = `${BASE_URL}${path}`;
-  const token = typeof window !== 'undefined' ? getToken() : null;
   const user = typeof window !== 'undefined' ? getUser() : null;
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: Record<string, string> = {};
   if (user?.role) headers['X-User-Role'] = user.role;
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
   if (user?.district) headers['X-User-District'] = String(user.district);
@@ -109,10 +113,17 @@ async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
     method: 'POST',
     body: form,
     headers,
+    credentials: 'include',
     cache: 'no-store'
   });
 
   if (!resp.ok) {
+    if (resp.status === 401 && typeof window !== 'undefined' && !path.startsWith('/api/v1/auth/')) {
+      clearSession();
+      if (window.location.pathname !== '/dashboard/login') {
+        window.location.href = '/dashboard/login';
+      }
+    }
     const text = await resp.text().catch(() => '');
     throw new Error(`API ${resp.status}: ${text || resp.statusText}`);
   }
@@ -125,6 +136,17 @@ export async function login(username: string, password: string): Promise<LoginRe
     method: 'POST',
     body: JSON.stringify({ username, password })
   });
+}
+
+export async function register(username: string, password: string, role?: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>('/api/v1/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, password, role })
+  });
+}
+
+export async function logout(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/v1/auth/logout', { method: 'POST' });
 }
 
 export async function getGodowns(params?: {

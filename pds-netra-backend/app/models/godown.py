@@ -22,6 +22,12 @@ class Godown(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     district: Mapped[str | None] = mapped_column(String(128), nullable=True)
     code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("app_users.id"),
+        nullable=True,
+        index=True,
+    )
 
     cameras: Mapped[list[Camera]] = relationship("Camera", back_populates="godown", cascade="all, delete-orphan")
 

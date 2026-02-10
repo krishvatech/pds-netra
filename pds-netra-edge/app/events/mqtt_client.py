@@ -24,7 +24,7 @@ from ..models.event import EventModel, HealthModel
 from ..schemas.watchlist import FaceMatchEvent
 from ..schemas.presence import PresenceEvent
 from ..config import Settings
-from .confirm import ConfirmGate
+from .confirm import ConfirmGate, ConfirmConfig
 from ..core.errors import log_exception
 from .outbox import Outbox, load_outbox_settings, OutboxSettings
 
@@ -45,7 +45,15 @@ class MQTTClient:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.settings = settings
         self.client = mqtt.Client(client_id=client_id)
-        self._confirm_gate = ConfirmGate()
+        self._confirm_bypass_test = os.getenv("EDGE_CONFIRM_BYPASS_TEST", "true").lower() in {"1", "true", "yes"}
+        self._confirm_gate = ConfirmGate(
+            ConfirmConfig(
+                count_required=self._env_int("EDGE_CONFIRM_COUNT_REQUIRED", 3),
+                window_seconds=self._env_float("EDGE_CONFIRM_WINDOW_SECONDS", 8.0),
+                persist_seconds=self._env_float("EDGE_CONFIRM_PERSIST_SECONDS", 10.0),
+                confirm_cooldown_seconds=self._env_float("EDGE_CONFIRM_COOLDOWN_SECONDS", 3.0),
+            )
+        )
         self._camera_states = None
         if settings.mqtt_username:
             # Set username/password if provided
@@ -64,6 +72,20 @@ class MQTTClient:
         self._outbox_flush_fail = 0
         if self._outbox_settings.enabled:
             self.outbox = self._init_outbox(self._outbox_settings)
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except Exception:
+            return default
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except Exception:
+            return default
 
     def on_connect(self, client: mqtt.Client, userdata, flags, rc) -> None:  # type: ignore
         if rc == 0:
@@ -124,20 +146,22 @@ class MQTTClient:
     def publish_event(self, event: EventModel) -> None:
         """Publish an event message to the configured events topic."""
         rule_id = event.meta.rule_id if event.meta else event.event_type
-        if not self._confirm_gate.push(
-            camera_id=event.camera_id,
-            rule_id=rule_id,
-            now=time.time(),
-            track_id=event.track_id,
-        ):
-            self.logger.debug(
-                "Event dropped by confirm gate event=%s type=%s rule=%s track=%s",
-                event.event_id,
-                event.event_type,
-                rule_id,
-                event.track_id,
-            )
-            return
+        is_test_rule = bool(rule_id and str(rule_id).upper().startswith("TEST_"))
+        if not (self._confirm_bypass_test and is_test_rule):
+            if not self._confirm_gate.push(
+                camera_id=event.camera_id,
+                rule_id=rule_id,
+                now=time.time(),
+                track_id=event.track_id,
+            ):
+                self.logger.debug(
+                    "Event dropped by confirm gate event=%s type=%s rule=%s track=%s",
+                    event.event_id,
+                    event.event_type,
+                    rule_id,
+                    event.track_id,
+                )
+                return
         topic = f"pds/{event.godown_id}/events"
         payload_dict, payload_json = self._serialize_payload(event)
         self.logger.info(

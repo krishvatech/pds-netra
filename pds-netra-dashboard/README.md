@@ -21,5 +21,5 @@ Open:
 - http://localhost:3000
 
 ## Notes
-- Login stores JWT in `localStorage` (PoC-friendly). For production, switch to HttpOnly cookies.
+- Login stores the auth token in an `HttpOnly` cookie; client code does not read JWTs directly.
 - The dashboard expects backend APIs under `/api/v1/...` at `NEXT_PUBLIC_API_BASE_URL`.

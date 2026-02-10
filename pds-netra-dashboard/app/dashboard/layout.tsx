@@ -1,20 +1,34 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
 import { LiveRail, MobileRail } from '@/components/layout/LiveRail';
 import { StatusBanner } from '@/components/layout/StatusBanner';
-import { getToken } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isAuthPage = pathname === '/dashboard/login' || pathname === '/dashboard/register';
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) router.replace('/dashboard/login');
-  }, [router]);
+    let active = true;
+    if (isAuthPage) return;
+    (async () => {
+      const user = await getSessionUser();
+      if (!active) return;
+      if (!user) {
+        router.replace('/dashboard/login');
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isAuthPage, router]);
+
+  if (isAuthPage) return <>{children}</>;
 
   return (
     <div className="app-shell">

@@ -38,6 +38,7 @@ from .notification_endpoint import NotificationEndpoint  # noqa: E402,F401
 from .notification_outbox import NotificationOutbox  # noqa: E402,F401
 from .alert_report import AlertReport  # noqa: E402,F401
 from .vehicle_gate_session import VehicleGateSession  # noqa: E402,F401
+from .app_user import AppUser  # noqa: E402,F401
 from .authorized_user import AuthorizedUser  # noqa: E402,F401
 from .godown import Godown, Camera  # noqa: E402,F401
 from .event import Event, Alert, AlertEventLink  # noqa: E402,F401
@@ -85,6 +86,7 @@ __all__ = [
     "VehicleGateSession",
 
     # Users / Dispatch
+    "AppUser",
     "AuthorizedUser",
     "DispatchIssue",
 ]

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from ...core.auth import UserContext, get_current_user
 from ...core.db import get_db
 from ...models.godown import Godown, Camera
 from ...models.event import Alert, Event
@@ -23,6 +24,28 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/godowns", tags=["godowns"])
+
+
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
+
+
+def _filter_godown_query_for_user(query, user: UserContext):
+    if _is_admin(user):
+        return query
+    if not user.user_id:
+        # Non-admin requests must resolve to a concrete authenticated identity.
+        return query.filter(Godown.id == "__forbidden__")
+    return query.filter(Godown.created_by_user_id == user.user_id)
+
+
+def _can_access_godown(user: UserContext, godown: Godown) -> bool:
+    if _is_admin(user):
+        return True
+    return bool(user.user_id and godown.created_by_user_id == user.user_id)
 
 
 def _status_for(open_critical: int, open_warning: int, cameras_offline: int) -> str:
@@ -51,9 +74,10 @@ def list_godowns(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> List[dict]:
     page_size = clamp_page_size(page_size)
-    query = db.query(Godown)
+    query = _filter_godown_query_for_user(db.query(Godown), user)
     if district:
         query = query.filter(Godown.district == district)
     total = query.count()
@@ -118,10 +142,16 @@ def list_godowns(
 
 
 @router.get("/{godown_id}")
-def get_godown_detail(godown_id: str, db: Session = Depends(get_db)) -> dict:
+def get_godown_detail(
+    godown_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     godown = db.get(Godown, godown_id)
     if not godown:
         raise HTTPException(status_code=404, detail="Godown not found")
+    if not _can_access_godown(user, godown):
+        raise HTTPException(status_code=403, detail="Forbidden")
     cameras = (
         db.query(Camera)
         .filter(Camera.godown_id == godown_id)
@@ -185,7 +215,11 @@ class CreateGodownRequest(BaseModel):
 
 
 @router.post("", status_code=201)
-def create_godown(req: CreateGodownRequest, db: Session = Depends(get_db)) -> dict:
+def create_godown(
+    req: CreateGodownRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     godown_id = req.godown_id.strip()
     if not godown_id:
         raise HTTPException(status_code=400, detail="godown_id cannot be empty")
@@ -201,6 +235,7 @@ def create_godown(req: CreateGodownRequest, db: Session = Depends(get_db)) -> di
         name=req.name,
         district=req.district,
         code=req.code,
+        created_by_user_id=user.user_id,
     )
     db.add(new_g)
     db.commit()
@@ -236,10 +271,17 @@ class UpdateGodownRequest(BaseModel):
 
 
 @router.put("/{godown_id}")
-def update_godown(godown_id: str, req: UpdateGodownRequest, db: Session = Depends(get_db)) -> dict:
+def update_godown(
+    godown_id: str,
+    req: UpdateGodownRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     godown = db.get(Godown, godown_id)
     if not godown:
         raise HTTPException(status_code=404, detail="Godown not found")
+    if not _can_access_godown(user, godown):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     if req.name is not None:
         godown.name = req.name
@@ -251,11 +293,15 @@ def update_godown(godown_id: str, req: UpdateGodownRequest, db: Session = Depend
     db.commit()
     db.refresh(godown)
 
-    return get_godown_detail(godown_id, db)
+    return get_godown_detail(godown_id, db, user)
 
 
 @router.delete("/{godown_id}")
-def delete_godown(godown_id: str, db: Session = Depends(get_db)) -> dict:
+def delete_godown(
+    godown_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     """
     Delete a godown and all related data.
     
@@ -276,6 +322,8 @@ def delete_godown(godown_id: str, db: Session = Depends(get_db)) -> dict:
     godown = db.get(Godown, godown_id)
     if not godown:
         raise HTTPException(status_code=404, detail="Godown not found")
+    if not _can_access_godown(user, godown):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Count what will be deleted for logging
     events_count = db.query(func.count(Event.id)).filter(Event.godown_id == godown_id).scalar() or 0

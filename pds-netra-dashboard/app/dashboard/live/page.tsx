@@ -1,14 +1,90 @@
 'use client';
 
-import type { MouseEvent } from 'react';
+import type { MouseEvent, SyntheticEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createCamera, deleteCamera, getCameraZones, getEvents, getGodownDetail, getGodowns, getLiveCameras, updateCamera, updateCameraZones } from '@/lib/api';
+import { getUser } from '@/lib/auth';
 import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { EventsTable } from '@/components/tables/EventsTable';
+
+type AuthedLiveImageProps = {
+  requestUrl: string;
+  alt: string;
+  className?: string;
+  onStatusChange?: (ok: boolean) => void;
+  onLoad?: (evt: SyntheticEvent<HTMLImageElement, Event>) => void;
+};
+
+function buildLiveHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const user = getUser();
+  if (user?.role) headers['X-User-Role'] = user.role;
+  if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
+  if (user?.district) headers['X-User-District'] = String(user.district);
+  if (user?.name) headers['X-User-Name'] = String(user.name);
+  return headers;
+}
+
+function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }: AuthedLiveImageProps) {
+  const [blobUrl, setBlobUrl] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const load = async () => {
+      if (!requestUrl) {
+        setBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return '';
+        });
+        onStatusChange?.(false);
+        return;
+      }
+
+      try {
+        const resp = await fetch(requestUrl, {
+          headers: buildLiveHeaders(),
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const nextUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        setBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return nextUrl;
+        });
+        onStatusChange?.(true);
+      } catch {
+        if (cancelled) return;
+        setBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return '';
+        });
+        onStatusChange?.(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [requestUrl]);
+
+  if (!blobUrl) return null;
+  return <img src={blobUrl} alt={alt} className={className} onLoad={onLoad} />;
+}
 
 export default function LiveCamerasPage() {
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
@@ -590,15 +666,12 @@ export default function LiveCamerasPage() {
                         </svg>
                       </button>
                       {isLive && !hasError ? (
-                        <img
-                          src={camUrl}
+                        <AuthedLiveImage
+                          requestUrl={camUrl}
                           alt={`Live ${camera.camera_id}`}
                           className="h-full w-full object-contain"
-                          onError={() =>
-                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: true }))
-                          }
-                          onLoad={() =>
-                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: false }))
+                          onStatusChange={(ok) =>
+                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
                           }
                         />
                       ) : (
@@ -708,11 +781,11 @@ export default function LiveCamerasPage() {
                 {zoneImageError ? (
                   <div className="text-sm text-slate-600 p-4">No live frame yet. Try Refresh frame.</div>
                 ) : (
-                  <img
-                    src={zoneImageUrl}
+                  <AuthedLiveImage
+                    requestUrl={zoneImageUrl}
                     alt="Zone reference"
                     className="w-full h-auto block"
-                    onError={() => setZoneImageError(true)}
+                    onStatusChange={(ok) => setZoneImageError(!ok)}
                     onLoad={(e) => {
                       const img = e.currentTarget;
                       setZoneImageSize({ w: img.naturalWidth, h: img.naturalHeight });
@@ -774,8 +847,8 @@ export default function LiveCamerasPage() {
               </Button>
             </div>
             <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
-              <img
-                src={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
+              <AuthedLiveImage
+                requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
                 alt={`Live ${fullscreenCameraId}`}
                 className="max-h-full w-auto max-w-full object-contain"
               />

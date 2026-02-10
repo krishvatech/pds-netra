@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getEvents, getHealthSummary } from '@/lib/api';
 
 export function StatusBanner() {
   const [offline, setOffline] = useState(false);
@@ -12,31 +13,21 @@ export function StatusBanner() {
 
     const check = async () => {
       try {
-        const resp = await fetch('/api/v1/health/summary', { cache: 'no-store' });
-        if (!resp.ok) {
-          setOffline(true);
-          return;
-        }
-        const data = await resp.json();
+        const data = await getHealthSummary();
         setOffline(false);
         if (data?.mqtt_consumer?.enabled) {
           setMqttDown(!data.mqtt_consumer.connected);
         } else {
           setMqttDown(false);
         }
-        const eventsResp = await fetch('/api/v1/events?page=1&page_size=1', { cache: 'no-store' });
-        if (eventsResp.ok) {
-          const eventsData = await eventsResp.json();
-          const first = eventsData?.items?.[0];
-          if (first?.timestamp_utc) {
-            const lastTs = new Date(first.timestamp_utc).getTime();
-            const now = Date.now();
-            setEventsStale(now - lastTs > 10 * 60 * 1000);
-          } else {
-            setEventsStale(true);
-          }
+        const eventsData = await getEvents({ page: 1, page_size: 1 });
+        const first = Array.isArray(eventsData) ? eventsData[0] : eventsData?.items?.[0];
+        if (first?.timestamp_utc) {
+          const lastTs = new Date(first.timestamp_utc).getTime();
+          const now = Date.now();
+          setEventsStale(now - lastTs > 10 * 60 * 1000);
         } else {
-          setEventsStale(false);
+          setEventsStale(true);
         }
       } catch {
         setOffline(true);

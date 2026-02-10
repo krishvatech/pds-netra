@@ -10,11 +10,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import Header, HTTPException, Depends
+from .security import decode_access_token
 
 
 @dataclass
 class UserContext:
     role: str
+    user_id: Optional[str] = None
     username: Optional[str] = None
     district: Optional[str] = None
     godown_id: Optional[str] = None
@@ -43,14 +45,13 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
 
 def get_current_user(
     authorization: Optional[str] = Header(None),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
     x_user_godown: Optional[str] = Header(None, alias="X-User-Godown"),
     x_user_district: Optional[str] = Header(None, alias="X-User-District"),
     x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
 ) -> UserContext:
     if _auth_disabled():
         return UserContext(
-            role=(x_user_role or "STATE_ADMIN").upper(),
+            role="STATE_ADMIN",
             username=x_user_name,
             district=x_user_district,
             godown_id=x_user_godown,
@@ -58,12 +59,24 @@ def get_current_user(
     token = _extract_bearer_token(authorization)
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    expected = _expected_token()
-    if not secrets.compare_digest(token, expected):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    claims: dict
+    try:
+        claims = decode_access_token(token)
+    except Exception:
+        # Backward compatibility for service-to-service integrations.
+        expected = _expected_token()
+        if not expected or not secrets.compare_digest(token, expected):
+            raise HTTPException(status_code=401, detail="Invalid token")
+        claims = {"sub": x_user_name or "service", "role": "STATE_ADMIN", "user_id": "service"}
+    role = str(claims.get("role") or "").strip().upper()
+    username = str(claims.get("sub") or "").strip() or None
+    user_id = str(claims.get("user_id") or "").strip() or None
+    if not role or not username or not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token claims")
     return UserContext(
-        role=(x_user_role or "STATE_ADMIN").upper(),
-        username=x_user_name,
+        role=role,
+        user_id=user_id,
+        username=username,
         district=x_user_district,
         godown_id=x_user_godown,
     )
@@ -71,14 +84,13 @@ def get_current_user(
 
 def get_optional_user(
     authorization: Optional[str] = Header(None),
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
     x_user_godown: Optional[str] = Header(None, alias="X-User-Godown"),
     x_user_district: Optional[str] = Header(None, alias="X-User-District"),
     x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
 ) -> Optional[UserContext]:
     if _auth_disabled():
         return UserContext(
-            role=(x_user_role or "STATE_ADMIN").upper(),
+            role="STATE_ADMIN",
             username=x_user_name,
             district=x_user_district,
             godown_id=x_user_godown,
@@ -87,7 +99,6 @@ def get_optional_user(
         return None
     return get_current_user(
         authorization=authorization,
-        x_user_role=x_user_role,
         x_user_godown=x_user_godown,
         x_user_district=x_user_district,
         x_user_name=x_user_name,
@@ -96,7 +107,9 @@ def get_optional_user(
 
 def require_roles(*roles: str):
     def _dep(user: UserContext = Depends(get_current_user)):
-        # PoC: single access level. Do not enforce role-based checks.
+        allowed = {r.strip().upper() for r in roles if r and r.strip()}
+        if allowed and user.role.upper() not in allowed:
+            raise HTTPException(status_code=403, detail="Forbidden")
         return user
 
     return _dep

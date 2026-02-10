@@ -819,7 +819,11 @@ def start_camera_loops(
                 last_zone_sync = now_ts
                 url = f"{backend_url}/api/v1/cameras/{camera_obj.id}/zones?godown_id={settings.godown_id}"
                 try:
-                    with urllib.request.urlopen(url, timeout=2) as resp:
+                    req = urllib.request.Request(url)
+                    token = (os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+                    if token:
+                        req.add_header("Authorization", f"Bearer {token}")
+                    with urllib.request.urlopen(req, timeout=2) as resp:
                         payload = json.loads(resp.read().decode("utf-8"))
                     zones = payload.get("zones", [])
                     if isinstance(zones, list):
@@ -1377,7 +1381,11 @@ def start_camera_loops(
             while True:
                 try:
                     url = f"{backend_url}/api/v1/godowns/{settings.godown_id}"
-                    with urllib.request.urlopen(url, timeout=3) as resp:
+                    req = urllib.request.Request(url)
+                    token = (os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+                    if token:
+                        req.add_header("Authorization", f"Bearer {token}")
+                    with urllib.request.urlopen(req, timeout=3) as resp:
                         payload = json.loads(resp.read().decode("utf-8"))
                     cameras = payload.get("cameras", []) if isinstance(payload, dict) else []
                     for cam in cameras or []:

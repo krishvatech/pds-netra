@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from ...core.db import get_db
+from ...core.auth import UserContext, get_current_user
 from ...models.godown import Godown, Camera
 from ...models.event import Alert, Event
 from ...models.vehicle_gate_session import VehicleGateSession
@@ -21,6 +22,11 @@ from ...core.pagination import clamp_page_size
 
 
 router = APIRouter(prefix="/api/v1", tags=["overview"])
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
 
 
 def _status_for(open_critical: int, open_warning: int, cameras_offline: int) -> str:
@@ -36,25 +42,35 @@ def overview(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
     page_size = clamp_page_size(page_size)
+    allowed_godowns = db.query(Godown.id)
+    if not _is_admin(user):
+        if not user.user_id:
+            allowed_godowns = allowed_godowns.filter(Godown.id == "__forbidden__")
+        else:
+            allowed_godowns = allowed_godowns.filter(Godown.created_by_user_id == user.user_id)
+
+    allowed_ids_select = allowed_godowns.with_entities(Godown.id)
+
     # Core counts
-    godowns_monitored = db.query(func.count(Godown.id)).scalar() or 0
+    godowns_monitored = db.query(func.count(Godown.id)).filter(Godown.id.in_(allowed_ids_select)).scalar() or 0
     open_alerts_critical = (
         db.query(func.count(Alert.id))
-        .filter(Alert.status == "OPEN", Alert.severity_final == "critical")
+        .filter(Alert.status == "OPEN", Alert.severity_final == "critical", Alert.godown_id.in_(allowed_ids_select))
         .scalar()
         or 0
     )
     open_alerts_warning = (
         db.query(func.count(Alert.id))
-        .filter(Alert.status == "OPEN", Alert.severity_final == "warning")
+        .filter(Alert.status == "OPEN", Alert.severity_final == "warning", Alert.godown_id.in_(allowed_ids_select))
         .scalar()
         or 0
     )
     open_gate_sessions = (
         db.query(func.count(VehicleGateSession.id))
-        .filter(VehicleGateSession.status == "OPEN")
+        .filter(VehicleGateSession.status == "OPEN", VehicleGateSession.godown_id.in_(allowed_ids_select))
         .scalar()
         or 0
     )
@@ -63,7 +79,7 @@ def overview(
     alerts_by_type: Dict[str, int] = {}
     rows = (
         db.query(Alert.alert_type, func.count(Alert.id))
-        .filter(Alert.status == "OPEN")
+        .filter(Alert.status == "OPEN", Alert.godown_id.in_(allowed_ids_select))
         .group_by(Alert.alert_type)
         .all()
     )
@@ -74,7 +90,7 @@ def overview(
     since = datetime.utcnow() - timedelta(days=7)
     alerts = (
         db.query(Alert.start_time)
-        .filter(Alert.start_time >= since)
+        .filter(Alert.start_time >= since, Alert.godown_id.in_(allowed_ids_select))
         .all()
     )
     counts: Dict[str, int] = {}
@@ -90,6 +106,7 @@ def overview(
         .filter(
             Alert.alert_type == "AFTER_HOURS_PERSON_PRESENCE",
             Alert.start_time >= since_24h,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -99,6 +116,7 @@ def overview(
         .filter(
             Alert.alert_type == "AFTER_HOURS_VEHICLE_PRESENCE",
             Alert.start_time >= since_24h,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -108,6 +126,7 @@ def overview(
         .filter(
             Alert.alert_type == "AFTER_HOURS_PERSON_PRESENCE",
             Alert.start_time >= since,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -117,6 +136,7 @@ def overview(
         .filter(
             Alert.alert_type == "AFTER_HOURS_VEHICLE_PRESENCE",
             Alert.start_time >= since,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -127,6 +147,7 @@ def overview(
         .filter(
             Alert.alert_type == "ANIMAL_INTRUSION",
             Alert.start_time >= since_24h,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -136,6 +157,7 @@ def overview(
         .filter(
             Alert.alert_type == "ANIMAL_INTRUSION",
             Alert.start_time >= since,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -145,6 +167,7 @@ def overview(
         .filter(
             Alert.alert_type == "FIRE_DETECTED",
             Alert.start_time >= since_24h,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -154,6 +177,7 @@ def overview(
         .filter(
             Alert.alert_type == "FIRE_DETECTED",
             Alert.start_time >= since,
+            Alert.godown_id.in_(allowed_ids_select),
         )
         .scalar()
         or 0
@@ -162,6 +186,7 @@ def overview(
     # Godown summary cards
     godown_rows = (
         db.query(Godown)
+        .filter(Godown.id.in_(allowed_ids_select))
         .order_by(Godown.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)

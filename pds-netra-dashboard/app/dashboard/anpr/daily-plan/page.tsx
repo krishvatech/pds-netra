@@ -29,6 +29,23 @@ const statusOptions = [
   { label: 'NO_SHOW', value: 'NO_SHOW' },
 ];
 
+const IST_TZ = 'Asia/Kolkata';
+
+function formatIstDateTime(value?: string | Date | null) {
+  if (!value) return 'N/A';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: IST_TZ,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }).format(d);
+}
+
 type PlanCsvPreviewRow = {
   plate_text: string;
   expected_by_local?: string;
@@ -351,278 +368,283 @@ export default function AnprDailyPlanPage() {
   return (
     <>
       <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <div className="hud-pill">Daily plan</div>
-          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
-            ANPR Daily Plan
-          </div>
-          <div className="text-sm text-slate-300">Plan expected arrivals and track live status updates.</div>
-        </div>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="hud-card p-4 min-w-[240px]">
-            <div className="hud-label">Summary</div>
-            <div className="hud-value">{summary.ARRIVED} / {summary.PLANNED}</div>
-            <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
-          </div>
-          <Button
-            variant="outline"
-            className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]"
-            onClick={() => setImportOpen(true)}
-          >
-            Bulk Import
-          </Button>
-        </div>
-      </div>
-      {error && <ErrorBanner message={error} />}
-
-      <Card className="hud-card">
-        <CardHeader>
-          <div className="text-lg font-semibold font-display">Plan Settings</div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div>
-            <Label>Godown</Label>
-            <Select
-              value={godownId}
-              onChange={(e) => setGodownId(e.target.value)}
-              options={godownOptions}
-              placeholder="Select godown..."
-            />
-          </div>
-          <div>
-            <Label>Timezone</Label>
-            <Input
-              value={timezoneName}
-              onChange={(e) => {
-                setTimezoneName(e.target.value);
-                setPlanSettingsDirty(true);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Date</Label>
-            <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
-          </div>
-          <div>
-            <Label>Expected Count</Label>
-            <Input
-              type="number"
-              value={expectedCount}
-              onChange={(e) => {
-                setExpectedCount(e.target.value);
-                setPlanSettingsDirty(true);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Cutoff Time</Label>
-            <Input
-              type="time"
-              value={cutoffTime}
-              onChange={(e) => {
-                setCutoffTime(e.target.value);
-                setPlanSettingsDirty(true);
-              }}
-            />
-          </div>
-          <div className="md:col-span-5 flex flex-wrap gap-2 items-center">
-            <Button onClick={onSavePlan} disabled={busy || !godownId || !dateLocal}>
-              Save Plan
-            </Button>
-            <div className="text-xs text-slate-300">
-              Planned: {summary.PLANNED} | Arrived: {summary.ARRIVED} | Delayed: {summary.DELAYED} | No show: {summary.NO_SHOW} | Cancelled: {summary.CANCELLED}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="hud-pill">Daily plan</div>
+            <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+              ANPR Daily Plan
             </div>
+            <div className="text-sm text-slate-300">Plan expected arrivals and track live status updates.</div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="hud-card">
-        <CardHeader>
-          <div className="text-lg font-semibold font-display">Add Planned Vehicle</div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <Label>Plate</Label>
-            <Input value={addPlate} onChange={(e) => setAddPlate(e.target.value)} placeholder="e.g. WB23D5690" />
-          </div>
-          <div>
-            <Label>Expected By</Label>
-            <Input type="time" value={addExpectedBy} onChange={(e) => setAddExpectedBy(e.target.value)} />
-          </div>
-          <div>
-            <Label>Status</Label>
-            <Select value={addStatus} onChange={(e) => setAddStatus(e.target.value)} options={statusOptions} />
-          </div>
-          <div>
-            <Label>Notes</Label>
-            <Input value={addNotes} onChange={(e) => setAddNotes(e.target.value)} placeholder="optional" />
-          </div>
-          <div className="md:col-span-4">
-            <Button onClick={onAddItem} disabled={busy || !planId || !addPlate.trim()}>
-              Add to Plan
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="hud-card p-4 min-w-[240px]">
+              <div className="hud-label">Summary</div>
+              <div className="hud-value">{summary.ARRIVED} / {summary.PLANNED}</div>
+              <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
+            </div>
+            <Button
+              variant="outline"
+              className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]"
+              onClick={() => setImportOpen(true)}
+            >
+              Bulk Import
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Card className="hud-card">
-        <CardHeader className="flex items-center justify-between">
-          <div className="text-lg font-semibold font-display">Planned Vehicles</div>
-          <div className="hud-pill">Live status</div>
-        </CardHeader>
-        <CardContent>
-          <div className="table-shell overflow-auto">
-            <Table className="text-slate-100">
-            <THead className="bg-slate-900/80 text-slate-200">
-              <TR>
-                <TH>Plate</TH>
-                <TH>Expected By</TH>
-                <TH>Manual Status</TH>
-                <TH>Effective</TH>
-                <TH>Arrived At (UTC)</TH>
-                <TH>Actions</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {items.length === 0 ? (
-                <TR className="border-white/10 hover:bg-white/0">
-                  <TD colSpan={6} className="text-sm text-slate-500">
-                    No plan items
-                  </TD>
-                </TR>
-              ) : (
-                items.map((it) => (
-                  <TR key={it.id} className="border-white/10 hover:bg-white/5">
-                    <TD className="font-semibold">{it.plate_raw}</TD>
-                    <TD>
-                      <Input
-                        type="time"
-                        value={hhmm(it.expected_by_local)}
-                        onChange={(e) => onUpdateExpectedBy(it.id, e.target.value)}
-                        disabled={busy}
-                      />
-                    </TD>
-                    <TD>
-                      <Select
-                        value={(it.status || 'PLANNED').toUpperCase()}
-                        onChange={(e) => onUpdateStatus(it.id, e.target.value)}
-                        options={statusOptions}
-                      />
-                    </TD>
-                    <TD>{statusBadge(it.effective_status || 'PLANNED')}</TD>
-                    <TD className="text-xs">{it.arrived_at_utc || 'N/A'}</TD>
-                    <TD>
-                      <Button variant="danger" className="px-3 py-1.5 text-xs" onClick={() => onDelete(it.id)} disabled={busy}>
-                        Delete
-                      </Button>
-                    </TD>
-                  </TR>
-                ))
-              )}
-            </TBody>
-          </Table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-    {importOpen && (
-      <div className="fixed inset-0 z-50 overflow-y-auto">
-        <div className="min-h-full px-4 py-8">
-          <button
-            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
-            onClick={() => setImportOpen(false)}
-            aria-label="Close import"
-          />
-          <div
-            className="relative mx-auto w-full max-w-3xl hud-card animate-fade-up border border-white/10 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
-                <div className="text-xs text-slate-400">Bulk load planned vehicles for a date.</div>
+        {error && <ErrorBanner message={error} />}
+
+        <Card className="hud-card">
+          <CardHeader>
+            <div className="text-lg font-semibold font-display">Plan Settings</div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div>
+              <Label>Godown</Label>
+              <Select
+                value={godownId}
+                onChange={(e) => setGodownId(e.target.value)}
+                options={godownOptions}
+                placeholder="Select godown..."
+              />
+            </div>
+            <div>
+              <Label>Timezone</Label>
+              <Input
+                value={timezoneName}
+                onChange={(e) => {
+                  setTimezoneName(e.target.value);
+                  setPlanSettingsDirty(true);
+                }}
+              />
+            </div>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
+            </div>
+            <div>
+              <Label>Expected Count</Label>
+              <Input
+                type="number"
+                value={expectedCount}
+                onChange={(e) => {
+                  setExpectedCount(e.target.value);
+                  setPlanSettingsDirty(true);
+                }}
+              />
+            </div>
+            <div>
+              <Label>Cutoff Time</Label>
+              <Input
+                type="time"
+                value={cutoffTime}
+                onChange={(e) => {
+                  setCutoffTime(e.target.value);
+                  setPlanSettingsDirty(true);
+                }}
+              />
+            </div>
+            <div className="md:col-span-5 flex flex-wrap gap-2 items-center">
+              <Button onClick={onSavePlan} disabled={busy || !godownId || !dateLocal}>
+                Save Plan
+              </Button>
+              <div className="text-xs text-slate-300">
+                Planned: {summary.PLANNED} | Arrived: {summary.ARRIVED} | Delayed: {summary.DELAYED} | No show: {summary.NO_SHOW} | Cancelled: {summary.CANCELLED}
               </div>
-              <Button variant="outline" onClick={() => setImportOpen(false)}>
-                Close
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hud-card">
+          <CardHeader>
+            <div className="text-lg font-semibold font-display">Add Planned Vehicle</div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <Label>Plate</Label>
+              <Input value={addPlate} onChange={(e) => setAddPlate(e.target.value)} placeholder="e.g. WB23D5690" />
+            </div>
+            <div>
+              <Label>Expected By</Label>
+              <Input type="time" value={addExpectedBy} onChange={(e) => setAddExpectedBy(e.target.value)} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={addStatus} onChange={(e) => setAddStatus(e.target.value)} options={statusOptions} />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input value={addNotes} onChange={(e) => setAddNotes(e.target.value)} placeholder="optional" />
+            </div>
+            <div className="md:col-span-4">
+              <Button onClick={onAddItem} disabled={busy || !planId || !addPlate.trim()}>
+                Add to Plan
               </Button>
             </div>
+          </CardContent>
+        </Card>
 
-            {importError && <ErrorBanner message={importError} />}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <Label>CSV File</Label>
-                <Input
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
-                />
-              </div>
-              <div>
-                <Label>Godown</Label>
-                <Select
-                  value={godownId}
-                  onChange={(e) => setGodownId(e.target.value)}
-                  options={godownOptions}
-                  placeholder="Select godown..."
-                />
-              </div>
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
-              </div>
-              <div className="self-end">
-                <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId || !dateLocal}>
-                  {importBusy ? 'Importing...' : 'Import CSV'}
-                </Button>
-              </div>
-            </div>
-
-            {importRows.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs text-slate-300">
-                  Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
-                </div>
-                <div className="table-shell overflow-auto">
-                  <Table>
-                    <THead>
-                      <TR>
-                        <TH>Plate</TH>
-                        <TH>Expected By</TH>
-                        <TH>Status</TH>
-                        <TH>Notes</TH>
-                        <TH>Issue</TH>
+        <Card className="hud-card">
+          <CardHeader className="flex items-center justify-between">
+            <div className="text-lg font-semibold font-display">Planned Vehicles</div>
+            <div className="hud-pill">Live status</div>
+          </CardHeader>
+          <CardContent>
+            <div className="table-shell overflow-auto">
+              <Table className="text-slate-100">
+                <THead className="bg-slate-900/80 text-slate-200">
+                  <TR>
+                    <TH>Plate</TH>
+                    <TH>Expected By</TH>
+                    <TH>Manual Status</TH>
+                    <TH>Effective</TH>
+                    <TH>Arrived At (IST)</TH>
+                    <TH>Actions</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {items.length === 0 ? (
+                    <TR className="border-white/10 hover:bg-white/0">
+                      <TD colSpan={6} className="text-sm text-slate-500">
+                        No plan items
+                      </TD>
+                    </TR>
+                  ) : (
+                    items.map((it) => (
+                      <TR key={it.id} className="border-white/10 hover:bg-white/5">
+                        <TD className="font-semibold">{it.plate_raw}</TD>
+                        <TD>
+                          <Input
+                            type="time"
+                            value={hhmm(it.expected_by_local)}
+                            onChange={(e) => onUpdateExpectedBy(it.id, e.target.value)}
+                            disabled={busy}
+                          />
+                        </TD>
+                        <TD>
+                          <Select
+                            value={(it.status || 'PLANNED').toUpperCase()}
+                            onChange={(e) => onUpdateStatus(it.id, e.target.value)}
+                            options={statusOptions}
+                          />
+                        </TD>
+                        <TD>{statusBadge(it.effective_status || 'PLANNED')}</TD>
+                        <TD className="text-xs">
+                          {it.arrived_at_utc ? formatIstDateTime(it.arrived_at_utc) : 'N/A'}
+                        </TD>
+                        <TD>
+                          <Button variant="danger" className="px-3 py-1.5 text-xs" onClick={() => onDelete(it.id)} disabled={busy}>
+                            Delete
+                          </Button>
+                        </TD>
                       </TR>
-                    </THead>
-                    <TBody>
-                      {importRows.map((r, idx) => (
-                        <TR key={`${r.plate_text}-${idx}`}>
-                          <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
-                          <TD>{r.expected_by_local || 'N/A'}</TD>
-                          <TD>{r.status || 'N/A'}</TD>
-                          <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
-                          <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                </div>
-              </div>
-            )}
+                    ))
+                  )}
+                </TBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-            {importResult && (
-              <div className="text-xs text-slate-300">
-                Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
+      {importOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="min-h-full px-4 py-8">
+            <button
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setImportOpen(false)}
+              aria-label="Close import"
+            />
+            <div
+              className="relative mx-auto w-full max-w-3xl hud-card animate-fade-up border border-white/10 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
+                    <div className="text-xs text-slate-400">Bulk load planned vehicles for a date.</div>
+                  </div>
+                  <Button variant="outline" onClick={() => setImportOpen(false)}>
+                    Close
+                  </Button>
+                </div>
+
+                {importError && <ErrorBanner message={importError} />}
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div>
+                    <Label>CSV File</Label>
+                    <Input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Godown</Label>
+                    <Select
+                      value={godownId}
+                      onChange={(e) => setGodownId(e.target.value)}
+                      options={godownOptions}
+                      placeholder="Select godown..."
+                    />
+                  </div>
+                  <div>
+                    <Label>Date</Label>
+                    <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
+                  </div>
+                  <div className="self-end">
+                    <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId || !dateLocal}>
+                      {importBusy ? 'Importing...' : 'Import CSV'}
+                    </Button>
+                  </div>
+                </div>
+
+                {importRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-slate-300">
+                      Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
+                    </div>
+                    <div className="table-shell overflow-auto">
+                      <Table>
+                        <THead>
+                          <TR>
+                            <TH>Plate</TH>
+                            <TH>Expected By</TH>
+                            <TH>Status</TH>
+                            <TH>Notes</TH>
+                            <TH>Issue</TH>
+                          </TR>
+                        </THead>
+                        <TBody>
+                          {importRows.map((r, idx) => (
+                            <TR key={`${r.plate_text}-${idx}`}>
+                              <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
+                              <TD>{r.expected_by_local || 'N/A'}</TD>
+                              <TD>{r.status || 'N/A'}</TD>
+                              <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
+                              <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
+                            </TR>
+                          ))}
+                        </TBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {importResult && (
+                  <div className="text-xs text-slate-300">
+                    Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
+                  </div>
+                )}
               </div>
-            )}
             </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
     </>
   );
 }

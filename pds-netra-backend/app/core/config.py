@@ -92,14 +92,22 @@ def validate_runtime_settings() -> None:
 
     auth_disabled = _auth_disabled()
     token = os.getenv("PDS_AUTH_TOKEN")
+    jwt_secret = (os.getenv("PDS_JWT_SECRET") or token or "").strip()
+    admin_password = (os.getenv("PDS_ADMIN_PASSWORD") or "").strip()
     if env == "prod":
         if auth_disabled:
             raise RuntimeError("PDS_AUTH_DISABLED must be false in prod.")
         if _is_weak_token(token):
             raise RuntimeError("PDS_AUTH_TOKEN must be set to a strong value in prod.")
+        if len(jwt_secret) < 20:
+            raise RuntimeError("PDS_JWT_SECRET must be set to a strong value in prod.")
+        if not admin_password:
+            raise RuntimeError("PDS_ADMIN_PASSWORD must be set in prod.")
     else:
         if not auth_disabled and _is_weak_token(token):
             logger.warning("PDS_AUTH_TOKEN is weak or missing; dev fallback will be used.")
+        if not auth_disabled and len(jwt_secret) < 20:
+            logger.warning("PDS_JWT_SECRET is weak or missing; dev fallback will be used.")
 
     # Provider validation: log and fail-safe to log providers when missing config.
     provider = (os.getenv("WHATSAPP_PROVIDER") or "").lower().strip()

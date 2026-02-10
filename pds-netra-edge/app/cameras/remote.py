@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.request
 from typing import List, Optional
 
@@ -71,9 +72,13 @@ def fetch_camera_configs(
     logger = logging.getLogger("cameras.remote")
     base = backend_url.rstrip("/")
     url = f"{base}/api/v1/godowns/{godown_id}"
+    token = (os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+    req = urllib.request.Request(url)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
 
     try:
-        with urllib.request.urlopen(url, timeout=timeout_sec) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         logger.warning("Failed to fetch cameras from %s: %s", url, exc)

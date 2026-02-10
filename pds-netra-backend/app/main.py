@@ -23,6 +23,7 @@ from .models import Base
 from .models.dispatch_issue import DispatchIssue
 from .services.seed import seed_godowns, seed_cameras_from_edge_config
 from .services.rule_seed import seed_rules
+from .services.auth_seed import seed_admin_user
 from .services.mqtt_consumer import MQTTConsumer
 from .services.dispatch_watchdog import run_dispatch_watchdog
 from .services.dispatch_plan_sync import run_dispatch_plan_sync
@@ -76,6 +77,11 @@ def create_app() -> FastAPI:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
                     if "modules_json" not in cols:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN modules_json TEXT"))
+            if "godowns" in inspector.get_table_names():
+                cols = {col["name"] for col in inspector.get_columns("godowns")}
+                with engine.begin() as conn:
+                    if "created_by_user_id" not in cols:
+                        conn.execute(text("ALTER TABLE godowns ADD COLUMN created_by_user_id VARCHAR(36)"))
         except Exception:
             log_exception(logger, "DB schema sync failed")
             if env == "prod":
@@ -112,6 +118,14 @@ def create_app() -> FastAPI:
                     seed_rules(db)
             except Exception as exc:
                 log_exception(logger, "Seed rules failed", exc=exc)
+                if env == "prod":
+                    raise
+        if os.getenv("AUTO_SEED_ADMIN_USER", "true").lower() in {"1", "true", "yes"}:
+            try:
+                with SessionLocal() as db:
+                    seed_admin_user(db)
+            except Exception as exc:
+                log_exception(logger, "Seed admin user failed", exc=exc)
                 if env == "prod":
                     raise
         if os.getenv("ENABLE_MQTT_CONSUMER", "true").lower() in {"1", "true", "yes"}:

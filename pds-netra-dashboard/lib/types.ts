@@ -1,13 +1,14 @@
-export type UserRole = 'STATE_ADMIN' | 'DISTRICT_OFFICER' | 'GODOWN_MANAGER';
+export type UserRole = 'STATE_ADMIN' | 'HQ_ADMIN' | 'DISTRICT_OFFICER' | 'GODOWN_MANAGER' | 'USER';
 
 export type Severity = 'info' | 'warning' | 'critical';
 export type AlertStatus = 'OPEN' | 'ACK' | 'CLOSED';
 export type TestRunStatus = 'UPLOADED' | 'ACTIVE' | 'DEACTIVATED' | 'COMPLETED';
 
 export interface LoginResponse {
-  access_token: string;
+  access_token?: string;
   token_type?: string;
   user: {
+    id?: string;
     username: string;
     name?: string;
     role: UserRole;
