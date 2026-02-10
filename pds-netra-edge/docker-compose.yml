@@ -18,8 +18,13 @@ services:
       - MQTT_BROKER_HOST=mosquitto
       # Set to match backend PDS_AUTH_TOKEN when auth is enabled
       - EDGE_BACKEND_TOKEN=${EDGE_BACKEND_TOKEN}
+      - YOLO_CONFIG_DIR=/opt/app/.config/Ultralytics
+      - INSIGHTFACE_HOME=/opt/app/.insightface
     volumes:
       - ./:/opt/app
+      - ./data:/opt/app/data
+      - ./models:/opt/app/models
+      - ./cache/ultralytics:/opt/app/.config/Ultralytics
+      - ./cache/insightface:/opt/app/.insightface
     depends_on:
       - mosquitto
-

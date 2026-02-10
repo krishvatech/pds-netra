@@ -20,7 +20,7 @@ mqtt:
 anpr:
   enabled: true
   model_path: "./ML_Model/anpr.pt"
-  device: "cpu"
+  device: "cuda"
   conf: 0.35
   iou: 0.45
   imgsz: 640
@@ -95,7 +95,7 @@ after_hours_presence:
 fire_detection:
   enabled: true
   model_path: "models/firedetect-11x.pt"
-  device: "cpu"
+  device: "cuda"
   conf: 0.3
   iou: 0.45
   cooldown_seconds: 60
