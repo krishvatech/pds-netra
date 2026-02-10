@@ -1,34 +1,86 @@
+# ----------------------------
 # Python
+# ----------------------------
 __pycache__/
 *.py[cod]
 *.so
 *.egg-info/
 
-# Virtual env
+# ----------------------------
+# Virtual env / env files
+# ----------------------------
 .venv/
 venv/
 .env
+.env.*
 
+# ----------------------------
 # Tooling caches
+# ----------------------------
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
+# ----------------------------
 # Build artifacts
+# ----------------------------
 build/
 dist/
 
+# ----------------------------
 # Model weights / outputs
+# ----------------------------
 *.pt
 runs/
 
+# ----------------------------
 # OS
+# ----------------------------
 .DS_Store
 
-# Ignore runtime cache file
-pds-netra-edge/data/rules_cache.json
-
-data/watchlist/authorized_cache.json    
+# ----------------------------
+# PDS-Netra Edge runtime caches (DO NOT COMMIT)
+# ----------------------------
+# Fix: correct path (we are already inside pds-netra-edge)
+data/rules_cache.json
+data/watchlist/authorized_cache.json
 data/watchlist/watchlist_cache.json
-# TypeScript incremental build info
+
+# ----------------------------
+# Node/TypeScript (if present)
+# ----------------------------
 *.tsbuildinfo
+
+# ----------------------------
+# PDS-Netra runtime data (DO NOT COMMIT)
+# ----------------------------
+# Edge runtime folders (often generated at runtime)
+data/
+cache/
+logs/
+models/
+ML_Model/
+runs/
+
+# Deployment runtime data (snapshots/uploads/live/watchlist/certs)
+deployment/data/
+deployment/caddy/data/
+deployment/caddy/config/caddy/autosave.json
+
+# ----------------------------
+# Media / binaries (runtime generated)
+# ----------------------------
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.webm
+*.avi
+
+# ----------------------------
+# Certificates / keys (NEVER COMMIT)
+# ----------------------------
+*.key
+*.crt
+*.pem
+*.pfx
