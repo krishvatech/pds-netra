@@ -27,6 +27,7 @@ from ..config import Settings
 from .confirm import ConfirmGate, ConfirmConfig
 from ..core.errors import log_exception
 from .outbox import Outbox, load_outbox_settings, OutboxSettings
+from ..actuators.speaker import SpeakerService
 
 
 class MQTTClient:
@@ -41,10 +42,16 @@ class MQTTClient:
         Client identifier for MQTT. If not provided, a default is generated.
     """
 
-    def __init__(self, settings: Settings, client_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client_id: Optional[str] = None,
+        speaker_service: Optional[SpeakerService] = None,
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.settings = settings
         self.client = mqtt.Client(client_id=client_id)
+        self._speaker = speaker_service
         self._confirm_bypass_test = os.getenv("EDGE_CONFIRM_BYPASS_TEST", "true").lower() in {"1", "true", "yes"}
         self._confirm_gate = ConfirmGate(
             ConfirmConfig(
@@ -162,6 +169,7 @@ class MQTTClient:
                     event.track_id,
                 )
                 return
+        self._trigger_speaker_for_event(event)
         topic = f"pds/{event.godown_id}/events"
         payload_dict, payload_json = self._serialize_payload(event)
         self.logger.info(
@@ -195,6 +203,7 @@ class MQTTClient:
 
     def publish_face_match(self, event: FaceMatchEvent, *, http_fallback: bool = False) -> None:
         """Publish a face match event to the watchlist topic."""
+        self._trigger_speaker_for_face_match(event)
         topic = f"pds/{event.godown_id}/face-match"
         payload_dict, payload_json = self._serialize_payload(event)
         self._publish_or_enqueue(
@@ -209,6 +218,7 @@ class MQTTClient:
 
     def publish_presence(self, event: PresenceEvent, *, http_fallback: bool = False) -> None:
         """Publish an after-hours presence event to the presence topic."""
+        self._trigger_speaker_for_presence(event)
         topic = f"pds/{event.godown_id}/presence"
         payload_dict, payload_json = self._serialize_payload(event)
         self._publish_or_enqueue(
@@ -425,6 +435,56 @@ class MQTTClient:
         if event_type in {"PERSON_DETECTED", "VEHICLE_DETECTED"}:
             return f"pds/{godown_id}/presence"
         return f"pds/{godown_id}/events"
+
+    def _trigger_speaker_for_event(self, event: EventModel) -> None:
+        if not self._speaker:
+            return
+        try:
+            reason = event.event_type
+            if event.event_type == "UNAUTH_PERSON":
+                reason = "PERSON_INTRUSION"
+            confidence = event.meta.confidence if event.meta else None
+            self._speaker.trigger(
+                reason=reason,
+                camera_id=event.camera_id,
+                event_id=event.event_id,
+                confidence=confidence,
+            )
+        except Exception:
+            return
+
+    def _trigger_speaker_for_presence(self, event: PresenceEvent) -> None:
+        if not self._speaker:
+            return
+        try:
+            reason = event.event_type
+            if event.event_type == "PERSON_DETECTED" and getattr(event.payload, "is_after_hours", False):
+                reason = "AFTER_HOURS_PERSON_DETECTED"
+            confidence = getattr(event.payload, "confidence", None)
+            self._speaker.trigger(
+                reason=reason,
+                camera_id=event.camera_id,
+                event_id=event.event_id,
+                confidence=confidence,
+            )
+        except Exception:
+            return
+
+    def _trigger_speaker_for_face_match(self, event: FaceMatchEvent) -> None:
+        if not self._speaker:
+            return
+        try:
+            confidence = None
+            if event.payload and event.payload.person_candidate:
+                confidence = event.payload.person_candidate.match_score
+            self._speaker.trigger(
+                reason="WATCHLIST_MATCH",
+                camera_id=event.camera_id,
+                event_id=event.event_id,
+                confidence=confidence,
+            )
+        except Exception:
+            return
 
     def _init_outbox(self, settings: OutboxSettings) -> Optional[Outbox]:
         try:

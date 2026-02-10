@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from .config import load_settings, Settings
 from .logging_config import setup_logging
 from .events.mqtt_client import MQTTClient
+from .actuators.speaker import SpeakerService
 from .runtime.camera_loop import start_camera_loops
 from .runtime.scheduler import Scheduler
 from .runtime.watchdog import EdgeWatchdog
@@ -120,8 +121,9 @@ def main(argv: List[str] | None = None) -> int:
             settings.cameras = cams
             logger.info("Loaded %s cameras from backend", len(cams))
 
-    # Initialize MQTT client
-    mqtt_client = MQTTClient(settings)
+    # Initialize MQTT client and speaker service
+    speaker = SpeakerService()
+    mqtt_client = MQTTClient(settings, speaker_service=speaker)
     mqtt_client.connect()
     mqtt_client.start_outbox()
     # Start camera processing loops and obtain camera health state mapping
