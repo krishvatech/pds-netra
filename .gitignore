@@ -63,3 +63,19 @@ pds-netra-edge/cache/
 *.db-wal
 *.tmp
 *.deb
+
+# ----------------------------
+# Deployment runtime data (DO NOT COMMIT)
+# ----------------------------
+deployment/data/
+deployment/caddy/data/
+deployment/caddy/config/caddy/autosave.json
+
+# ----------------------------
+# Certificates / keys (NEVER COMMIT)
+# ----------------------------
+*.key
+*.crt
+*.pem
+*.pfx
+

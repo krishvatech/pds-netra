@@ -1,8 +1,0 @@
-{
-	"status": "valid",
-	"contact": [
-		"mailto:info@krishvatech.com"
-	],
-	"termsOfServiceAgreed": true,
-	"location": "https://acme-v02.api.letsencrypt.org/acme/acct/3029508596"
-}
