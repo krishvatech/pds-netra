@@ -1,0 +1,19 @@
+{
+	"sans": [
+		"cv.krishvatech.com"
+	],
+	"issuer_data": {
+		"url": "https://acme-v02.api.letsencrypt.org/acme/cert/056fee8eb83f9fea399ca65c822352858c2b",
+		"ca": "https://acme-v02.api.letsencrypt.org/directory",
+		"account": "https://acme-v02.api.letsencrypt.org/acme/acct/3029508596",
+		"renewal_info": {
+			"suggestedWindow": {
+				"start": "2026-04-04T12:22:51Z",
+				"end": "2026-04-06T07:33:40Z"
+			},
+			"_uniqueIdentifier": "jw0TovYuftFQbDMYOF1ZjiNykco.BW_ujrg_n-o5nKZcgiNShYwr",
+			"_retryAfter": "2026-02-10T09:38:04.62488838Z",
+			"_selectedTime": "2026-04-05T15:54:40Z"
+		}
+	}
+}
