@@ -54,3 +54,12 @@ pds-netra-backend/data/watchlist/
 pds-netra-edge/config/known_faces.json
 # PDS Netra edge watchlist (local)
 data/watchlist/watchlist_cache.json
+
+# Edge runtime data (never commit)
+pds-netra-edge/data/
+pds-netra-edge/cache/
+*.db
+*.db-shm
+*.db-wal
+*.tmp
+*.deb

@@ -1,0 +1,35 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  pds-edge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jp6
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility,graphics
+      - EDGE_CAMERAS_SOURCE=backend
+      - EDGE_RULES_SOURCE=backend
+      - EDGE_BACKEND_URL=https://cv.krishvatech.com
+      - EDGE_BACKEND_TOKEN=demo-token
+      - GODOWN_ID=GDN_004
+      - EDGE_TIMEZONE=Asia/Kolkata
+      - YOLO_CONFIG_DIR=/opt/app/.cache/Ultralytics
+      - EDGE_FIRE_DEVICE=cuda
+      - EDGE_LIVE_ANNOTATED_DIR=/live
+    runtime: nvidia
+    volumes:
+      - ./:/opt/app
+      - ./data/ultralytics:/opt/app/.cache/Ultralytics
+      - ./data/insightface:/root/.insightface
+      - /data/pds-live:/live
+    depends_on:
+      - mosquitto
