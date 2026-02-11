@@ -12,6 +12,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.jp6
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - MQTT_BROKER_HOST=mosquitto
       - NVIDIA_VISIBLE_DEVICES=all
@@ -19,12 +21,11 @@ services:
       - EDGE_CAMERAS_SOURCE=backend
       - EDGE_RULES_SOURCE=backend
       - EDGE_BACKEND_URL=https://cv.krishvatech.com
-      - EDGE_BACKEND_TOKEN=demo-token
-      - GODOWN_ID=GDN_004
       - EDGE_TIMEZONE=Asia/Kolkata
       - YOLO_CONFIG_DIR=/opt/app/.cache/Ultralytics
       - EDGE_FIRE_DEVICE=cuda
       - EDGE_LIVE_ANNOTATED_DIR=/live
+
     runtime: nvidia
     volumes:
       - ./:/opt/app
