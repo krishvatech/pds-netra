@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form, Response
-import shutil
-import os
 import requests
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -31,6 +32,7 @@ from ...schemas.authorized_user import (
     AuthorizedUserUpdate,
     AuthorizedUserResponse,
 )
+from ...services.watchlist import _compute_embedding_from_image, _hash_embedding_vector
 
 
 router = APIRouter(prefix="/api/v1/authorized-users", tags=["authorized-users"])
@@ -383,10 +385,6 @@ async def register_authorized_user_with_face(
     Create a new authorized user and generate face embedding from uploaded photo.
     Updates the edge configuration file with the new face.
     """
-    import sys
-    import shutil
-    import uuid
-    
     person_id = person_id.strip()
     if not person_id:
         raise HTTPException(status_code=400, detail="person_id cannot be empty")
@@ -412,113 +410,59 @@ async def register_authorized_user_with_face(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty file upload.")
 
+    temp_dir = Path(os.getenv("EDGE_TMP_DIR", "/tmp")) / "pds-faces"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename).suffix or ".jpg"
+    temp_path = temp_dir / f"{person_id}_{uuid.uuid4()}{ext}"
+    try:
+        temp_path.write_bytes(file_bytes)
+        embedding_vector = _compute_embedding_from_image(temp_path)
+    finally:
+        try:
+            temp_path.unlink()
+        except Exception:
+            pass
+
+    if not embedding_vector:
+        raise HTTPException(status_code=500, detail="Failed to compute face embedding locally.")
+
     edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
     edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
 
-    # If an edge embedding service is configured, use it.
-    if edge_embedding_url:
-        headers = {}
-        if edge_embedding_token:
-            headers["Authorization"] = f"Bearer {edge_embedding_token}"
-        files = {
-            "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
-        }
-        data = {
-            "person_id": person_id,
-            "name": name,
-            "role": role or "",
-            "godown_id": godown_id or "",
-        }
-        try:
-            resp = requests.post(
-                edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
-                headers=headers,
-                files=files,
-                data=data,
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise HTTPException(status_code=502, detail=f"Edge embedding request failed: {exc}")
+    if not edge_embedding_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Backend embedding disabled: set EDGE_EMBEDDING_URL to your edge embedding service."
+        )
 
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Edge embedding failed ({resp.status_code}): {resp.text}",
-            )
-    else:
-        # Save uploaded file temporarily (cross-platform)
-        import tempfile
-        temp_dir = Path(tempfile.gettempdir()) / "pds-faces"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(file.filename).suffix or ".jpg"
-        temp_file_path = temp_dir / f"{person_id}_{uuid.uuid4()}{ext}"
-    
-        try:
-            with open(temp_file_path, "wb") as buffer:
-                buffer.write(file_bytes)
+    headers = {}
+    if edge_embedding_token:
+        headers["Authorization"] = f"Bearer {edge_embedding_token}"
+    files = {
+        "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
+    }
+    data = {
+        "person_id": person_id,
+        "name": name,
+        "role": role or "",
+        "godown_id": godown_id or "",
+    }
+    try:
+        resp = requests.post(
+            edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Edge embedding request failed: {exc}")
 
-            # Dynamically import edge tools to compute embedding
-            # We need the path to pds-netra-edge
-            edge_path = Path(__file__).resolve().parents[4] / "pds-netra-edge"
-            if str(edge_path) not in sys.path:
-                sys.path.append(str(edge_path))
-
-            try:
-                from tools.generate_face_embedding import compute_embedding
-            except (ImportError, SystemExit) as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        "Face recognition dependencies are missing. "
-                        "Install edge requirements (numpy, insightface, opencv-python, etc.). "
-                        f"Details: {str(e)}"
-                    ),
-                )
-
-            try:
-                # Compute embedding
-                embedding = compute_embedding(str(temp_file_path))
-
-                # Update edge config (local dev only)
-                config_path = edge_path / "config" / "known_faces.json"
-
-                def _upsert_update(faces: list) -> list:
-                    items = list(faces) if isinstance(faces, list) else []
-                    updated = False
-                    for item in items:
-                        if isinstance(item, dict) and item.get("person_id") == person_id:
-                            item["name"] = name
-                            item["role"] = role or ""
-                            item["godown_id"] = godown_id or None
-                            item["embedding"] = embedding
-                            updated = True
-                            break
-                    if not updated:
-                        items.append(
-                            {
-                                "person_id": person_id,
-                                "name": name,
-                                "role": role or "",
-                                "godown_id": godown_id or None,
-                                "embedding": embedding,
-                            }
-                        )
-                    return items
-
-                locked_json_update(config_path, _upsert_update)
-
-            except ValueError as ve:
-                raise HTTPException(status_code=400, detail=f"Face processing error: {str(ve)}")
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to process face: {str(e)}")
-
-        finally:
-            # Cleanup temp file
-            if temp_file_path.exists():
-                try:
-                    os.remove(temp_file_path)
-                except Exception as exc:
-                    log_exception(logger, "Failed to cleanup temp face upload", extra={"path": str(temp_file_path)}, exc=exc)
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Edge embedding failed ({resp.status_code}): {resp.text}",
+        )
 
     # Create new user in DB
     new_user = AuthorizedUser(
@@ -527,6 +471,10 @@ async def register_authorized_user_with_face(
         role=role,
         godown_id=godown_id,
         is_active=is_active,
+        embedding=embedding_vector,
+        embedding_version="v1",
+        embedding_hash=_hash_embedding_vector(embedding_vector),
+        embedding_generated_at=datetime.utcnow(),
     )
     db.add(new_user)
     db.commit()
