@@ -79,3 +79,17 @@ deployment/caddy/config/caddy/autosave.json
 *.pem
 *.pfx
 
+
+# Runtime data
+deployment/data/
+deployment/caddy/config/caddy/autosave.json
+
+# Uploads, snapshots, live frames
+deployment/data/backend/uploads/
+deployment/data/backend/snapshots/
+deployment/data/backend/live/
+deployment/data/backend/watchlist/
+
+# Edge runtime
+pds-netra-edge/data/
+pds-netra-edge/cache/
