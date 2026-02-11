@@ -27,6 +27,7 @@ from .services.auth_seed import seed_admin_user
 from .services.mqtt_consumer import MQTTConsumer
 from .services.dispatch_watchdog import run_dispatch_watchdog
 from .services.dispatch_plan_sync import run_dispatch_plan_sync
+from .scripts.run_migrations import run_migrations_to_head
 
 from .api import api_router
 from .core.config import settings, get_app_env
@@ -64,6 +65,13 @@ def create_app() -> FastAPI:
                 Base.metadata.create_all(bind=engine)
             except Exception as exc:
                 log_exception(logger, "DB create_all failed", exc=exc)
+                if env == "prod":
+                    raise
+        if os.getenv("AUTO_RUN_MIGRATIONS", "true").lower() in {"1", "true", "yes"}:
+            try:
+                run_migrations_to_head()
+            except Exception as exc:
+                log_exception(logger, "DB migrations failed", exc=exc)
                 if env == "prod":
                     raise
         try:

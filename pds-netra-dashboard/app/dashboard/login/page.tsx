@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { login } from '@/lib/api';
-import { setSession } from '@/lib/auth';
+import { getSessionUser, setSession } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,6 +24,7 @@ export default function LoginPage() {
     try {
       const resp = await login(username, password);
       setSession(resp);
+      await getSessionUser();
       router.replace('/dashboard/overview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');

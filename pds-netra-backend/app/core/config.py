@@ -145,6 +145,8 @@ def validate_runtime_settings() -> None:
 
         if _env_true("AUTO_CREATE_DB", "true"):
             logger.warning("AUTO_CREATE_DB is enabled in prod. Consider setting it to false.")
+        if _env_true("AUTO_RUN_MIGRATIONS", "true"):
+            logger.warning("AUTO_RUN_MIGRATIONS is enabled in prod. Keep only if startup migrations are intended.")
         if _env_true("AUTO_SEED_GODOWNS", "true"):
             logger.warning("AUTO_SEED_GODOWNS is enabled in prod. Consider setting it to false.")
         if _env_true("AUTO_SEED_CAMERAS_FROM_EDGE", "true"):

@@ -88,6 +88,9 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
 
   const upstreamUrl = `${backendBaseUrl()}/api/v1/${joined}${req.nextUrl.search}`;
   const headers = buildForwardHeaders(req);
+  if (joined === 'auth/login' || joined === 'auth/register') {
+    headers.delete('Authorization');
+  }
   const body = method === 'GET' || method === 'HEAD' ? undefined : await req.arrayBuffer();
 
   const upstream = await fetch(upstreamUrl, {

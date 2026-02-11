@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
@@ -12,16 +12,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const isAuthPage = pathname === '/dashboard/login' || pathname === '/dashboard/register';
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
     let active = true;
-    if (isAuthPage) return;
+    if (isAuthPage) {
+      setAuthChecked(true);
+      setAuthorized(true);
+      return;
+    }
+    setAuthChecked(false);
+    setAuthorized(false);
     (async () => {
       const user = await getSessionUser();
       if (!active) return;
       if (!user) {
+        setAuthChecked(true);
+        setAuthorized(false);
         router.replace('/dashboard/login');
+        return;
       }
+      setAuthorized(true);
+      setAuthChecked(true);
     })();
     return () => {
       active = false;
@@ -29,6 +42,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [isAuthPage, router]);
 
   if (isAuthPage) return <>{children}</>;
+  if (!authChecked) {
+    return (
+      <div className="app-shell flex min-h-screen items-center justify-center">
+        <div className="text-sm uppercase tracking-[0.3em] text-slate-400">Checking session...</div>
+      </div>
+    );
+  }
+  if (!authorized) return null;
 
   return (
     <div className="app-shell">
