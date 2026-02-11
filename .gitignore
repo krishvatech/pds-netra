@@ -96,3 +96,4 @@ deployment/data/backend/watchlist/
 # Edge runtime
 pds-netra-edge/data/
 pds-netra-edge/cache/
+*.swp
