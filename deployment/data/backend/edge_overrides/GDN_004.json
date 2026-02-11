@@ -1,0 +1,12 @@
+{
+  "mode": "test",
+  "godown_id": "GDN_004",
+  "camera_overrides": {
+    "CAM_2": {
+      "source_type": "file",
+      "path": "/opt/app/data/uploads/GDN_004/6e5e43e813bf4cb497380485464105fb/CAM_2.mp4",
+      "run_id": "6e5e43e813bf4cb497380485464105fb"
+    }
+  },
+  "active_run_id": "6e5e43e813bf4cb497380485464105fb"
+}

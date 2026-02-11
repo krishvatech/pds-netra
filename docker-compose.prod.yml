@@ -28,6 +28,10 @@ services:
     build:
       context: ./pds-netra-dashboard
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://backend:8001
+        NEXT_PUBLIC_MOCK_MODE: "false"
+        NEXT_PUBLIC_ALERTS_WS_URL: wss://cv.krishvatech.com/ws/alerts
     restart: unless-stopped
     env_file:
       - ./deployment/env/dashboard.env

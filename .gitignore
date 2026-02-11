@@ -67,7 +67,10 @@ pds-netra-edge/cache/
 # ----------------------------
 # Deployment runtime data (DO NOT COMMIT)
 # ----------------------------
-deployment/data/
+deployment/data/backend/uploads/
+deployment/data/backend/snapshots/
+deployment/data/backend/live/
+deployment/data/backend/watchlist/
 deployment/caddy/data/
 deployment/caddy/config/caddy/autosave.json
 
