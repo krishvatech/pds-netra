@@ -20,7 +20,6 @@ mqtt:
 anpr:
   enabled: true
   model_path: "./ML_Model/anpr.pt"
-  device: "cuda"
   conf: 0.35
   iou: 0.45
   imgsz: 640

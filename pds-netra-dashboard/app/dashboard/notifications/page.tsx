@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { NotificationEndpoint } from '@/lib/types';
-import { createNotificationEndpoint, deleteNotificationEndpoint, getNotificationEndpoints, updateNotificationEndpoint } from '@/lib/api';
+import { createNotificationEndpoint, deleteNotificationEndpoint, getGodowns, getNotificationEndpoints, updateNotificationEndpoint } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -65,6 +65,7 @@ export default function NotificationsPage() {
     target: '',
     is_enabled: true
   });
+  const [godownOptions, setGodownOptions] = useState<Array<{ label: string; value: string }>>([]);
 
   useEffect(() => {
     const user = getUser();
@@ -76,6 +77,26 @@ export default function NotificationsPage() {
     }
   }, [filterGodown, form.scope, form.godown_id]);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getGodowns({ page: 1, page_size: 200 });
+        const items = Array.isArray(data) ? data : data.items ?? [];
+        if (!mounted) return;
+        const opts = items.map((g) => ({
+          label: g.name ? `${g.godown_id} - ${g.name}` : g.godown_id,
+          value: g.godown_id
+        }));
+        setGodownOptions(opts);
+      } catch {
+        if (!mounted) return;
+        setGodownOptions([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   const targetValidation = useMemo(() => {
     const trimmed = form.target.trim();
     if (!trimmed) return 'Target is required';
@@ -84,8 +105,9 @@ export default function NotificationsPage() {
       return emailOk ? '' : 'Enter a valid email address';
     }
     if (form.channel === 'WHATSAPP' || form.channel === 'CALL') {
-      const phoneOk = /^\+?[1-9]\d{7,14}$/.test(trimmed);
-      return phoneOk ? '' : 'Enter a valid phone number (E.164)';
+      const normalized = trimmed.startsWith('+') ? trimmed : `+91${trimmed.replace(/\s+/g, '')}`;
+      const phoneOk = /^\+[1-9]\d{7,14}$/.test(normalized);
+      return phoneOk ? '' : 'Enter a valid phone number';
     }
     return '';
   }, [form.channel, form.target]);
@@ -146,13 +168,17 @@ export default function NotificationsPage() {
     }
     setSaving(true);
     try {
+      const targetValue =
+        form.channel === 'WHATSAPP' || form.channel === 'CALL'
+          ? (form.target.trim().startsWith('+') ? form.target.trim() : `+91${form.target.trim().replace(/\s+/g, '')}`)
+          : form.target.trim();
       if (!MOCK_MODE) {
         if (editingId) {
           await updateNotificationEndpoint(editingId, {
             scope: form.scope,
             godown_id: form.scope === 'GODOWN_MANAGER' ? form.godown_id.trim() : null,
             channel: form.channel,
-            target: form.target.trim(),
+            target: targetValue,
             is_enabled: form.is_enabled
           });
         } else {
@@ -160,7 +186,7 @@ export default function NotificationsPage() {
             scope: form.scope,
             godown_id: form.scope === 'GODOWN_MANAGER' ? form.godown_id.trim() : null,
             channel: form.channel,
-            target: form.target.trim(),
+            target: targetValue,
             is_enabled: form.is_enabled
           });
         }
@@ -314,12 +340,23 @@ export default function NotificationsPage() {
             </div>
             <div>
               <Label>Godown ID</Label>
-              <Input
-                value={form.godown_id}
-                onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
-                placeholder="Auto (from login)"
-                disabled={form.scope !== 'GODOWN_MANAGER'}
-              />
+              {form.scope === 'GODOWN_MANAGER' ? (
+                <Select
+                  value={form.godown_id}
+                  onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
+                  options={[
+                    { label: 'Select godown', value: '' },
+                    ...godownOptions
+                  ]}
+                />
+              ) : (
+                <Input
+                  value={form.godown_id}
+                  onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
+                  placeholder="Auto (from login)"
+                  disabled
+                />
+              )}
               {godownValidation && form.scope === 'GODOWN_MANAGER' && (
                 <div className="mt-1 text-xs text-rose-300">{godownValidation}</div>
               )}
@@ -352,7 +389,7 @@ export default function NotificationsPage() {
               <div className="mt-1 text-[11px] text-slate-400">
                 {form.channel === 'EMAIL'
                   ? 'Format: name@example.com'
-                  : 'Format: E.164, e.g., +1XXXXXXXXXX'}
+                  : 'Format: phone number (we add +91 automatically if missing)'}
               </div>
               {targetValidation && (
                 <div className="mt-1 text-xs text-rose-300">{targetValidation}</div>

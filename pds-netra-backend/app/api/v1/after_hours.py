@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
-from ...core.auth import require_roles
+from ...core.auth import require_roles, UserContext
 from ...models.after_hours_policy import AfterHoursPolicy as AfterHoursPolicyModel
 from ...models.after_hours_policy_audit import AfterHoursPolicyAudit
 from ...schemas.after_hours import AfterHoursPolicyOut, AfterHoursPolicyUpdate, AfterHoursPolicyAuditOut
@@ -48,18 +48,24 @@ def _policy_snapshot(row: AfterHoursPolicyModel | None, fallback: dict) -> dict:
     }
 
 
+def _normalize_user_scope(user: UserContext, godown_id: Optional[str]) -> str:
+    # Users have the same access as admins: no godown scoping.
+    return godown_id or ""
+
+
 @router.get("/policies")
 def list_policies(
     godown_id: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     page_size = clamp_page_size(page_size)
     q = db.query(AfterHoursPolicyModel)
-    if godown_id:
-        q = q.filter(AfterHoursPolicyModel.godown_id == godown_id)
+    scoped_godown = _normalize_user_scope(user, godown_id)
+    if scoped_godown:
+        q = q.filter(AfterHoursPolicyModel.godown_id == scoped_godown)
     total = q.count()
     rows = (
         q.order_by(AfterHoursPolicyModel.godown_id.asc())
@@ -79,8 +85,9 @@ def list_policies(
 def get_policy(
     godown_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
+    _normalize_user_scope(user, godown_id)
     row = db.query(AfterHoursPolicyModel).filter(AfterHoursPolicyModel.godown_id == godown_id).first()
     if row:
         return _to_out(row, source="override")
@@ -103,8 +110,9 @@ def upsert_policy(
     godown_id: str,
     payload: AfterHoursPolicyUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
+    _normalize_user_scope(user, godown_id)
     data = payload.model_dump(exclude_unset=True)
     if "day_start" in data and data["day_start"]:
         _validate_time(data["day_start"], "day_start")
@@ -167,8 +175,9 @@ def list_policy_audit(
     godown_id: str,
     limit: int = Query(100, ge=1),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
+    _normalize_user_scope(user, godown_id)
     limit = clamp_limit(limit)
     rows = (
         db.query(AfterHoursPolicyAudit)
@@ -178,3 +187,12 @@ def list_policy_audit(
         .all()
     )
     return {"items": [AfterHoursPolicyAuditOut.model_validate(r).model_dump() for r in rows], "total": len(rows)}
+
+
+
+
+
+
+
+
+

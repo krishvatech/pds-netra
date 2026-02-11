@@ -33,7 +33,7 @@ def list_persons(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     page_size = clamp_page_size(page_size)
     persons, total = watchlist_service.list_persons(db, status=status, query=q, page=page, page_size=page_size)
@@ -53,7 +53,7 @@ def create_person(
     notes: Optional[str] = Form(None),
     reference_images: Optional[Union[UploadFile, List[UploadFile]]] = File(None),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
     request=Depends(enforce_upload_limit),
 ) -> dict:
     person = watchlist_service.create_person(db, name=name, alias=alias, reason=reason, notes=notes)
@@ -72,7 +72,7 @@ def create_person(
 def get_person(
     person_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
     if not person:
@@ -85,7 +85,7 @@ def update_person(
     person_id: str,
     payload: WatchlistPersonUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
     if not person:
@@ -98,7 +98,7 @@ def update_person(
 def deactivate_person(
     person_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
     if not person:
@@ -112,7 +112,7 @@ def add_images(
     person_id: str,
     reference_images: Union[UploadFile, List[UploadFile]] = File(...),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
     request=Depends(enforce_upload_limit),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
@@ -133,7 +133,7 @@ def add_embeddings(
     person_id: str,
     payload: WatchlistEmbeddingsCreate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     person = watchlist_service.get_person(db, person_id)
     if not person:
@@ -151,7 +151,7 @@ def list_matches(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
 ) -> dict:
     page_size = clamp_page_size(page_size)
     items, total = watchlist_service.list_person_matches(

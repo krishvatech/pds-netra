@@ -34,6 +34,30 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
 
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user) -> bool:
+    return bool(user and user.role and user.role.upper() in ADMIN_ROLES)
+
+
+def _apply_alert_scope(query, user):
+    if not user or _is_admin(user):
+        return query
+    if not user.user_id:
+        return query.filter(Alert.godown_id == "__forbidden__")
+    return query.filter(Godown.created_by_user_id == user.user_id)
+
+
+def _enforce_alert_scope(alert: Alert, user, db: Session) -> None:
+    if not user or _is_admin(user):
+        return
+    if not user.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    godown = db.get(Godown, alert.godown_id)
+    if not godown or godown.created_by_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
 
 def _parse_bbox(bbox_raw: str | None) -> Optional[list[int]]:
     if not bbox_raw:
@@ -227,8 +251,7 @@ def list_alerts(
     query = db.query(Alert, Godown.district, Godown.name).join(
         Godown, Godown.id == Alert.godown_id, isouter=True
     )
-    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
-        query = query.filter(Alert.godown_id == user.godown_id)
+    query = _apply_alert_scope(query, user)
     if godown_id:
         query = query.filter(Alert.godown_id == godown_id)
     if district:
@@ -357,9 +380,7 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
-        if alert.godown_id != user.godown_id:
-            raise HTTPException(status_code=403, detail="Forbidden")
+    _enforce_alert_scope(alert, user, db)
     godown = db.get(Godown, alert.godown_id)
     linked_ids = [link.event_id for link in alert.events]
     events = [link.event for link in alert.events]
@@ -469,9 +490,7 @@ def get_alert_deliveries(
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
-    if user and user.role.upper() == "GODOWN_MANAGER" and user.godown_id:
-        if alert.godown_id != user.godown_id:
-            raise HTTPException(status_code=403, detail="Forbidden")
+    _enforce_alert_scope(alert, user, db)
     base_query = (
         db.query(NotificationOutbox)
         .filter(NotificationOutbox.alert_id == alert.public_id)
@@ -492,6 +511,7 @@ def acknowledge_alert(alert_id: int, db: Session = Depends(get_db), user=Depends
     alert = db.get(Alert, alert_id)
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    _enforce_alert_scope(alert, user, db)
     actor = user.username if user else None
     action = AlertAction(alert_id=alert_id, action_type="ACK", actor=actor, note=None)
     alert.status = "ACK"

@@ -14,11 +14,28 @@ from sqlalchemy.orm import Session
 from ...core.db import get_db
 import os
 from ...models.godown import Camera, Godown
+from ...core.auth import UserContext, get_current_user
 from ...services.rule_seed import seed_rules_for_camera
 from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/cameras", tags=["cameras"])
+
+
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
+
+
+def _camera_query_for_user(db: Session, user: UserContext):
+    query = db.query(Camera)
+    if _is_admin(user):
+        return query
+    if not user.user_id:
+        return query.filter(Camera.godown_id == "__forbidden__")
+    return query.join(Godown, Godown.id == Camera.godown_id).filter(Godown.created_by_user_id == user.user_id)
 
 
 class ZoneIn(BaseModel):
@@ -93,8 +110,8 @@ def _parse_zones(zones_json: str | None) -> List[dict]:
         return []
     return []
 
-def _get_camera(db: Session, camera_id: str, godown_id: Optional[str]) -> Camera:
-    query = db.query(Camera).filter(Camera.id == camera_id)
+def _get_camera(db: Session, camera_id: str, godown_id: Optional[str], user: UserContext) -> Camera:
+    query = _camera_query_for_user(db, user).filter(Camera.id == camera_id)
     if godown_id:
         camera = query.filter(Camera.godown_id == godown_id).first()
         if not camera:
@@ -113,8 +130,9 @@ def get_camera_zones(
     camera_id: str,
     godown_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    camera = _get_camera(db, camera_id, godown_id)
+    camera = _get_camera(db, camera_id, godown_id, user)
     return {
         "camera_id": camera.id,
         "godown_id": camera.godown_id,
@@ -128,8 +146,9 @@ def update_camera_zones(
     payload: ZoneUpdate,
     godown_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    camera = _get_camera(db, camera_id, godown_id)
+    camera = _get_camera(db, camera_id, godown_id, user)
     zones = [z.model_dump() for z in payload.zones]
     camera.zones_json = json.dumps(zones)
     db.add(camera)
@@ -151,9 +170,10 @@ def list_cameras(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> list[dict]:
     page_size = clamp_page_size(page_size)
-    query = db.query(Camera)
+    query = _camera_query_for_user(db, user)
     if godown_id:
         query = query.filter(Camera.godown_id == godown_id)
     if role:
@@ -172,7 +192,11 @@ def list_cameras(
 
 
 @router.post("")
-def create_camera(payload: CameraCreate, db: Session = Depends(get_db)) -> dict:
+def create_camera(
+    payload: CameraCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     existing = (
         db.query(Camera)
         .filter(Camera.id == payload.camera_id, Camera.godown_id == payload.godown_id)
@@ -183,6 +207,8 @@ def create_camera(payload: CameraCreate, db: Session = Depends(get_db)) -> dict:
     godown = db.get(Godown, payload.godown_id)
     if not godown:
         raise HTTPException(status_code=404, detail="Godown not found")
+    if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
     modules_json = None
     if payload.modules is not None:
         modules_data = payload.modules.model_dump(exclude_none=True)
@@ -210,8 +236,9 @@ def update_camera(
     payload: CameraUpdate,
     godown_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    camera = _get_camera(db, camera_id, godown_id)
+    camera = _get_camera(db, camera_id, godown_id, user)
     if payload.label is not None:
         camera.label = payload.label
     if payload.role is not None:
@@ -234,8 +261,9 @@ def delete_camera(
     camera_id: str,
     godown_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    camera = _get_camera(db, camera_id, godown_id)
+    camera = _get_camera(db, camera_id, godown_id, user)
     db.delete(camera)
     db.commit()
     return {"status": "deleted", "camera_id": camera_id}

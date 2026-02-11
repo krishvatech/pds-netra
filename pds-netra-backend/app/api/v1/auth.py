@@ -41,7 +41,13 @@ def _auth_disabled() -> bool:
     return os.getenv("PDS_AUTH_DISABLED", "true").lower() in {"1", "true", "yes"}
 
 
-def _build_login_response(*, username: str, role: str, user_id: str, token: str) -> dict:
+def _build_login_response(
+    *,
+    username: str,
+    role: str,
+    user_id: str,
+    token: str,
+) -> dict:
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -51,7 +57,6 @@ def _build_login_response(*, username: str, role: str, user_id: str, token: str)
             "name": username.title(),
             "role": role,
             "district": None,
-            "godown_id": None,
         },
     }
 

@@ -496,10 +496,11 @@ def start_camera_loops(
             if direction_inference == "SESSION_HEURISTIC":
                 gate_line = None
 
+            anpr_device = device
             plate_detector = PlateDetector(
                 YoloDetector(
                     model_name=anpr_cfg.model_path,
-                    device=anpr_cfg.device or device,
+                    device=anpr_device,
                     conf=anpr_cfg.conf,
                     iou=anpr_cfg.iou,
                     imgsz=anpr_cfg.imgsz,
@@ -517,7 +518,7 @@ def start_camera_loops(
                 plate_detector=plate_detector,
                 ocr_engine=None,
                 ocr_lang=anpr_cfg.ocr_lang,
-                ocr_gpu=str(anpr_cfg.device).lower() != "cpu",
+                ocr_gpu=str(anpr_device).lower() != "cpu",
                 ocr_every_n=anpr_cfg.ocr_every_n,
                 ocr_min_conf=anpr_cfg.ocr_min_conf,
                 ocr_debug=anpr_cfg.ocr_debug,

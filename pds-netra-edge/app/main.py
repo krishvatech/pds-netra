@@ -44,7 +44,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default="cpu",
+        default=os.getenv("EDGE_DEVICE", "cpu"),
         choices=["cpu", "cuda"],
         help="Device for running inference (cpu or cuda)",
     )
@@ -93,8 +93,9 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("Failed to load configuration: %s", exc)
         return 1
     logger.info("Loaded settings for godown %s", settings.godown_id)
-    logger.info("Inference device requested: %s", args.device)
-    if args.device == "cuda":
+    requested_device = args.device
+    effective_device = requested_device
+    if requested_device == "cuda":
         try:
             import torch
 
@@ -104,6 +105,7 @@ def main(argv: List[str] | None = None) -> int:
                 logger.warning("CUDA requested but not available; continuing anyway")
         except Exception as exc:
             logger.warning("CUDA check failed: %s", exc)
+    logger.info("Inference device: %s", effective_device)
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
         backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))
@@ -127,7 +129,7 @@ def main(argv: List[str] | None = None) -> int:
     mqtt_client.connect()
     mqtt_client.start_outbox()
     # Start camera processing loops and obtain camera health state mapping
-    threads, camera_states, restart_camera = start_camera_loops(settings, mqtt_client, device=args.device)
+    threads, camera_states, restart_camera = start_camera_loops(settings, mqtt_client, device=effective_device)
     mqtt_client.set_camera_states(camera_states)
     # Start periodic scheduler, passing camera state for health monitoring
     scheduler = Scheduler(settings, mqtt_client, camera_states=camera_states)

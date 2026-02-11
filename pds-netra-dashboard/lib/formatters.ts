@@ -1,7 +1,7 @@
 import type { Severity } from './types';
 
 const UTC_DATE_TIME = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
+  timeZone: 'Asia/Kolkata',
   year: 'numeric',
   month: 'short',
   day: '2-digit',
@@ -10,7 +10,7 @@ const UTC_DATE_TIME = new Intl.DateTimeFormat('en-US', {
 });
 
 const UTC_DATE = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'UTC',
+  timeZone: 'Asia/Kolkata',
   year: 'numeric',
   month: 'short',
   day: '2-digit'

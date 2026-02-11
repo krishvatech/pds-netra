@@ -30,11 +30,13 @@ export default function AfterHoursPoliciesPage() {
           getGodowns()
         ]);
         if (!mounted) return;
-        setPolicies(policiesResp.items ?? []);
         const godownItems = Array.isArray(godownResp) ? godownResp : godownResp.items ?? [];
         setGodowns(godownItems);
-        if (!selectedGodown && (policiesResp.items?.length ?? 0) > 0) {
-          setSelectedGodown(policiesResp.items[0].godown_id);
+        const allowedIds = new Set(godownItems.map((g) => g.godown_id));
+        const policyItems = (policiesResp.items ?? []).filter((p) => allowedIds.has(p.godown_id));
+        setPolicies(policyItems);
+        if (!selectedGodown && policyItems.length > 0) {
+          setSelectedGodown(policyItems[0].godown_id);
         }
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : 'Failed to load policies');
