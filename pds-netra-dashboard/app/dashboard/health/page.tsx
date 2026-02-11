@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { formatUtc } from '@/lib/formatters';
-import { ErrorBanner } from '@/components/ui/error-banner';
 
 function onlineBadge(online: boolean) {
   return online ? (
@@ -20,6 +19,7 @@ function onlineBadge(online: boolean) {
 export default function HealthPage() {
   const [summary, setSummary] = useState<HealthSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
 
   useEffect(() => {
     let mounted = true;
@@ -28,8 +28,8 @@ export default function HealthPage() {
       try {
         const s = await getHealthSummary();
         if (mounted) setSummary(s);
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load health');
+      } catch (_e) {
+        if (mounted) setError('Unable to load health data; please refresh.');
       }
     })();
     return () => {
@@ -51,7 +51,7 @@ export default function HealthPage() {
         )}
       </CardHeader>
       <CardContent>
-        {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+        {error && <p className={inlineErrorClass}>{error}</p>}
         {!summary && !error && <div className="text-sm text-slate-600">Loading…</div>}
 
         {summary && (

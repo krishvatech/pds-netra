@@ -19,7 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
 
 type FieldDef = {
@@ -113,6 +112,7 @@ function paramSummary(rule: RuleItem) {
 }
 
 export default function RulesPage() {
+  const inlineErrorClass = 'text-xs text-red-400';
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,7 +210,7 @@ export default function RulesPage() {
           source: policy.source ?? 'override'
         });
       } catch (e) {
-        if (mounted) setPolicyError(e instanceof Error ? e.message : 'Failed to load policy');
+        if (mounted) setPolicyError('Unable to load the policy right now; please retry.');
       } finally {
         if (mounted) setPolicyLoading(false);
       }
@@ -233,7 +233,7 @@ export default function RulesPage() {
         });
         if (mounted) setRules(resp.items ?? []);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load rules');
+        if (mounted) setError('Check your network or refresh the page to load rules.');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -324,7 +324,7 @@ export default function RulesPage() {
         source: updated.source ?? 'override'
       });
     } catch (e) {
-      setPolicyError(e instanceof Error ? e.message : 'Failed to save policy');
+      setPolicyError('Unable to save the policy; please verify your entries and try again.');
     } finally {
       setPolicySaving(false);
     }
@@ -404,7 +404,7 @@ export default function RulesPage() {
       resetForm();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save rule');
+      setError('Failed to save the rule; please double-check the inputs and try again.');
     }
   }
 
@@ -445,7 +445,7 @@ export default function RulesPage() {
       setRules((current) =>
         current.map((item) => (item.id === rule.id ? { ...item, enabled: rule.enabled } : item))
       );
-      setError(e instanceof Error ? e.message : 'Failed to update rule');
+      setError('Unable to update the rule status; please retry.');
     }
   }
 
@@ -454,7 +454,7 @@ export default function RulesPage() {
       await deleteRule(rule.id);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete rule');
+      setError('Unable to delete the rule right now; please try again.');
     }
   }
 
@@ -584,7 +584,7 @@ export default function RulesPage() {
           </div>
           {policyError && (
             <div className="mt-3">
-              <ErrorBanner message={policyError} onRetry={() => window.location.reload()} />
+              <p className={inlineErrorClass}>{policyError}</p>
             </div>
           )}
         </CardContent>
@@ -685,11 +685,9 @@ export default function RulesPage() {
       </Card>
 
       {error && (
-        <Card>
-          <CardContent>
-            <ErrorBanner message={error} onRetry={() => window.location.reload()} />
-          </CardContent>
-        </Card>
+        <div className="mt-4">
+          <p className={inlineErrorClass}>{error}</p>
+        </div>
       )}
 
       <Card className="animate-fade-up hud-card">

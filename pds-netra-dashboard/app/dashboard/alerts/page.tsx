@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { ErrorBanner } from '@/components/ui/error-banner';
 
 const severityOptions = [
   { label: 'All severities', value: '' },
@@ -35,6 +34,7 @@ export default function AlertsPage() {
   const [dateTo, setDateTo] = useState<string>('');
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
 
   useEffect(() => {
     if (!godownId) {
@@ -97,7 +97,7 @@ export default function AlertsPage() {
           setAlerts(list);
         }
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load alerts');
+        if (mounted) setError('Check your network or refresh to load alerts.');
       }
     })();
     return () => {
@@ -145,7 +145,7 @@ export default function AlertsPage() {
           <div className="text-sm text-slate-300">Refine by godown, district, severity, and time window.</div>
         </CardHeader>
         <CardContent>
-          {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+          {error && <p className={inlineErrorClass}>{error}</p>}
 
           {tickerItems.length > 0 && (
             <div className="ticker mb-4">

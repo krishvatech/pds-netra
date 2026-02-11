@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { WatchlistMatchesTable } from '@/components/tables/WatchlistMatchesTable';
+
 
 export default function WatchlistPersonDetailPage() {
   const params = useParams<{ personId: string }>();
@@ -20,6 +20,14 @@ export default function WatchlistPersonDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileList | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+  const maxUploadMb = (MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1);
+
+  function friendlyWatchlistError(): string {
+    return 'Check your network and try again.';
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -35,7 +43,7 @@ export default function WatchlistPersonDetailPage() {
           setMatches(matchesResp.items ?? []);
         }
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load watchlist profile');
+        if (mounted) setError(friendlyWatchlistError());
       }
     })();
     return () => { mounted = false; };
@@ -47,7 +55,7 @@ export default function WatchlistPersonDetailPage() {
       const updated = await deactivateWatchlistPerson(person.id);
       setPerson(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to deactivate');
+      setError('Unable to deactivate right now; please try again.');
     }
   }
 
@@ -60,8 +68,9 @@ export default function WatchlistPersonDetailPage() {
       const updated = await addWatchlistImages(person.id, formData);
       setPerson(updated);
       setFiles(null);
+      setFileError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to upload images');
+      setError(`Upload failed. Please use images smaller than ${maxUploadMb} MB and try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -70,7 +79,7 @@ export default function WatchlistPersonDetailPage() {
   if (!person) {
     return (
       <div className="space-y-4">
-        {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+        {error && <p className={inlineErrorClass}>{error}</p>}
         <div className="text-sm text-slate-500">Loading...</div>
       </div>
     );
@@ -78,7 +87,7 @@ export default function WatchlistPersonDetailPage() {
 
   return (
     <div className="space-y-5">
-      {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+      {error && <p className={inlineErrorClass}>{error}</p>}
 
       <Card className="hud-card">
         <CardHeader>
@@ -132,9 +141,34 @@ export default function WatchlistPersonDetailPage() {
           )}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button variant="outline" onClick={handleDeactivate}>Deactivate</Button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Label>Upload images</Label>
-              <Input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
+              <div className="flex flex-col">
+                <Input
+                  type="file"
+                  multiple
+                  onChange={(e) => {
+                    const selected = e.target.files;
+                    if (!selected) {
+                      setFiles(null);
+                      setFileError(null);
+                      return;
+                    }
+                    const oversized = Array.from(selected).find((file) => file.size > MAX_UPLOAD_BYTES);
+                    if (oversized) {
+                      setFiles(null);
+                      setFileError(
+                        `File too large (${(oversized.size / 1024 / 1024).toFixed(1)} MB). Max ${maxUploadMb} MB allowed.`
+                      );
+                      return;
+                    }
+                    setFiles(selected);
+                    setFileError(null);
+                  }}
+                />
+                <p className={inlineErrorClass}>Max image size: {maxUploadMb} MB</p>
+                {fileError && <p className={`${inlineErrorClass} mt-1`}>{fileError}</p>}
+              </div>
               <Button onClick={handleAddImages} disabled={!files || isSaving}>{isSaving ? 'Uploading...' : 'Upload'}</Button>
             </div>
           </div>

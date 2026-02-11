@@ -7,6 +7,7 @@ import { GodownsTable } from '@/components/tables/GodownsTable';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const statusOptions = [
   { label: 'All statuses', value: '' },
@@ -14,6 +15,16 @@ const statusOptions = [
   { label: 'Issues', value: 'ISSUES' },
   { label: 'Critical', value: 'CRITICAL' }
 ];
+
+function explainGodownError(err: unknown): string {
+  if (err instanceof Error) {
+    if (/(?:409|already exists)/i.test(err.message)) {
+      return 'Godown ID already exists. Please choose a different ID and try again.';
+    }
+    return friendlyErrorMessage(err, 'Unable to save the godown right now. Please try again.');
+  }
+  return 'Unable to save the godown right now. Please try again.';
+}
 
 export default function GodownsPage() {
   const [items, setItems] = useState<GodownListItem[]>([]);
@@ -51,7 +62,12 @@ export default function GodownsPage() {
       const data = await getGodowns({ district: district || undefined, status: status || undefined });
       setItems(Array.isArray(data) ? data : data.items);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load godowns');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to load godowns. Check your network or refresh the page.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -91,7 +107,7 @@ export default function GodownsPage() {
       await loadGodowns();
       setTimeout(() => setAddSuccess(false), 3000);
     } catch (e) {
-      setAddError(e instanceof Error ? e.message : 'Failed to save godown');
+      setAddError(explainGodownError(e));
     } finally {
       setAddLoading(false);
     }
@@ -139,7 +155,12 @@ Type the godown ID to confirm: ${id}`;
         alert(`✓ ${result.message}\n\n${summary}`);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete godown');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to delete the godown right now. Please try again.'
+        )
+      );
     }
   };
 

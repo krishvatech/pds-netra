@@ -27,7 +27,11 @@ export default function LoginPage() {
       await getSessionUser();
       router.replace('/dashboard/overview');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const message =
+        err instanceof Error && /API 401/.test(err.message)
+          ? 'Invalid username or password. Please try again.'
+          : friendlyErrorMessage(err, 'Unable to sign in right now. Please try again.');
+      setError(message);
     } finally {
       setLoading(false);
     }

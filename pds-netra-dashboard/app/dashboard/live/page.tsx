@@ -8,8 +8,8 @@ import { getUser } from '@/lib/auth';
 import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { EventsTable } from '@/components/tables/EventsTable';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 type AuthedLiveImageProps = {
   requestUrl: string;
@@ -87,6 +87,7 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }:
 }
 
 export default function LiveCamerasPage() {
+  const inlineErrorClass = 'text-xs text-red-400';
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
   const [selectedGodown, setSelectedGodown] = useState<string>('');
   const [godownDetail, setGodownDetail] = useState<GodownDetail | null>(null);
@@ -131,8 +132,8 @@ export default function LiveCamerasPage() {
         if (items.length > 0 && !selectedGodown) {
           setSelectedGodown(items[0].godown_id);
         }
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load godowns');
+      } catch (_e) {
+        if (mounted) setError('Unable to load godowns; please refresh.');
       }
     })();
     return () => {
@@ -152,8 +153,8 @@ export default function LiveCamerasPage() {
           setSelectedCamera((prev) => prev || detail.cameras[0].camera_id);
           setZoneCameraId((prev) => prev || detail.cameras[0].camera_id);
         }
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load cameras');
+      } catch (_e) {
+        if (mounted) setError('Unable to load cameras for this godown; try again.');
       }
     })();
     return () => {
@@ -221,7 +222,12 @@ export default function LiveCamerasPage() {
         setZones(resp.zones ?? []);
       } catch (e) {
         if (!mounted) return;
-        setZonesError(e instanceof Error ? e.message : 'Failed to load zones');
+        setZonesError(
+          friendlyErrorMessage(
+            e,
+            'Unable to load camera zones right now. Please try again.'
+          )
+        );
       } finally {
         if (mounted) setZonesLoading(false);
       }
@@ -311,8 +317,8 @@ export default function LiveCamerasPage() {
     try {
       const resp = await updateCameraZones(zoneCameraId, selectedGodown, nextZones);
       setZones(resp.zones ?? []);
-    } catch (e) {
-      setZonesError(e instanceof Error ? e.message : 'Failed to save zone');
+    } catch (_e) {
+      setZonesError('Unable to save zone; please try again.');
     } finally {
       setZonesLoading(false);
     }
@@ -344,8 +350,8 @@ export default function LiveCamerasPage() {
         setZoneName('zone_1');
         setZonePoints([]);
       }
-    } catch (e) {
-      setZonesError(e instanceof Error ? e.message : 'Failed to delete zone');
+    } catch (_e) {
+      setZonesError('Unable to delete zone; please try again.');
     } finally {
       setZonesLoading(false);
     }
@@ -381,8 +387,8 @@ export default function LiveCamerasPage() {
       setNewCameraLabel('');
       setNewCameraRole('');
       setNewCameraRtsp('');
-    } catch (e) {
-      setAddCameraError(e instanceof Error ? e.message : 'Failed to add camera');
+    } catch (_e) {
+      setAddCameraError('Unable to add camera; verify details and try again.');
     } finally {
       setAddCameraLoading(false);
     }
@@ -429,8 +435,8 @@ export default function LiveCamerasPage() {
         setGodownDetail(detail);
       }
       setEditingCameraId(null);
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : 'Failed to update camera');
+    } catch (_e) {
+      setEditError('Unable to update the camera; please try again.');
     } finally {
       setEditLoading(false);
     }
@@ -452,8 +458,8 @@ export default function LiveCamerasPage() {
       if (zoneCameraId === cameraId) {
         setZoneCameraId(detail.cameras[0]?.camera_id ?? '');
       }
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : 'Failed to delete camera');
+    } catch (_e) {
+      setEditError('Unable to delete the camera; please try again.');
     } finally {
       setEditLoading(false);
     }
@@ -487,9 +493,9 @@ export default function LiveCamerasPage() {
           <div className="text-sm text-slate-600">Select godown, refresh streams, and add cameras.</div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
-          {addCameraError && <ErrorBanner message={addCameraError} onRetry={() => setAddCameraError(null)} />}
-          {editError && <ErrorBanner message={editError} onRetry={() => setEditError(null)} />}
+          {error && <p className={inlineErrorClass}>{error}</p>}
+          {addCameraError && <p className={inlineErrorClass}>{addCameraError}</p>}
+          {editError && <p className={inlineErrorClass}>{editError}</p>}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm text-slate-600">
               Godown
@@ -710,7 +716,7 @@ export default function LiveCamerasPage() {
           <div className="text-sm text-slate-600">Click to add polygon points, then save.</div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {zonesError && <ErrorBanner message={zonesError} onRetry={() => setZonesError(null)} />}
+          {zonesError && <p className={inlineErrorClass}>{zonesError}</p>}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm text-slate-600">
               Camera

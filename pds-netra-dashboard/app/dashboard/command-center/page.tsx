@@ -16,6 +16,7 @@ import { MovementTimelineChart, SeriesPoint } from '@/components/charts/Movement
 import { AlertsOverTimeChart } from '@/components/charts/AlertsOverTimeChart';
 import { formatUtc, humanAlertType, severityBadgeClass } from '@/lib/formatters';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 function buildRange(days: number) {
   const now = new Date();
@@ -71,7 +72,13 @@ export default function CommandCenterPage() {
         setDispatchTrace(traceResp.items ?? []);
         setHealth(healthResp);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load command center');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load the command center. Check your network or refresh the page.'
+            )
+          );
       }
     })();
     return () => {

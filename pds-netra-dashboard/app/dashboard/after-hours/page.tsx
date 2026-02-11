@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const tabs = [
   { key: 'person', label: 'Person After-hours', alertType: 'AFTER_HOURS_PERSON_PRESENCE' },
@@ -91,7 +92,13 @@ export default function AfterHoursPage() {
         const items = Array.isArray(resp) ? resp : resp.items ?? [];
         if (mounted) setAlerts(items);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load after-hours alerts');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load after-hours alerts. Please refresh or check your network.'
+            )
+          );
       }
     })();
     return () => {

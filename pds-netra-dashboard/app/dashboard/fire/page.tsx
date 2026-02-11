@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
 
@@ -79,7 +80,13 @@ export default function FirePage() {
         const items = Array.isArray(resp) ? resp : resp.items ?? [];
         if (mounted) setAlerts(items);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load fire alerts');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load fire alerts. Please refresh or check your connection.'
+            )
+          );
       }
     })();
     return () => {

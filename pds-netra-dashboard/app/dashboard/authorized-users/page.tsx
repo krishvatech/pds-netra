@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
     getAuthorizedUsers,
-    createAuthorizedUser,
     updateAuthorizedUser,
     deleteAuthorizedUser,
     syncAuthorizedUsersFromEdge,
@@ -15,6 +14,7 @@ import { formatUtcDate } from '@/lib/formatters';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function AuthorizedUsersPage() {
     const [users, setUsers] = useState<AuthorizedUserItem[]>([]);
@@ -39,11 +39,15 @@ export default function AuthorizedUsersPage() {
     const [formError, setFormError] = useState<string | null>(null);
     const [formSuccess, setFormSuccess] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
     // Sync state
     const [syncGodownId, setSyncGodownId] = useState('');
     const [syncing, setSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
+    const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+    const maxUploadMb = (MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1);
+    const inlineErrorClass = 'text-xs text-red-400';
 
     const activeFilters = useMemo(() => {
         const chips: string[] = [];
@@ -65,7 +69,12 @@ export default function AuthorizedUsersPage() {
             const data = await getAuthorizedUsers(params);
             setUsers(data);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load authorized users');
+            setError(
+                friendlyErrorMessage(
+                    e,
+                    'Unable to load authorized users right now. Check your network or try again.'
+                )
+            );
         } finally {
             setLoading(false);
         }
@@ -92,9 +101,19 @@ export default function AuthorizedUsersPage() {
         e.preventDefault();
         if (!formData.person_id.trim() || !formData.name.trim()) return;
 
-        setFormLoading(true);
         setFormError(null);
         setFormSuccess(false);
+
+        if (!editingId && !selectedFile) {
+            setFormError('Photo is required to register a new authorized user.');
+            return;
+        }
+        if (selectedFile && selectedFile.size > MAX_UPLOAD_BYTES) {
+            setFormError(`Selected photo (${(selectedFile.size / 1024 / 1024).toFixed(1)} MB) exceeds the ${maxUploadMb} MB limit.`);
+            return;
+        }
+
+        setFormLoading(true);
 
         try {
             if (editingId) {
@@ -105,35 +124,32 @@ export default function AuthorizedUsersPage() {
                     is_active: formData.is_active
                 });
             } else {
-                if (selectedFile) {
-                    const formDataObj = new FormData();
-                    formDataObj.append('person_id', formData.person_id.trim());
-                    formDataObj.append('name', formData.name.trim());
-                    if (formData.role.trim()) formDataObj.append('role', formData.role.trim());
-                    if (formData.godown_id) formDataObj.append('godown_id', formData.godown_id);
-                    formDataObj.append('is_active', String(formData.is_active));
-                    formDataObj.append('file', selectedFile);
+                const formDataObj = new FormData();
+                formDataObj.append('person_id', formData.person_id.trim());
+                formDataObj.append('name', formData.name.trim());
+                if (formData.role.trim()) formDataObj.append('role', formData.role.trim());
+                if (formData.godown_id) formDataObj.append('godown_id', formData.godown_id);
+                formDataObj.append('is_active', String(formData.is_active));
+                formDataObj.append('file', selectedFile!);
 
-                    await createAuthorizedUserWithFace(formDataObj);
-                } else {
-                    await createAuthorizedUser({
-                        person_id: formData.person_id.trim(),
-                        name: formData.name.trim(),
-                        role: formData.role.trim() || null,
-                        godown_id: formData.godown_id || null,
-                        is_active: formData.is_active
-                    });
-                }
+                await createAuthorizedUserWithFace(formDataObj);
             }
+
             setFormSuccess(true);
             setFormData({ person_id: '', name: '', role: '', godown_id: '', is_active: true });
             setSelectedFile(null);
+            setFileSizeError(null);
             setEditingId(null);
             setShowForm(false);
             await loadUsers();
             setTimeout(() => setFormSuccess(false), 3000);
         } catch (e) {
-            setFormError(e instanceof Error ? e.message : 'Failed to save user');
+            setFormError(
+                friendlyErrorMessage(
+                    e,
+                    'Could not save the user. Please verify your inputs and try again.'
+                )
+            );
         } finally {
             setFormLoading(false);
         }
@@ -161,7 +177,12 @@ export default function AuthorizedUsersPage() {
             await deleteAuthorizedUser(personId);
             await loadUsers();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to delete user');
+            setError(
+                friendlyErrorMessage(
+                    e,
+                    'Unable to delete the user right now. Please try again shortly.'
+                )
+            );
         }
     };
 
@@ -179,7 +200,12 @@ export default function AuthorizedUsersPage() {
             await loadUsers();
             setTimeout(() => setSyncMessage(null), 5000);
         } catch (e) {
-            setSyncMessage(`✗ ${e instanceof Error ? e.message : 'Sync failed'}`);
+            setSyncMessage(
+                `✗ ${friendlyErrorMessage(
+                    e,
+                    'Sync failed. Check the edge connection or try again.'
+                )}`
+            );
         } finally {
             setSyncing(false);
         }
@@ -308,19 +334,37 @@ export default function AuthorizedUsersPage() {
                                     </select>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Photo (Optional)</label>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        disabled={!!editingId}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                        onChange={(e) => {
-                                            if (e.target.files && e.target.files[0]) {
-                                                setSelectedFile(e.target.files[0]);
+                                <label className="text-xs text-slate-400">Photo (Required for new users)</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={!!editingId}
+                                    required={!editingId}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                    onChange={(e) => {
+                                        if (e.target.files && e.target.files[0]) {
+                                            const file = e.target.files[0];
+                                            if (file.size > MAX_UPLOAD_BYTES) {
+                                                setSelectedFile(null);
+                                                setFileSizeError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max ${maxUploadMb} MB.`);
+                                                return;
                                             }
-                                        }}
-                                    />
-                                </div>
+                                            setSelectedFile(file);
+                                            setFileSizeError(null);
+                                        }
+                                    }}
+                                />
+                                {!editingId && (
+                                    <p className={inlineErrorClass}>
+                                        Max image size: {maxUploadMb} MB
+                                    </p>
+                                )}
+                                {fileSizeError && (
+                                    <p className={`${inlineErrorClass} mt-1`}>
+                                        {fileSizeError}
+                                    </p>
+                                )}
+                            </div>
                             </div>
 
                             {formError && <ErrorBanner message={formError} />}

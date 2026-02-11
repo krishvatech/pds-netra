@@ -32,7 +32,11 @@ export default function RegisterPage() {
       await getSessionUser();
       router.replace('/dashboard/overview');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      const message =
+        err instanceof Error && err.message === 'Passwords do not match'
+          ? err.message
+          : friendlyErrorMessage(err, 'Check your inputs or try again.');
+      setError(message);
     } finally {
       setLoading(false);
     }

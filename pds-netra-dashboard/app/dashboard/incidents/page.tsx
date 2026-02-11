@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatUtc, humanAlertType, severityBadgeClass } from '@/lib/formatters';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const severityOptions = [
   { label: 'All severities', value: '' },
@@ -33,7 +34,12 @@ export default function IncidentsPage() {
       const items = Array.isArray(resp) ? resp : resp.items;
       setAlerts(items);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load incidents');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to load incidents. Please refresh or try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -50,7 +56,12 @@ export default function IncidentsPage() {
       await createAlertAction(alertId, { action_type: actionType, note });
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update alert');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to complete the action. Please try again.'
+        )
+      );
     }
   }
 

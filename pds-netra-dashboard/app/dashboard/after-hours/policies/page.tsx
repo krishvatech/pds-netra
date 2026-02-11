@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function AfterHoursPoliciesPage() {
   const [policies, setPolicies] = useState<AfterHoursPolicy[]>([]);
@@ -39,7 +40,13 @@ export default function AfterHoursPoliciesPage() {
           setSelectedGodown(policyItems[0].godown_id);
         }
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load policies');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load after-hours policies. Check your connection or refresh.'
+            )
+          );
       } finally {
         if (mounted) setLoading(false);
       }
@@ -62,7 +69,13 @@ export default function AfterHoursPoliciesPage() {
         if (!mounted) return;
         setAuditItems(resp.items ?? []);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load audit log');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load the audit log for that godown. Please try again or select another one.'
+            )
+          );
       } finally {
         if (mounted) setAuditLoading(false);
       }

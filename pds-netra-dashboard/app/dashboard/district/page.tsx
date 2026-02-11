@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { GodownsTable } from '@/components/tables/GodownsTable';
 import { AlertsTable } from '@/components/tables/AlertsTable';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function DistrictPage() {
   const [district, setDistrict] = useState('');
@@ -36,7 +37,13 @@ export default function DistrictPage() {
         const items = Array.isArray(alertResp) ? alertResp : alertResp.items;
         setAlerts(items);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load district view');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load the district view. Please refresh or try again.'
+            )
+          );
       } finally {
         if (mounted) setLoading(false);
       }

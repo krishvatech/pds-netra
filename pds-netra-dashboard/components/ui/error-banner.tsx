@@ -9,7 +9,7 @@ export function ErrorBanner({
 }) {
   return (
     <div className="alert-toast flex flex-wrap items-center justify-between gap-3 px-4 py-3 mb-4">
-      <div className="text-sm text-slate-100">{message}</div>
+      <div className="text-xs text-red-400">{message}</div>
       {onRetry && (
         <Button variant="outline" onClick={onRetry}>
           Retry

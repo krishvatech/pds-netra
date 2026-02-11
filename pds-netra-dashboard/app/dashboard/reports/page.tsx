@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 function isoDate(value: string) {
   if (!value) return '';
@@ -53,7 +54,12 @@ export default function ReportsPage() {
       const rows = await getHqReports(30);
       setHqReports(rows ?? []);
     } catch (e) {
-      setHqError(e instanceof Error ? e.message : 'Failed to load HQ reports');
+      setHqError(
+        friendlyErrorMessage(
+          e,
+          'Unable to load HQ reports. Please refresh or try again.'
+        )
+      );
     } finally {
       setHqLoading(false);
     }
@@ -70,7 +76,12 @@ export default function ReportsPage() {
       await generateHqReport(period);
       await loadHqReports();
     } catch (e) {
-      setHqError(e instanceof Error ? e.message : 'Failed to generate HQ report');
+      setHqError(
+        friendlyErrorMessage(
+          e,
+          'Unable to generate the report right now. Please try again.'
+        )
+      );
     } finally {
       setHqGenerating(false);
     }
@@ -87,7 +98,12 @@ export default function ReportsPage() {
       const rows = await getHqReportDeliveries(reportId);
       setDeliveries((prev) => ({ ...prev, [reportId]: rows ?? [] }));
     } catch (e) {
-      setHqError(e instanceof Error ? e.message : 'Failed to load delivery status');
+      setHqError(
+        friendlyErrorMessage(
+          e,
+          'Unable to load delivery status right now. Please try again.'
+        )
+      );
     }
   }
 

@@ -8,12 +8,12 @@ import { GodownSummaryCard } from '@/components/cards/GodownSummaryCard';
 import { AlertsByTypeChart } from '@/components/charts/AlertsByTypeChart';
 import { AlertsOverTimeChart } from '@/components/charts/AlertsOverTimeChart';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
 
 export default function OverviewPage() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
 
   useEffect(() => {
     let mounted = true;
@@ -21,8 +21,8 @@ export default function OverviewPage() {
       try {
         const d = await getOverviewData();
         if (mounted) setData(d);
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load overview');
+      } catch (_e) {
+        if (mounted) setError('Unable to load overview data; please refresh.');
       }
     })();
     return () => {
@@ -47,7 +47,7 @@ export default function OverviewPage() {
           <div className="text-lg font-semibold font-display">Overview</div>
         </CardHeader>
         <CardContent>
-          <ErrorBanner message={error} onRetry={() => window.location.reload()} />
+          <p className={inlineErrorClass}>{error}</p>
         </CardContent>
       </Card>
     );

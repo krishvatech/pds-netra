@@ -9,9 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { WatchlistPersonsTable } from '@/components/tables/WatchlistPersonsTable';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const tabs = ['persons', 'matches'] as const;
 const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
@@ -50,6 +50,15 @@ const mockMatches: AlertItem[] = [
 
 type TabKey = (typeof tabs)[number];
 
+function explainWatchlistUploadError(err: unknown, limitMb: string): string | null {
+  if (err instanceof Error) {
+    if (/413|Payload too large|Upload too large/i.test(err.message)) {
+      return `Image exceeds ${limitMb} MB. Please choose a smaller file or compress and try again.`;
+    }
+  }
+  return null;
+}
+
 export default function WatchlistPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('persons');
   const [persons, setPersons] = useState<WatchlistPerson[]>([]);
@@ -65,6 +74,10 @@ export default function WatchlistPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateNotice, setDateNotice] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+  const maxUploadMb = (MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1);
 
   useEffect(() => {
     if (!matchGodown) {
@@ -106,7 +119,13 @@ export default function WatchlistPage() {
         const resp = await getWatchlistPersons({ status, q: search || undefined, page: 1, page_size: 100 });
         if (mounted) setPersons(resp.items ?? []);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load watchlist');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load the watchlist. Check your connection or try again.'
+            )
+          );
       }
     })();
     return () => { mounted = false; };
@@ -124,7 +143,13 @@ export default function WatchlistPage() {
         const items = Array.isArray(resp) ? resp : resp.items ?? [];
         if (mounted) setMatches(items);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load matches');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load match data. Please refresh or try again later.'
+            )
+          );
       }
     })();
     return () => { mounted = false; };
@@ -152,7 +177,18 @@ export default function WatchlistPage() {
       const resp = await getWatchlistPersons({ status, q: search || undefined, page: 1, page_size: 100 });
       setPersons(resp.items ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create watchlist person');
+      const sizeMessage = explainWatchlistUploadError(e, maxUploadMb);
+      if (sizeMessage) {
+        console.error('Watchlist image too large', e);
+        setError(sizeMessage);
+      } else {
+        setError(
+          friendlyErrorMessage(
+            e,
+            'Unable to create a watchlist entry right now. Please try again.'
+          )
+        );
+      }
     } finally {
       setIsSaving(false);
     }
@@ -181,7 +217,7 @@ export default function WatchlistPage() {
         ))}
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+      {error && <p className={`${inlineErrorClass}`}>{error}</p>}
 
       {activeTab === 'persons' && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -209,7 +245,32 @@ export default function WatchlistPage() {
                 </div>
                 <div>
                   <Label>Reference images</Label>
-                  <Input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
+                  <Input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      const selected = e.target.files;
+                      if (!selected) {
+                        setFiles(null);
+                        setFileError(null);
+                        return;
+                      }
+                      const oversized = Array.from(selected).find((file) => file.size > MAX_UPLOAD_BYTES);
+                      if (oversized) {
+                        setFiles(null);
+                        setFileError(
+                          `File too large (${(oversized.size / 1024 / 1024).toFixed(1)} MB). Max ${maxUploadMb} MB allowed.`
+                        );
+                        return;
+                      }
+                      setFiles(selected);
+                      setFileError(null);
+                    }}
+                  />
+                  {!fileError && (
+                    <p className={inlineErrorClass}>Max image size: {maxUploadMb} MB</p>
+                  )}
+                  {fileError && <p className={`${inlineErrorClass} mt-1`}>{fileError}</p>}
                 </div>
                 <Button onClick={submitNewPerson} disabled={isSaving}>{isSaving ? 'Saving...' : 'Add to Watchlist'}</Button>
               </div>

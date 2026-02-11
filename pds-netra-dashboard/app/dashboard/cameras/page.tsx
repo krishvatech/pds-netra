@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/ui/dialog';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
 
@@ -95,7 +96,19 @@ function makeCameraKey(cameraId: string, godownId?: string | null) {
   return `${cameraId}__${godownId ?? ''}`;
 }
 
+function explainCameraError(err: unknown, isCreate: boolean): string {
+  if (err instanceof Error) {
+    const msg = err.message;
+    if (/409|already exists/i.test(msg)) {
+      return 'This camera ID already exists within the selected godown. Pick a different ID or godown before saving.';
+    }
+    return msg;
+  }
+  return isCreate ? 'Failed to create camera' : 'Failed to update camera';
+}
+
 export default function CamerasPage() {
+  const inlineErrorClass = 'text-xs text-red-400';
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -181,7 +194,12 @@ export default function CamerasPage() {
         pushToast({ type: 'info', title: 'Cameras refreshed', message: `Loaded ${rows?.length ?? 0} cameras` });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load cameras');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to load cameras right now. Please refresh or try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -286,7 +304,12 @@ export default function CamerasPage() {
         await loadCameras();
       }
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to delete camera');
+      setFormError(
+        friendlyErrorMessage(
+          e,
+          'Unable to delete the camera right now. Please try again.'
+        )
+      );
     } finally {
       setFormLoading(false);
       setConfirmOpen(false);
@@ -304,6 +327,7 @@ export default function CamerasPage() {
     if (!godownId) return setFormError('Godown is required.');
     if (!rtsp) return setFormError('RTSP URL is required.');
 
+    const isCreating = !editingKey;
     setFormLoading(true);
     setFormError(null);
     setFormSuccess(null);
@@ -362,7 +386,7 @@ export default function CamerasPage() {
       setEditingKey(null);
       resetForm();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to save camera');
+      setFormError(explainCameraError(e, isCreating));
     } finally {
       setFormLoading(false);
     }
@@ -539,7 +563,11 @@ export default function CamerasPage() {
                 </div>
               </div>
 
-              {formError && <ErrorBanner message={formError} />}
+              {formError && (
+                <p className={`${inlineErrorClass} mt-1`}>
+                  {formError}
+                </p>
+              )}
               {formSuccess && (
                 <div className="text-sm text-green-400 bg-green-400/10 border border-green-400/20 rounded px-3 py-2">
                   {formSuccess}

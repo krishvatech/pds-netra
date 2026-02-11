@@ -17,6 +17,7 @@ import { ErrorBanner } from '@/components/ui/error-banner';
 import { EventsTable } from '@/components/tables/EventsTable';
 import { AlertsTable } from '@/components/tables/AlertsTable';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function TestRunDetailPage() {
   const params = useParams();
@@ -51,7 +52,13 @@ export default function TestRunDetailPage() {
         const detail = await getTestRunDetail(runId);
         if (mounted) setRun(detail);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load test run');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load test run details. Please refresh or try again.'
+            )
+          );
       }
     })();
     return () => {
@@ -131,7 +138,13 @@ export default function TestRunDetailPage() {
           setSnapshotTotal(snapsResp.total ?? 0);
         }
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load related events');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load related events and alerts. Please try again later.'
+            )
+          );
       }
     })();
     return () => {
@@ -148,7 +161,12 @@ export default function TestRunDetailPage() {
       if (resp.run) setRun(resp.run);
       setStreamNonce((n) => n + 1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to activate test run');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to activate the test run. Please try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -162,7 +180,12 @@ export default function TestRunDetailPage() {
       const resp = await deactivateTestRun(run.run_id);
       if (resp.run) setRun(resp.run);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to deactivate test run');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to deactivate the test run. Please try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }

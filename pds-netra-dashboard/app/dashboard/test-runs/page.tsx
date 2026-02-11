@@ -20,8 +20,21 @@ import { ErrorBanner } from '@/components/ui/error-banner';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import Link from 'next/link';
 import { formatUtc } from '@/lib/formatters';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
+
+function explainUploadError(err: unknown, limitMb: string): string | null {
+  if (err instanceof Error) {
+    if (/413|Payload too large|Upload too large/i.test(err.message)) {
+      return `Video exceeds ${limitMb} MB. Please choose a smaller file or compress and try again.`;
+    }
+  }
+  return null;
+}
 
 export default function TestRunsPage() {
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+  const maxUploadMb = (MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1);
+  const inlineErrorClass = 'text-xs text-red-400';
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [runs, setRuns] = useState<TestRunItem[]>([]);
@@ -33,6 +46,7 @@ export default function TestRunsPage() {
   const [lastRun, setLastRun] = useState<TestRunItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -41,7 +55,13 @@ export default function TestRunsPage() {
         const data = await getGodowns();
         if (mounted) setGodowns(Array.isArray(data) ? data : data.items);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load godowns');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load godowns. Check your network or try again.'
+            )
+          );
       }
     })();
     return () => {
@@ -56,7 +76,13 @@ export default function TestRunsPage() {
         const data = await getTestRuns();
         if (mounted) setRuns(data);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load test runs');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load test runs right now. Please refresh or try again later.'
+            )
+          );
       }
     })();
     return () => {
@@ -76,7 +102,13 @@ export default function TestRunsPage() {
         const detail = await getGodownDetail(godownId);
         if (mounted) setCameras(detail.cameras ?? []);
       } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load cameras');
+        if (mounted)
+          setError(
+            friendlyErrorMessage(
+              e,
+              'Unable to load cameras for the selected godown. Try again in a moment.'
+            )
+          );
       }
     })();
     return () => {
@@ -109,6 +141,10 @@ export default function TestRunsPage() {
 
   const handleUpload = async () => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`Video exceeds ${maxUploadMb} MB. Please compress or choose a smaller file.`);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -121,8 +157,23 @@ export default function TestRunsPage() {
       const created = await createTestRun(form);
       setLastRun(created);
       setRuns((prev) => [created, ...prev]);
+      setFile(null);
+      setFileSizeError(null);
+      setRunName('');
+      setZoneId('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to upload test run');
+      const sizeMessage = explainUploadError(e, maxUploadMb);
+      if (sizeMessage) {
+        console.error('Test run file too large', e);
+        setError(sizeMessage);
+      } else {
+        setError(
+          friendlyErrorMessage(
+            e,
+            'Unable to upload the test run right now. Please try again.'
+          )
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -138,7 +189,12 @@ export default function TestRunsPage() {
         setLastRun(resp.run);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to activate test run');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to activate the test run. Please try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -154,7 +210,12 @@ export default function TestRunsPage() {
         if (lastRun?.run_id === runId) setLastRun(resp.run);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to deactivate test run');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to deactivate the test run. Please try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -170,7 +231,12 @@ export default function TestRunsPage() {
       setRuns((prev) => prev.filter((r) => r.run_id !== runId));
       if (lastRun?.run_id === runId) setLastRun(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete test run');
+      setError(
+        friendlyErrorMessage(
+          e,
+          'Unable to delete the test run right now. Please try again.'
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -241,7 +307,25 @@ export default function TestRunsPage() {
             </div>
             <div className="md:col-span-2">
               <Label>MP4 file</Label>
-              <Input type="file" accept="video/mp4" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <Input
+                type="file"
+                accept="video/mp4"
+                onChange={(e) => {
+                  const selected = e.target.files?.[0] ?? null;
+                  if (selected && selected.size > MAX_UPLOAD_BYTES) {
+                    setFile(null);
+                    setFileSizeError(
+                      `File too large (${(selected.size / 1024 / 1024).toFixed(1)} MB). Maximum ${maxUploadMb} MB allowed.`
+                    );
+                    return;
+                  }
+                  setFile(selected);
+                  setFileSizeError(null);
+                }}
+              />
+              {fileSizeError && (
+                <p className={`${inlineErrorClass} mt-1`}>{fileSizeError}</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">

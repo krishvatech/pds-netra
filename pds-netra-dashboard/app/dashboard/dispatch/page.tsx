@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { MovementTimelineChart, SeriesPoint } from '@/components/charts/MovementTimelineChart';
 import { DispatchTraceTable } from '@/components/tables/DispatchTraceTable';
 import { MovementEventsTable } from '@/components/tables/MovementEventsTable';
@@ -56,6 +55,7 @@ function toSeries(items: MovementTimelinePoint[]) {
 }
 
 export default function DispatchPage() {
+  const inlineErrorClass = 'text-xs text-red-400';
   const [rangeDays, setRangeDays] = useState('7');
   const [godownId, setGodownId] = useState('');
   const [movementType, setMovementType] = useState('');
@@ -149,8 +149,8 @@ export default function DispatchPage() {
         setTrace(traceResp.items ?? []);
         const items = Array.isArray(eventsResp) ? eventsResp : eventsResp.items;
         setEvents(items);
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load dispatch reports');
+      } catch (_e) {
+        if (mounted) setError('Unable to load dispatch reports; please refresh.');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -208,8 +208,8 @@ export default function DispatchPage() {
       setIssueCamera('');
       setIssueZone('');
       setIssueTime('');
-    } catch (e) {
-      setCreateStatus(e instanceof Error ? e.message : 'Failed to create dispatch issue.');
+    } catch (_e) {
+      setCreateStatus('Unable to create the issue right now; please retry.');
     }
   }
 
@@ -230,8 +230,8 @@ export default function DispatchPage() {
       });
       setEditingIssue(null);
       setRefreshKey((v) => v + 1);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to update issue.');
+    } catch (_e) {
+      alert('Unable to update the issue right now; please try again.');
     } finally {
       setIsBusy(false);
     }
@@ -244,8 +244,8 @@ export default function DispatchPage() {
       await deleteDispatchIssue(deletingIssue.issue_id);
       setDeletingIssue(null);
       setRefreshKey((v) => v + 1);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to delete issue.');
+    } catch (_e) {
+      alert('Unable to delete the issue right now; please try again.');
     } finally {
       setIsBusy(false);
     }
@@ -302,11 +302,11 @@ export default function DispatchPage() {
       </Card>
 
       {error && (
-        <Card className="hud-card">
+        <div className="hud-card">
           <CardContent>
-            <ErrorBanner message={error} onRetry={() => window.location.reload()} />
+            <p className={inlineErrorClass}>{error}</p>
           </CardContent>
-        </Card>
+        </div>
       )}
 
       <div className="metric-grid">

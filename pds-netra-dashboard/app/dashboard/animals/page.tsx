@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { formatUtc } from '@/lib/formatters';
 
 const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
@@ -48,6 +47,7 @@ export default function AnimalsPage() {
   const [dateTo, setDateTo] = useState('');
   const [dateNotice, setDateNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
 
   useEffect(() => {
     if (!godownId) {
@@ -81,8 +81,8 @@ export default function AnimalsPage() {
         const resp = await getAlerts(params);
         const items = Array.isArray(resp) ? resp : resp.items ?? [];
         if (mounted) setAlerts(items);
-      } catch (e) {
-        if (mounted) setError(e instanceof Error ? e.message : 'Failed to load animal intrusion alerts');
+      } catch (_e) {
+        if (mounted) setError('Unable to load animal alerts; please try again.');
       }
     })();
     return () => {
@@ -115,7 +115,7 @@ export default function AnimalsPage() {
         <div className="intel-banner">Night priority</div>
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+      {error && <p className={inlineErrorClass}>{error}</p>}
 
       <Card className="hud-card">
         <CardHeader>

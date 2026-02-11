@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner } from '@/components/ui/error-banner';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import { formatUtc } from '@/lib/formatters';
@@ -39,9 +38,26 @@ const mockEndpoints: NotificationEndpoint[] = [
   }
 ];
 
+function notificationErrorMessage(context: 'load' | 'save' | 'update' | 'delete' | 'action'): string {
+  switch (context) {
+    case 'load':
+      return 'Check your network or refresh the page to load notification endpoints.';
+    case 'save':
+      return 'Unable to save the endpoint right now; please verify your settings and retry.';
+    case 'update':
+      return 'Unable to update the endpoint right now; please retry in a moment.';
+    case 'delete':
+      return 'Unable to delete the endpoint right now; please try again.';
+    case 'action':
+    default:
+      return 'Something went wrong; please try again.';
+  }
+}
+
 export default function NotificationsPage() {
   const [endpoints, setEndpoints] = useState<NotificationEndpoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const inlineErrorClass = 'text-xs text-red-400';
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -147,7 +163,8 @@ export default function NotificationsPage() {
         });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load endpoints');
+      console.error('Failed to load endpoints', e);
+      setError(notificationErrorMessage('load'));
     }
   }
 
@@ -200,7 +217,8 @@ export default function NotificationsPage() {
       setEditingId(null);
       await loadEndpoints();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save endpoint');
+      console.error('Failed to save endpoint', e);
+      setError(notificationErrorMessage('save'));
     } finally {
       setSaving(false);
     }
@@ -227,7 +245,8 @@ export default function NotificationsPage() {
       });
       await loadEndpoints();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update endpoint');
+      console.error('Failed to update endpoint', e);
+      setError(notificationErrorMessage('update'));
     }
   }
 
@@ -294,7 +313,8 @@ export default function NotificationsPage() {
       }
       await loadEndpoints();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      console.error('Notification action failed', e);
+      setError(notificationErrorMessage('action'));
     } finally {
       setConfirmBusy(false);
       closeConfirm(true);
@@ -314,7 +334,7 @@ export default function NotificationsPage() {
         <div className="intel-banner">HQ only</div>
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={() => window.location.reload()} />}
+      {error && <p className={inlineErrorClass}>{error}</p>}
 
       <Card className="hud-card">
         <CardHeader>
