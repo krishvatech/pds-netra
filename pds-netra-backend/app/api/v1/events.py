@@ -33,6 +33,7 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
+public_router = APIRouter(prefix="/api/v1", tags=["events", "alerts"])
 
 ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
 
@@ -580,7 +581,7 @@ def create_alert_action(
     db.refresh(action)
     return AlertActionOut.model_validate(action)
 
-@router.get("/alerts/{public_id}/ack-link", response_class=HTMLResponse)
+@public_router.get("/alerts/{public_id}/ack-link", response_class=HTMLResponse)
 def acknowledge_alert_via_link(
     public_id: str,
     token: str = Query(...),

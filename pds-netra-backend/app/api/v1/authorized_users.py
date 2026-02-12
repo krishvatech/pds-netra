@@ -27,6 +27,7 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 from ...core.request_limits import enforce_upload_limit, read_upload_bytes_async
 from ...models.authorized_user import AuthorizedUser
 from ...models.godown import Godown
+from ...core.auth import UserContext, get_current_user
 from ...schemas.authorized_user import (
     AuthorizedUserCreate,
     AuthorizedUserUpdate,
@@ -38,6 +39,23 @@ from ...services.watchlist import _compute_embedding_from_image, _hash_embedding
 router = APIRouter(prefix="/api/v1/authorized-users", tags=["authorized-users"])
 logger = logging.getLogger("authorized_users")
 
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
+
+
+def _authorized_user_query_for_user(db: Session, user: UserContext):
+    query = db.query(AuthorizedUser)
+    if _is_admin(user):
+        return query
+    if not user.user_id:
+        return query.filter(AuthorizedUser.godown_id == "__forbidden__")
+    return query.join(Godown, Godown.id == AuthorizedUser.godown_id).filter(
+        Godown.created_by_user_id == user.user_id
+    )
+
 
 @router.get("", response_model=List[AuthorizedUserResponse])
 def list_authorized_users(
@@ -48,10 +66,11 @@ def list_authorized_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> List[AuthorizedUser]:
     """List all authorized users with optional filters."""
     page_size = clamp_page_size(page_size)
-    query = db.query(AuthorizedUser)
+    query = _authorized_user_query_for_user(db, user)
     
     if godown_id:
         query = query.filter(AuthorizedUser.godown_id == godown_id)
@@ -71,18 +90,26 @@ def list_authorized_users(
 
 
 @router.get("/{person_id}", response_model=AuthorizedUserResponse)
-def get_authorized_user(person_id: str, db: Session = Depends(get_db)) -> AuthorizedUser:
+def get_authorized_user(
+    person_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> AuthorizedUser:
     """Get details of a specific authorized user."""
-    user = db.get(AuthorizedUser, person_id)
-    if not user:
+    if _is_admin(user):
+        record = db.get(AuthorizedUser, person_id)
+    else:
+        record = _authorized_user_query_for_user(db, user).filter(AuthorizedUser.person_id == person_id).first()
+    if not record:
         raise HTTPException(status_code=404, detail="Authorized user not found")
-    return user
+    return record
 
 
 @router.post("", status_code=201, response_model=AuthorizedUserResponse)
 def create_authorized_user(
     req: AuthorizedUserCreate,
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> AuthorizedUser:
     """Create a new authorized user."""
     person_id = req.person_id.strip()
@@ -105,6 +132,10 @@ def create_authorized_user(
                 status_code=404,
                 detail=f"Godown {req.godown_id} not found"
             )
+        if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+    elif not _is_admin(user):
+        raise HTTPException(status_code=400, detail="godown_id is required")
     
     # Create new user
     new_user = AuthorizedUser(
@@ -154,10 +185,14 @@ def update_authorized_user(
     person_id: str,
     req: AuthorizedUserUpdate,
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> AuthorizedUser:
     """Update an existing authorized user."""
-    user = db.get(AuthorizedUser, person_id)
-    if not user:
+    if _is_admin(user):
+        record = db.get(AuthorizedUser, person_id)
+    else:
+        record = _authorized_user_query_for_user(db, user).filter(AuthorizedUser.person_id == person_id).first()
+    if not record:
         raise HTTPException(status_code=404, detail="Authorized user not found")
     
     # Validate godown_id if being updated
@@ -169,17 +204,19 @@ def update_authorized_user(
                     status_code=404,
                     detail=f"Godown {req.godown_id} not found"
                 )
-        user.godown_id = req.godown_id if req.godown_id else None
+            if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+                raise HTTPException(status_code=403, detail="Forbidden")
+        record.godown_id = req.godown_id if req.godown_id else None
     
     if req.name is not None:
-        user.name = req.name
+        record.name = req.name
     if req.role is not None:
-        user.role = req.role
+        record.role = req.role
     if req.is_active is not None:
-        user.is_active = req.is_active
+        record.is_active = req.is_active
     
     db.commit()
-    db.refresh(user)
+    db.refresh(record)
 
     # Sync update to edge config if exits
     edge_path = _get_edge_config_path()
@@ -203,17 +240,24 @@ def update_authorized_user(
         except Exception as exc:
             logger.warning("Edge known_faces sync failed op=update person_id=%s err=%s", person_id, exc)
     
-    return user
+    return record
 
 
 @router.delete("/{person_id}")
-def delete_authorized_user(person_id: str, db: Session = Depends(get_db)) -> dict:
+def delete_authorized_user(
+    person_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     """Delete an authorized user."""
-    user = db.get(AuthorizedUser, person_id)
-    if not user:
+    if _is_admin(user):
+        record = db.get(AuthorizedUser, person_id)
+    else:
+        record = _authorized_user_query_for_user(db, user).filter(AuthorizedUser.person_id == person_id).first()
+    if not record:
         raise HTTPException(status_code=404, detail="Authorized user not found")
     
-    db.delete(user)
+    db.delete(record)
     db.commit()
 
     # Remove from edge config
@@ -237,7 +281,11 @@ def delete_authorized_user(person_id: str, db: Session = Depends(get_db)) -> dic
 
 
 @router.get("/sync/from-edge/{godown_id}")
-def sync_from_edge(godown_id: str, db: Session = Depends(get_db)) -> dict:
+def sync_from_edge(
+    godown_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     """
     Import authorized users from edge known_faces.json for a specific godown.
     This reads the edge config and creates/updates users in the database.
@@ -246,6 +294,8 @@ def sync_from_edge(godown_id: str, db: Session = Depends(get_db)) -> dict:
     godown = db.get(Godown, godown_id)
     if not godown:
         raise HTTPException(status_code=404, detail=f"Godown {godown_id} not found")
+    if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
     
     # Find the edge config file
     # Assuming edge config is at: pds-netra-edge/config/known_faces.json
@@ -379,6 +429,7 @@ async def register_authorized_user_with_face(
     is_active: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
     request=Depends(enforce_upload_limit),
 ) -> AuthorizedUser:
     """
@@ -405,6 +456,10 @@ async def register_authorized_user_with_face(
                 status_code=404,
                 detail=f"Godown {godown_id} not found"
             )
+        if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+    elif not _is_admin(user):
+        raise HTTPException(status_code=400, detail="godown_id is required")
 
     file_bytes = await read_upload_bytes_async(file)
     if not file_bytes:

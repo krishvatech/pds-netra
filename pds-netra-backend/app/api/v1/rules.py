@@ -12,13 +12,46 @@ from sqlalchemy.orm import Session
 from ...core.db import get_db
 import os
 from ...models.rule import Rule
+from ...models.godown import Godown
 from ...models.anpr_vehicle import AnprVehicle
 from ...services.rule_seed import seed_rules_for_godown
 from ...schemas.rule import RuleCreate, RuleOut, RuleUpdate
 from ...core.pagination import clamp_page_size
+from ...core.auth import UserContext, get_current_user
 
 
 router = APIRouter(prefix="/api/v1/rules", tags=["rules"])
+
+ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _is_admin(user: UserContext) -> bool:
+    return (user.role or "").upper() in ADMIN_ROLES
+
+
+def _rule_query_for_user(db: Session, user: UserContext):
+    query = db.query(Rule)
+    if _is_admin(user):
+        return query
+    if not user.user_id:
+        return query.filter(Rule.godown_id == "__forbidden__")
+    return query.join(Godown, Godown.id == Rule.godown_id).filter(Godown.created_by_user_id == user.user_id)
+
+
+def _get_rule_for_user(db: Session, rule_id: int, user: UserContext) -> Rule:
+    rule = _rule_query_for_user(db, user).filter(Rule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return rule
+
+
+def _can_access_godown_id(db: Session, user: UserContext, godown_id: str) -> bool:
+    if _is_admin(user):
+        return True
+    if not user.user_id:
+        return False
+    godown = db.get(Godown, godown_id)
+    return bool(godown and godown.created_by_user_id == user.user_id)
 
 PARAM_FIELDS = [
     "start_time",
@@ -118,9 +151,10 @@ def list_rules(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
     page_size = clamp_page_size(page_size)
-    query = db.query(Rule)
+    query = _rule_query_for_user(db, user)
     if godown_id:
         query = query.filter(Rule.godown_id == godown_id)
     if camera_id:
@@ -153,9 +187,10 @@ def list_active_rules(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
     page_size = clamp_page_size(page_size)
-    query = db.query(Rule).filter(Rule.enabled == True)  # noqa: E712
+    query = _rule_query_for_user(db, user).filter(Rule.enabled == True)  # noqa: E712
     if godown_id:
         query = query.filter(Rule.godown_id == godown_id)
     if camera_id:
@@ -167,7 +202,12 @@ def list_active_rules(
         .limit(page_size)
         .all()
     )
-    if not rules and godown_id and os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
+    if (
+        not rules
+        and godown_id
+        and os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}
+        and _can_access_godown_id(db, user, godown_id)
+    ):
         seed_rules_for_godown(db, godown_id)
         rules = (
             query.order_by(Rule.id.asc())
@@ -229,7 +269,13 @@ def list_active_rules(
 def create_rule(
     payload: RuleCreate,
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> RuleOut:
+    godown = db.get(Godown, payload.godown_id)
+    if not godown:
+        raise HTTPException(status_code=404, detail="Godown not found")
+    if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
     data = payload.model_dump()
     params = _extract_params(data)
     rule = Rule(
@@ -252,12 +298,16 @@ def update_rule(
     rule_id: int,
     payload: RuleUpdate,
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> RuleOut:
-    rule = db.get(Rule, rule_id)
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
+    rule = _get_rule_for_user(db, rule_id, user)
     data = payload.model_dump(exclude_unset=True)
     if "godown_id" in data:
+        godown = db.get(Godown, data["godown_id"])
+        if not godown:
+            raise HTTPException(status_code=404, detail="Godown not found")
+        if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
         rule.godown_id = data["godown_id"]
     if "camera_id" in data:
         rule.camera_id = data["camera_id"]
@@ -278,10 +328,9 @@ def update_rule(
 def delete_rule(
     rule_id: int,
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    rule = db.get(Rule, rule_id)
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
+    rule = _get_rule_for_user(db, rule_id, user)
     db.delete(rule)
     db.commit()
     return {"status": "deleted", "id": rule_id}

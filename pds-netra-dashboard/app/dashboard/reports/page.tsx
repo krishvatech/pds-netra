@@ -27,6 +27,11 @@ export default function ReportsPage() {
   const [hqError, setHqError] = useState<string | null>(null);
   const [hqLoading, setHqLoading] = useState(false);
   const [hqGenerating, setHqGenerating] = useState(false);
+  const user = useMemo(() => getUser(), []);
+  const isHqUser = useMemo(() => {
+    const role = String(user?.role || '').toUpperCase();
+    return role === 'HQ_ADMIN' || role === 'STATE_ADMIN';
+  }, [user]);
 
   useEffect(() => {
     if (!godownId) {
@@ -66,8 +71,8 @@ export default function ReportsPage() {
   }
 
   useEffect(() => {
-    loadHqReports();
-  }, []);
+    if (isHqUser) loadHqReports();
+  }, [isHqUser]);
 
   async function triggerReport(period: '24h' | '1h') {
     setHqError(null);
@@ -161,99 +166,108 @@ export default function ReportsPage() {
       <Card className="animate-fade-up hud-card">
         <CardHeader>
           <div className="text-lg font-semibold font-display">HQ Alert Reports</div>
-          <div className="text-sm text-slate-600">Digest reports sent to HQ only.</div>
+          <div className="text-sm text-slate-600">Digest reports sent to HQ and configured godown managers.</div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button onClick={() => triggerReport('24h')} disabled={hqGenerating}>
-              {hqGenerating ? 'Generating...' : 'Generate daily report'}
-            </Button>
-            <Button variant="outline" onClick={() => triggerReport('1h')} disabled={hqGenerating}>
-              Generate hourly report
-            </Button>
-            <Button className="btn-refresh" variant="outline" onClick={loadHqReports} disabled={hqLoading}>
-              Refresh list
-            </Button>
-          </div>
-
-          {hqError && <ErrorBanner message={hqError} onRetry={loadHqReports} />}
-
-          {hqLoading ? (
-            <div className="text-sm text-slate-600">Loading reports...</div>
+          {!isHqUser ? (
+            <div className="text-sm text-slate-500">
+              HQ report generation is limited to HQ/State admins, but email delivery can include your login if your
+              notification email is configured.
+            </div>
           ) : (
-            <div className="table-shell overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-400">
-                    <th className="py-2 pr-3">Generated</th>
-                    <th className="py-2 pr-3">Period</th>
-                    <th className="py-2 pr-3">Total alerts</th>
-                    <th className="py-2 pr-3">Critical open</th>
-                    <th className="py-2 pr-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hqReports.map((r) => (
-                    <Fragment key={r.id}>
-                      <tr className="border-t border-white/10">
-                        <td className="py-2 pr-3">{formatUtc(r.generated_at)}</td>
-                        <td className="py-2 pr-3">
-                          {formatUtc(r.period_start)} → {formatUtc(r.period_end)}
-                        </td>
-                        <td className="py-2 pr-3">{r.summary_json?.total_alerts ?? '-'}</td>
-                        <td className="py-2 pr-3">{r.summary_json?.open_critical_alerts ?? '-'}</td>
-                        <td className="py-2 pr-3">
-                          <Button variant="outline" onClick={() => toggleDeliveries(r.id)}>
-                            {deliveries[r.id] ? 'Hide deliveries' : 'View deliveries'}
-                          </Button>
-                        </td>
+            <>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <Button onClick={() => triggerReport('24h')} disabled={hqGenerating}>
+                  {hqGenerating ? 'Generating...' : 'Generate daily report'}
+                </Button>
+                <Button variant="outline" onClick={() => triggerReport('1h')} disabled={hqGenerating}>
+                  Generate hourly report
+                </Button>
+                <Button className="btn-refresh" variant="outline" onClick={loadHqReports} disabled={hqLoading}>
+                  Refresh list
+                </Button>
+              </div>
+
+              {hqError && <ErrorBanner message={hqError} onRetry={loadHqReports} />}
+
+              {hqLoading ? (
+                <div className="text-sm text-slate-600">Loading reports...</div>
+              ) : (
+                <div className="table-shell overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-400">
+                        <th className="py-2 pr-3">Generated</th>
+                        <th className="py-2 pr-3">Period</th>
+                        <th className="py-2 pr-3">Total alerts</th>
+                        <th className="py-2 pr-3">Critical open</th>
+                        <th className="py-2 pr-3">Actions</th>
                       </tr>
-                      {deliveries[r.id] && (
-                        <tr className="border-t border-white/10">
-                          <td colSpan={5} className="py-3">
-                            {deliveries[r.id].length === 0 ? (
-                              <div className="text-sm text-slate-500">No delivery records.</div>
-                            ) : (
-                              <div className="table-shell overflow-auto">
-                                <table className="min-w-full text-sm">
-                                  <thead>
-                                    <tr className="text-left text-slate-400">
-                                      <th className="py-2 pr-3">Channel</th>
-                                      <th className="py-2 pr-3">Target</th>
-                                      <th className="py-2 pr-3">Status</th>
-                                      <th className="py-2 pr-3">Attempts</th>
-                                      <th className="py-2 pr-3">Sent at</th>
-                                      <th className="py-2 pr-3">Last error</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {deliveries[r.id].map((d) => (
-                                      <tr key={d.id} className="border-t border-white/10">
-                                        <td className="py-2 pr-3">{d.channel}</td>
-                                        <td className="py-2 pr-3">{d.target}</td>
-                                        <td className="py-2 pr-3">{d.status}</td>
-                                        <td className="py-2 pr-3">{d.attempts}</td>
-                                        <td className="py-2 pr-3">{formatUtc(d.sent_at ?? null)}</td>
-                                        <td className="py-2 pr-3 text-xs text-slate-400">{d.last_error ?? '-'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </td>
+                    </thead>
+                    <tbody>
+                      {hqReports.map((r) => (
+                        <Fragment key={r.id}>
+                          <tr className="border-t border-white/10">
+                            <td className="py-2 pr-3">{formatUtc(r.generated_at)}</td>
+                            <td className="py-2 pr-3">
+                              {formatUtc(r.period_start)} → {formatUtc(r.period_end)}
+                            </td>
+                            <td className="py-2 pr-3">{r.summary_json?.total_alerts ?? '-'}</td>
+                            <td className="py-2 pr-3">{r.summary_json?.open_critical_alerts ?? '-'}</td>
+                            <td className="py-2 pr-3">
+                              <Button variant="outline" onClick={() => toggleDeliveries(r.id)}>
+                                {deliveries[r.id] ? 'Hide deliveries' : 'View deliveries'}
+                              </Button>
+                            </td>
+                          </tr>
+                          {deliveries[r.id] && (
+                            <tr className="border-t border-white/10">
+                              <td colSpan={5} className="py-3">
+                                {deliveries[r.id].length === 0 ? (
+                                  <div className="text-sm text-slate-500">No delivery records.</div>
+                                ) : (
+                                  <div className="table-shell overflow-auto">
+                                    <table className="min-w-full text-sm">
+                                      <thead>
+                                        <tr className="text-left text-slate-400">
+                                          <th className="py-2 pr-3">Channel</th>
+                                          <th className="py-2 pr-3">Target</th>
+                                          <th className="py-2 pr-3">Status</th>
+                                          <th className="py-2 pr-3">Attempts</th>
+                                          <th className="py-2 pr-3">Sent at</th>
+                                          <th className="py-2 pr-3">Last error</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {deliveries[r.id].map((d) => (
+                                          <tr key={d.id} className="border-t border-white/10">
+                                            <td className="py-2 pr-3">{d.channel}</td>
+                                            <td className="py-2 pr-3">{d.target}</td>
+                                            <td className="py-2 pr-3">{d.status}</td>
+                                            <td className="py-2 pr-3">{d.attempts}</td>
+                                            <td className="py-2 pr-3">{formatUtc(d.sent_at ?? null)}</td>
+                                            <td className="py-2 pr-3 text-xs text-slate-400">{d.last_error ?? '-'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                      {hqReports.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-slate-500">No HQ reports generated yet.</td>
                         </tr>
                       )}
-                    </Fragment>
-                  ))}
-                  {hqReports.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-slate-500">No HQ reports generated yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

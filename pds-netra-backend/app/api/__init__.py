@@ -6,7 +6,7 @@ application. The API is versioned under ``/api/v1``.
 """
 
 from fastapi import APIRouter, Depends
-from .v1.events import router as events_router
+from .v1.events import router as events_router, public_router as events_public_router
 from .v1.reports import router as reports_router
 from .v1.auth import router as auth_router
 from .v1.godowns import router as godowns_router
@@ -32,6 +32,7 @@ from ..core.rate_limit import rate_limit_dependency
 api_router = APIRouter()
 protected = [Depends(get_current_user), Depends(rate_limit_dependency)]
 api_router.include_router(events_router, dependencies=protected)
+api_router.include_router(events_public_router, dependencies=[Depends(rate_limit_dependency)])
 api_router.include_router(reports_router, dependencies=protected)
 api_router.include_router(auth_router, dependencies=[Depends(rate_limit_dependency)])
 api_router.include_router(godowns_router, dependencies=protected)

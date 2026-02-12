@@ -18,6 +18,7 @@ class AlertReport(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     scope: Mapped[str] = mapped_column(String(16), default="HQ")
+    godown_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

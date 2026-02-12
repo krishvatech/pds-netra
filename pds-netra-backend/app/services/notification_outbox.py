@@ -119,13 +119,41 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
         whatsapp_text += f"\nEvidence: {evidence}"
 
     email_subject = alert_title
+    details_display = details or "-"
+    evidence_safe = _safe(evidence) if evidence else ""
     email_body = (
-        f"<h3>{_safe(alert_title)}</h3>"
-        f"<p><strong>Godown:</strong> {_safe(godown_label)}<br/>"
-        f"<strong>Camera:</strong> {_safe(cam_label)}<br/>"
-        f"<strong>Time:</strong> {_safe(_format_ts(alert.start_time))}</p>"
-        f"<p><strong>Details:</strong> {_safe(details)}</p>"
+        "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; background:#f5f7fb; padding:20px;\">"
+        "<div style=\"max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;\">"
+        "<div style=\"background:#0f172a; color:#ffffff; padding:16px 20px;\">"
+        "<div style=\"font-size:12px; letter-spacing:0.12em; text-transform:uppercase; opacity:0.7;\">PDS Netra Alert</div>"
+        f"<div style=\"font-size:20px; font-weight:700; margin-top:4px;\">{_safe(alert_title)}</div>"
+        "</div>"
+        "<div style=\"padding:20px;\">"
+        f"<p style=\"margin:0 0 14px 0; font-size:14px; color:#0f172a;\"><strong>Details:</strong> {_safe(details_display)}</p>"
+        "<table style=\"width:100%; border-collapse:collapse; font-size:14px; color:#0f172a;\">"
+        "<tr>"
+        "<td style=\"padding:8px 0; color:#64748b; width:120px;\">Godown</td>"
+        f"<td style=\"padding:8px 0; font-weight:600;\">{_safe(godown_label)}</td>"
+        "</tr>"
+        "<tr>"
+        "<td style=\"padding:8px 0; color:#64748b;\">Camera</td>"
+        f"<td style=\"padding:8px 0; font-weight:600;\">{_safe(cam_label)}</td>"
+        "</tr>"
+        "<tr>"
+        "<td style=\"padding:8px 0; color:#64748b;\">Time</td>"
+        f"<td style=\"padding:8px 0; font-weight:600;\">{_safe(_format_ts(alert.start_time))}</td>"
+        "</tr>"
+        "</table>"
     )
+    if evidence:
+        email_body += (
+            "<div style=\"margin-top:16px; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;\">"
+            "<div style=\"font-size:13px; color:#0f172a; margin-bottom:8px;\"><strong>Evidence</strong></div>"
+            f"<a href=\"{evidence_safe}\" style=\"display:inline-block; background:#2563eb; color:#ffffff; text-decoration:none; padding:8px 12px; border-radius:8px; font-size:13px;\">View evidence</a>"
+            f"<div style=\"margin-top:8px; font-size:12px; color:#64748b; word-break:break-all;\">{evidence_safe}</div>"
+            "</div>"
+        )
+    email_body += "</div></div></div>"
     if evidence:
         email_body += f"<p><strong>Evidence:</strong> <a href=\"{evidence}\">{evidence}</a></p>"
 
@@ -139,7 +167,11 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
     if alert.public_id:
         link = f"{PUBLIC_BASE_URL}/dashboard/alerts/{alert.public_id}"
     if link:
-        email_body += f"<p><strong>Dashboard:</strong> <a href=\"{link}\">{link}</a></p>"
+        email_body += (
+            "<div style=\"max-width:640px; margin:12px auto 0; padding:0 20px;\">"
+            f"<div style=\"font-size:12px; color:#64748b;\">Dashboard: <a href=\"{_safe(link)}\">{_safe(link)}</a></div>"
+            "</div>"
+        )
 
     return NotificationContent(
         title=alert_title,
@@ -270,7 +302,25 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
 
     if ack_url:
         content.whatsapp_text = f"{content.whatsapp_text}\n\nAcknowledge: {ack_url}"
-        content.email_body += f"<p><strong>Acknowledge:</strong> <a href=\"{ack_url}\">{ack_url}</a></p>"
+        ack_button = (
+            "<div style=\"margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;\">"
+            "<div style=\"font-size:13px; color:#0f172a; margin-bottom:8px;\"><strong>Acknowledge</strong></div>"
+            f"<a href=\"{_safe(ack_url)}\" style=\"display:inline-block; background:#ea580c; color:#ffffff; text-decoration:none; padding:8px 12px; border-radius:8px; font-size:13px;\">Acknowledge alert</a>"
+            f"<div style=\"margin-top:8px; font-size:12px; color:#64748b; word-break:break-all;\">{_safe(ack_url)}</div>"
+            "</div>"
+        )
+        if content.media_url:
+            content.email_body = content.email_body.replace("</div></div></div>", f"{ack_button}</div></div></div>")
+        else:
+            content.email_body += (
+                "<div style=\"max-width:640px; margin:12px auto 0; padding:0 20px;\">"
+                "<div style=\"background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:12px;\">"
+                "<div style=\"font-size:13px; color:#9a3412; margin-bottom:8px;\"><strong>Acknowledge</strong></div>"
+                f"<a href=\"{_safe(ack_url)}\" style=\"display:inline-block; background:#ea580c; color:#ffffff; text-decoration:none; padding:8px 12px; border-radius:8px; font-size:13px;\">Acknowledge alert</a>"
+                f"<div style=\"margin-top:8px; font-size:12px; color:#9a3412; word-break:break-all;\">{_safe(ack_url)}</div>"
+                "</div>"
+                "</div>"
+            )
 
     created = 0
     now = datetime.datetime.now(datetime.timezone.utc)

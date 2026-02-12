@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 class AlertReportOut(BaseModel):
     id: str
     scope: str
+    godown_id: Optional[str] = None
     period_start: datetime
     period_end: datetime
     generated_at: datetime
@@ -27,6 +28,7 @@ class AlertReportOut(BaseModel):
 class AlertReportListItem(BaseModel):
     id: str
     scope: str
+    godown_id: Optional[str] = None
     period_start: datetime
     period_end: datetime
     generated_at: datetime

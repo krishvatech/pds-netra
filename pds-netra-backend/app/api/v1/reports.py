@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
-from ...core.auth import require_roles
+from ...core.auth import require_roles, UserContext
 from ...models.event import Alert, Event
 from ...models.dispatch_issue import DispatchIssue
 from ...models.alert_report import AlertReport
@@ -344,11 +344,23 @@ def export_movement_csv(
 def list_hq_reports(
     response: Response,
     limit: int = Query(30),
+    scope: str = Query("HQ"),
+    godown_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "GODOWN_MANAGER", "USER")),
 ):
     limit = clamp_limit(int(limit))
-    base_query = db.query(AlertReport).filter(AlertReport.scope == "HQ")
+    is_admin = user.role.upper() in {"STATE_ADMIN", "HQ_ADMIN"}
+    scope = scope if scope in {"HQ", "HQ_GODOWN"} else "HQ"
+    if not is_admin:
+        scope = "HQ_GODOWN"
+        godown_id = user.godown_id
+    base_query = db.query(AlertReport).filter(AlertReport.scope == scope)
+    if scope == "HQ_GODOWN":
+        if godown_id:
+            base_query = base_query.filter(AlertReport.godown_id == godown_id)
+        else:
+            base_query = base_query.filter(AlertReport.godown_id.is_(None))
     total = base_query.count()
     rows = base_query.order_by(AlertReport.generated_at.desc()).limit(limit).all()
     set_pagination_headers(response, total=total, page=1, page_size=limit)
@@ -359,11 +371,17 @@ def list_hq_reports(
 def get_hq_report(
     report_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "GODOWN_MANAGER", "USER")),
 ):
     report = db.get(AlertReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    is_admin = user.role.upper() in {"STATE_ADMIN", "HQ_ADMIN"}
+    if not is_admin:
+        if report.scope != "HQ_GODOWN":
+            raise HTTPException(status_code=403, detail="Forbidden")
+        if user.godown_id and report.godown_id != user.godown_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
     return report
 
 
@@ -374,12 +392,18 @@ def get_hq_report_deliveries(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
     db: Session = Depends(get_db),
-    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN")),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "GODOWN_MANAGER", "USER")),
 ):
     page_size = clamp_page_size(page_size)
     report = db.get(AlertReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    is_admin = user.role.upper() in {"STATE_ADMIN", "HQ_ADMIN"}
+    if not is_admin:
+        if report.scope != "HQ_GODOWN":
+            raise HTTPException(status_code=403, detail="Forbidden")
+        if user.godown_id and report.godown_id != user.godown_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
     base_query = (
         db.query(NotificationOutbox)
         .filter(NotificationOutbox.report_id == report.id)
@@ -404,4 +428,28 @@ def generate_hq_report_endpoint(
 ):
     period = period if period in {"24h", "1h"} else "24h"
     report = generate_hq_report(db, period=period, force=force)
+    return report
+
+
+@router.post("/hq/generate-godown", response_model=AlertReportOut)
+def generate_hq_report_for_godown(
+    period: str = Query("24h"),
+    force: bool = Query(False),
+    godown_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "GODOWN_MANAGER", "USER")),
+):
+    period = period if period in {"24h", "1h"} else "24h"
+    effective_godown = user.godown_id
+    if not effective_godown and user.role.upper() in {"STATE_ADMIN", "HQ_ADMIN"}:
+        effective_godown = godown_id
+    if not effective_godown:
+        raise HTTPException(status_code=400, detail="Missing godown_id for report generation")
+    report = generate_hq_report(
+        db,
+        period=period,
+        force=force,
+        godown_id=effective_godown,
+        scope="HQ_GODOWN",
+    )
     return report
