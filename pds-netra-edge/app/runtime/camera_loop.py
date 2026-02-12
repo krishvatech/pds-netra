@@ -548,6 +548,11 @@ def start_camera_loops(
             return None
 
     def _start_camera(camera: CameraConfig) -> None:
+        if not getattr(camera, "is_active", True):
+            logger.info("Skipping inactive camera: %s", camera.id)
+            with camera_lock:
+                started_cameras.discard(camera.id)
+            return
         with camera_lock:
             if camera.id in started_cameras:
                 return
@@ -1453,10 +1458,13 @@ def start_camera_loops(
                                         pass
                                 if restart_needed:
                                     _request_restart(existing_cam.id)
-                                    _start_camera(existing_cam)
+                                    if existing_cam.is_active:
+                                        _start_camera(existing_cam)
                                 continue
                             
                             if cam_id in started_cameras:
+                                continue
+                            if cam.get("is_active", True) is False:
                                 continue
                         role = str(cam.get("role") or "SECURITY").strip().upper()
                         modules_cfg = None
