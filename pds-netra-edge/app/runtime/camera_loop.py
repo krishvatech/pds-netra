@@ -509,6 +509,13 @@ def start_camera_loops(
                 ),
                 plate_class_names=anpr_cfg.plate_class_names,
             )
+            ocr_gpu = str(anpr_device).lower() != "cpu"
+            ocr_gpu_env = os.getenv("EDGE_ANPR_OCR_GPU", "").strip().lower()
+            if ocr_gpu_env in {"0", "false", "no", "n"}:
+                ocr_gpu = False
+            elif ocr_gpu_env in {"1", "true", "yes", "y"}:
+                ocr_gpu = True
+
             return AnprProcessor(
                 camera_id=camera.id,
                 godown_id=settings.godown_id,
@@ -518,7 +525,7 @@ def start_camera_loops(
                 plate_detector=plate_detector,
                 ocr_engine=None,
                 ocr_lang=anpr_cfg.ocr_lang,
-                ocr_gpu=str(anpr_device).lower() != "cpu",
+                ocr_gpu=ocr_gpu,
                 ocr_every_n=anpr_cfg.ocr_every_n,
                 ocr_min_conf=anpr_cfg.ocr_min_conf,
                 ocr_debug=anpr_cfg.ocr_debug,

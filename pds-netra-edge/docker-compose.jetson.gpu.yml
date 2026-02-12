@@ -15,6 +15,8 @@ services:
     env_file:
       - .env
     environment:
+      - GODOWN_ID=${GODOWN_ID}
+      - EDGE_BACKEND_TOKEN=nD3TVXZkGOLb-6_Vuf-WIdEDY9aDY6OO787lQ9Ay3wc
       - MQTT_BROKER_HOST=mosquitto
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility,graphics
@@ -25,6 +27,7 @@ services:
       - YOLO_CONFIG_DIR=/opt/app/.cache/Ultralytics
       - EDGE_FIRE_DEVICE=cuda
       - EDGE_LIVE_ANNOTATED_DIR=/live
+      - EDGE_OVERRIDE_DIR=/opt/app/data/edge_overrides
 
     runtime: nvidia
     volumes:
@@ -32,5 +35,7 @@ services:
       - ./data/ultralytics:/opt/app/.cache/Ultralytics
       - ./data/insightface:/root/.insightface
       - /data/pds-live:/live
+      - /data/pds-backend/edge_overrides:/opt/app/data/edge_overrides:ro
+      - /data/pds-backend/uploads:/opt/app/data/uploads:ro
     depends_on:
       - mosquitto

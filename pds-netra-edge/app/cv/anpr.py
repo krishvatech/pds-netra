@@ -38,6 +38,7 @@ os.environ["FLAGS_use_mkldnn"] = "0"
 os.environ["FLAGS_enable_pir_api"] = "0"
 os.environ["FLAGS_enable_pir_in_executor"] = "0"
 os.environ["FLAGS_enable_new_ir"] = "0"
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 try:
     import cv2  # type: ignore
@@ -348,6 +349,22 @@ def _merge_stacked_plates(plates: List[Tuple[str, float, List[int]]]) -> List[Tu
 
 def _init_paddle_ocr(paddleocr_cls, lang: str, use_gpu: bool):
     configs = [
+        # Prefer disabling doc orientation/unwarping/textline orientation on Jetson
+        # because these internal pipelines can trigger native crashes in some
+        # Paddle/PaddleOCR builds.
+        {
+            "lang": lang,
+            "use_gpu": use_gpu,
+            "use_angle_cls": True,
+            "enable_mkldnn": False,
+            "show_log": False,
+            "det_db_thresh": 0.10,
+            "det_db_box_thresh": 0.30,
+            "det_db_unclip_ratio": 2.0,
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": False,
+        },
         {
             "lang": lang,
             "use_angle_cls": True,
@@ -371,7 +388,7 @@ def _init_paddle_ocr(paddleocr_cls, lang: str, use_gpu: bool):
     logger = logging.getLogger("OcrEngine")
     last_exc = None
     for i, params in enumerate(configs):
-        if use_gpu:
+        if use_gpu and "use_gpu" not in params:
             params["use_gpu"] = use_gpu
         try:
             return paddleocr_cls(**params)
