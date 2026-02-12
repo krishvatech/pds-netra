@@ -16,7 +16,7 @@ services:
       - .env
     environment:
       - GODOWN_ID=${GODOWN_ID}
-      - EDGE_BACKEND_TOKEN=nD3TVXZkGOLb-6_Vuf-WIdEDY9aDY6OO787lQ9Ay3wc
+      - EDGE_BACKEND_TOKEN=${EDGE_BACKEND_TOKEN}
       - MQTT_BROKER_HOST=mosquitto
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility,graphics

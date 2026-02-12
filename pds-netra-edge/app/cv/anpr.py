@@ -936,7 +936,11 @@ class AnprProcessor:
 
         self.plate_detector = plate_detector
 
-        if ocr_engine is None:
+        ocr_disabled = os.getenv("EDGE_ANPR_DISABLE_OCR", "false").strip().lower() in {"1", "true", "yes", "y"}
+        if ocr_disabled:
+            self.ocr_engine = None
+            self.logger.warning("ANPR OCR disabled via EDGE_ANPR_DISABLE_OCR; plate OCR will be skipped.")
+        elif ocr_engine is None:
             try:
                 self.ocr_engine = OcrEngine(ocr_lang or ["en"], ocr_gpu or False)
                 self.logger.info("ANPR OCR engine initialized (PaddleOCR)")
