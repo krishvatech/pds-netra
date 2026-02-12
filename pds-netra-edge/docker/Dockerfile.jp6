@@ -36,7 +36,7 @@ RUN printf "numpy<2\n" > /tmp/constraints.txt && \
       pillow tqdm psutil matplotlib scipy py-cpuinfo && \
     python3 -m pip install -c /tmp/constraints.txt ultralytics==8.4.12 --no-deps && \
     python3 -m pip install -c /tmp/constraints.txt lap==0.5.12 && \
-    python3 -m pip install -c /tmp/constraints.txt \
+    python3 -m pip install --ignore-installed -c /tmp/constraints.txt \
         insightface==0.7.3 faiss-cpu==1.7.4 onnxruntime==1.16.3 \
         paddleocr==2.7.3 paddlepaddle==2.6.2
 

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { login } from '@/lib/api';
 import { getSessionUser, setSession } from '@/lib/auth';
+import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function LoginPage() {
   const router = useRouter();
