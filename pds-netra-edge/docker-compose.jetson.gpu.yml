@@ -17,7 +17,10 @@ services:
     environment:
       - GODOWN_ID=${GODOWN_ID}
       - EDGE_BACKEND_TOKEN=${EDGE_BACKEND_TOKEN}
-      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility,graphics
       - EDGE_CAMERAS_SOURCE=backend

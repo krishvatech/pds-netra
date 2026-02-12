@@ -37,3 +37,15 @@ class AuthorizedUserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AuthorizedUserFaceIndexItem(BaseModel):
+    """Compact face index payload for edge sync from backend DB."""
+    person_id: str
+    name: str
+    role: str | None
+    godown_id: str | None
+    embedding: list[float]
+
+    class Config:
+        from_attributes = True

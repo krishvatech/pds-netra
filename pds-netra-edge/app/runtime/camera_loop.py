@@ -48,7 +48,13 @@ from ..config import (
     ZoneConfig,
     CameraModules,
 )
-from ..cv.face_id import FaceRecognitionProcessor, FaceOverlay, load_known_faces, detect_faces
+from ..cv.face_id import (
+    FaceRecognitionProcessor,
+    FaceOverlay,
+    load_known_faces,
+    load_known_faces_from_backend,
+    detect_faces,
+)
 from ..cv.fire_detection import FireDetectionProcessor
 from ..watchlist.manager import WatchlistManager
 from ..watchlist.processor import WatchlistProcessor
@@ -691,7 +697,26 @@ def start_camera_loops(
                 fr_cam_cfg = FaceRecognitionCameraConfig(camera_id=camera.id, zone_id="all")
             if fr_cam_cfg is not None:
                 try:
-                    known_people = load_known_faces(fr_cfg.known_faces_file)
+                    backend_people = load_known_faces_from_backend(
+                        backend_url=(os.getenv("EDGE_BACKEND_URL") or "").rstrip("/"),
+                        godown_id=settings.godown_id,
+                        token=(os.getenv("EDGE_BACKEND_TOKEN") or "").strip() or None,
+                        timeout_sec=5.0,
+                    )
+                    if backend_people is not None:
+                        known_people = backend_people
+                        logger.info(
+                            "Loaded %d authorized users from backend DB for camera %s",
+                            len(known_people),
+                            camera.id,
+                        )
+                    else:
+                        known_people = load_known_faces(fr_cfg.known_faces_file)
+                        logger.info(
+                            "Loaded %d authorized users from local file for camera %s",
+                            len(known_people),
+                            camera.id,
+                        )
                     face_processor = FaceRecognitionProcessor(
                         camera_id=camera.id,
                         godown_id=settings.godown_id,
@@ -790,6 +815,8 @@ def start_camera_loops(
                 os.getenv("BACKEND_URL", "http://127.0.0.1:8001"),
             ).rstrip("/")
             last_test_video: dict[str, Optional[str]] = {"path": None}
+            face_sync_interval = float(os.getenv("EDGE_FACE_SYNC_INTERVAL_SEC", "30"))
+            last_face_sync = 0.0
 
             def _resolve_source_local() -> tuple[str, str, Optional[str]]:
                 nonlocal default_source_local
@@ -910,6 +937,7 @@ def start_camera_loops(
                 frame=None,
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
+                nonlocal last_face_sync
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     
                 if frame is not None:
@@ -921,6 +949,28 @@ def start_camera_loops(
     
                 if detect_classes_local:
                     objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
+
+                # Refresh known authorized users from backend DB at runtime.
+                if face_processor_local is not None:
+                    now_mono = time.monotonic()
+                    if now_mono - last_face_sync >= face_sync_interval:
+                        try:
+                            backend_people = load_known_faces_from_backend(
+                                backend_url=(os.getenv("EDGE_BACKEND_URL") or "").rstrip("/"),
+                                godown_id=settings.godown_id,
+                                token=(os.getenv("EDGE_BACKEND_TOKEN") or "").strip() or None,
+                                timeout_sec=3.0,
+                            )
+                            if backend_people is not None:
+                                face_processor_local.set_known_people(backend_people)
+                                logger.info(
+                                    "Loaded %d authorized users from backend DB for camera %s",
+                                    len(backend_people),
+                                    camera_obj.id,
+                                )
+                        except Exception:
+                            pass
+                        last_face_sync = now_mono
     
                 # Log per-frame counts for people and face recognition results.
                 person_count = sum(1 for obj in objects if obj.class_name == "person")

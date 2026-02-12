@@ -15,6 +15,8 @@ import logging
 import json
 import datetime
 import os
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Tuple
 
@@ -112,6 +114,57 @@ def load_known_faces(file_path: str) -> List[KnownPerson]:
                     continue
     except Exception as exc:
         logger.warning("Failed to load known faces from %s: %s", file_path, exc)
+    return known
+
+
+def load_known_faces_from_backend(
+    backend_url: str,
+    godown_id: str,
+    token: Optional[str] = None,
+    timeout_sec: float = 5.0,
+) -> Optional[List[KnownPerson]]:
+    """
+    Load known person embeddings from backend DB face-index API.
+    """
+    logger = logging.getLogger("face_id")
+    if not backend_url or not godown_id:
+        return None
+    base = backend_url.rstrip("/")
+    query = urllib.parse.urlencode({"godown_id": godown_id})
+    url = f"{base}/api/v1/authorized-users/face-index?{query}"
+    req = urllib.request.Request(url)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    known: List[KnownPerson] = []
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if not isinstance(payload, list):
+            return None
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            pid = item.get("person_id")
+            name = item.get("name")
+            role = item.get("role")
+            embedding = item.get("embedding")
+            if not (pid and name and isinstance(embedding, list)):
+                continue
+            try:
+                emb = [float(x) for x in embedding]
+            except Exception:
+                continue
+            known.append(
+                KnownPerson(
+                    person_id=str(pid),
+                    name=str(name),
+                    role=str(role or ""),
+                    embedding=emb,
+                )
+            )
+    except Exception as exc:
+        logger.warning("Failed to load known faces from backend: %s", exc)
+        return None
     return known
 
 
@@ -329,6 +382,18 @@ class FaceRecognitionProcessor:
         # Deduplication cache: maps (status, identifier) to last event time
         self.dedup_cache: Dict[Tuple[str, str], datetime.datetime] = {}
         self._last_face_log: Optional[datetime.datetime] = None
+
+    def set_known_people(self, known_people: List[KnownPerson]) -> None:
+        """Replace known people and rebuild index at runtime."""
+        self.known_people = known_people
+        self._index = _FaceIndex()
+        if np is not None and known_people:
+            try:
+                emb = np.vstack([np.asarray(kp.embedding, dtype="float32") for kp in known_people])
+                emb = np.vstack([_l2_normalize(e) for e in emb])
+                self._index.build(emb, list(range(len(known_people))))
+            except Exception:
+                self._index = _FaceIndex()
 
     def _determine_zone(self, bbox: List[int]) -> Optional[str]:
         """Return the zone ID whose polygon contains the bounding box center."""

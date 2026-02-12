@@ -32,6 +32,7 @@ from ...schemas.authorized_user import (
     AuthorizedUserCreate,
     AuthorizedUserUpdate,
     AuthorizedUserResponse,
+    AuthorizedUserFaceIndexItem,
 )
 from ...services.watchlist import _compute_embedding_from_image, _hash_embedding_vector
 
@@ -87,6 +88,28 @@ def list_authorized_users(
     )
     set_pagination_headers(response, total=total, page=page, page_size=page_size)
     return users
+
+
+@router.get("/face-index", response_model=List[AuthorizedUserFaceIndexItem])
+def get_authorized_user_face_index(
+    godown_id: str = Query(..., description="Godown ID for edge face index sync"),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> List[AuthorizedUser]:
+    """
+    Return active authorized users with embeddings for edge face recognition.
+
+    This endpoint is DB-driven and intended for edge sync. It only returns users
+    that have embeddings and are active.
+    """
+    query = _authorized_user_query_for_user(db, user).filter(
+        AuthorizedUser.is_active.is_(True),
+        AuthorizedUser.embedding.isnot(None),
+    )
+    query = query.filter(
+        (AuthorizedUser.godown_id == godown_id) | (AuthorizedUser.godown_id.is_(None))
+    )
+    return query.order_by(AuthorizedUser.person_id.asc()).all()
 
 
 @router.get("/{person_id}", response_model=AuthorizedUserResponse)
@@ -481,45 +504,7 @@ async def register_authorized_user_with_face(
     if not embedding_vector:
         raise HTTPException(status_code=500, detail="Failed to compute face embedding locally.")
 
-    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
-    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
-
-    if not edge_embedding_url:
-        raise HTTPException(
-            status_code=503,
-            detail="Backend embedding disabled: set EDGE_EMBEDDING_URL to your edge embedding service."
-        )
-
-    headers = {}
-    if edge_embedding_token:
-        headers["Authorization"] = f"Bearer {edge_embedding_token}"
-    files = {
-        "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
-    }
-    data = {
-        "person_id": person_id,
-        "name": name,
-        "role": role or "",
-        "godown_id": godown_id or "",
-    }
-    try:
-        resp = requests.post(
-            edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
-            headers=headers,
-            files=files,
-            data=data,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Edge embedding request failed: {exc}")
-
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Edge embedding failed ({resp.status_code}): {resp.text}",
-        )
-
-    # Create new user in DB
+    # Create new user in DB (DB is the source of truth).
     new_user = AuthorizedUser(
         person_id=person_id,
         name=name,
@@ -534,5 +519,41 @@ async def register_authorized_user_with_face(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # Optional best-effort edge sync (do not fail DB create if edge is unreachable).
+    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
+    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
+    if edge_embedding_url:
+        headers = {}
+        if edge_embedding_token:
+            headers["Authorization"] = f"Bearer {edge_embedding_token}"
+        files = {
+            "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
+        }
+        data = {
+            "person_id": person_id,
+            "name": name,
+            "role": role or "",
+            "godown_id": godown_id or "",
+        }
+        try:
+            resp = requests.post(
+                edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
+                headers=headers,
+                files=files,
+                data=data,
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Edge embedding sync failed person_id=%s status=%s body=%s",
+                    person_id,
+                    resp.status_code,
+                    resp.text,
+                )
+        except requests.RequestException as exc:
+            logger.warning("Edge embedding sync request failed person_id=%s err=%s", person_id, exc)
+    else:
+        logger.info("EDGE_EMBEDDING_URL not set; skipping optional edge embedding sync for person_id=%s", person_id)
     
     return new_user
