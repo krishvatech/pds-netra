@@ -34,6 +34,8 @@ services:
       - ./:/opt/app
       - ./data/ultralytics:/opt/app/.cache/Ultralytics
       - ./data/insightface:/root/.insightface
+      - ./data/paddleocr:/root/.paddleocr
+      - ./data/paddlex:/root/.paddlex
       - /data/pds-live:/live
       - /data/pds-backend/edge_overrides:/opt/app/data/edge_overrides:ro
       - /data/pds-backend/uploads:/opt/app/data/uploads:ro
