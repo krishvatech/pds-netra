@@ -172,6 +172,15 @@ def main(argv: List[str] | None = None) -> int:
         "tensorrt" if effective_device == "tensorrt" else "pytorch",
         effective_device,
     )
+    # Keep all inference modules aligned to the single resolved runtime device.
+    os.environ["EDGE_FIRE_DEVICE"] = effective_device
+    if settings.fire_detection is not None and settings.fire_detection.device != effective_device:
+        logger.info(
+            "Overriding fire_detection.device from %s to %s",
+            settings.fire_detection.device,
+            effective_device,
+        )
+        settings.fire_detection.device = effective_device
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
         backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))

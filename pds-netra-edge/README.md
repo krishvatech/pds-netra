@@ -49,6 +49,9 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Important for Jetson/Ultralytics compatibility:
+- `numpy` is pinned to `numpy==1.26.4` (`numpy<2`) in `requirements.txt`.
+
 Ultralytics will automatically download model weights on first run. For offline environments, download the weights ahead of time and adjust the `model_name` in `YoloDetector` accordingly.
 
 ## Running tests
@@ -65,7 +68,7 @@ pytest -q
 The edge node can operate on RTSP streams or local video files for development. To run against the sample configuration using local MP4 files:
 
 ```bash
-python -m app.main --config config/pds_netra_config.yaml --device cuda:0 --log-level DEBUG
+python -m app.main --config config/pds_netra_config.yaml --device auto --log-level DEBUG
 ```
 
 This will start the MQTT client, spawn a processing thread per camera, and emit dummy events to the configured broker. Logs will be printed to the console. Modify `config/pds_netra_config.yaml` or set environment variables (see `.env.example`) to point to your own cameras or broker.
@@ -85,6 +88,7 @@ If `--device` is not provided, the app auto-selects `cuda:0` when CUDA is availa
 Direct model inference paths in this repo:
 
 - `app/cv/yolo_detector.py`
+: `YoloDetector.__init__()` -> `YOLO(model_path)` model load
 : `YoloDetector.detect()` -> `self.model.predict(...)`
 : `YoloDetector.track()` -> `self.model.track(...)`
 - `app/cv/fire_detection.py`
@@ -106,6 +110,7 @@ Backend/library notes from scan:
 - `onnxruntime`: listed in `requirements.txt`; used indirectly by face/embedding stack, not as a direct detection entrypoint in edge runtime
 - `tensorrt`: used through Ultralytics engine export/load path in `app/cv/yolo_detector.py`
 - `deepstream`, `triton`, `cv2.dnn`: no direct runtime inference path found in current edge app code
+- `gstreamer`: present in Jetson Docker dependencies (`docker/Dockerfile.jp6`), not a direct Python inference path
 
 ## Jetson GPU Setup (JetPack 6.2.2 / L4T 36.5.0)
 
@@ -131,7 +136,9 @@ PY
 Run edge on GPU:
 
 ```bash
+python -m app.main --config config/pds_netra_config.yaml --device auto
 python3 -m app.main --config config/pds_netra_config.yaml --device cuda:0
+python3 -m app.main --config config/pds_netra_config.yaml --device tensorrt
 ```
 
 ## TensorRT Path
@@ -146,7 +153,7 @@ If your model is `.pt` and the `.engine` file is missing, the app auto-exports o
 You can also export manually:
 
 ```bash
-python3 scripts/export_tensorrt_engine.py --model animal.pt --imgsz 640 --half
+python3 scripts/export_engine.py --model models/fire.pt --imgsz 640 --half --dynamic
 ```
 
 The runtime also supports loading an explicit engine path (for example `animal.engine`) via `EDGE_YOLO_MODEL`.
@@ -156,18 +163,24 @@ The runtime also supports loading an explicit engine path (for example `animal.e
 Use the built-in benchmark/check script:
 
 ```bash
-python3 scripts/check_gpu_inference.py --model animal.pt --device cuda:0 --warmup 15 --runs 50
+python3 scripts/check_gpu_inference.py --model animal.pt --device cuda:0 --imgsz 640 --warmup 20 --iters 100
 ```
 
-It prints warmup/timed latency, FPS, and whether GPU path is active.
+It prints average latency, FPS, and `GPU USED: YES/NO`.
 
 While the app runs, confirm GPU activity with tegrastats:
 
 ```bash
-sudo tegrastats --interval 1000
+sudo tegrastats --interval 200
 ```
 
 Check for non-zero `GR3D_FREQ` while inference is running.
+
+Check which process is touching the GPU device node:
+
+```bash
+sudo fuser -v /dev/nvhost-gpu
+```
 
 Optional jtop monitoring:
 
@@ -175,6 +188,8 @@ Optional jtop monitoring:
 sudo -H pip3 install -U jetson-stats
 sudo jtop
 ```
+
+In `jtop`, open the GPU tab and confirm utilization/frequency rises during inference.
 
 ## Jetson live-lag tuning
 

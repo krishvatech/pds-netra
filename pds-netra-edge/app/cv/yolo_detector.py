@@ -86,6 +86,13 @@ class YoloDetector:
         v = (device or "cpu").strip().lower()
         if v == "cuda":
             return "cuda:0"
+        if v == "auto":
+            if torch is not None:
+                try:
+                    return "cuda:0" if torch.cuda.is_available() else "cpu"
+                except Exception:
+                    return "cpu"
+            return "cpu"
         return v
 
     def _should_use_tensorrt(self, model_name: str, device: str) -> bool:
@@ -144,8 +151,8 @@ class YoloDetector:
             return str(engine_file)
 
         export_cmd_hint = (
-            "python3 scripts/export_tensorrt_engine.py "
-            f"--model {shlex.quote(str(model_file))} --imgsz {self.imgsz or self._default_imgsz()}"
+            "python3 scripts/export_engine.py "
+            f"--model {shlex.quote(str(model_file))} --imgsz {self.imgsz or self._default_imgsz()} --half --dynamic"
         )
         self.logger.warning(
             "TensorRT engine not found at %s. Exporting from %s on first run. "
@@ -163,6 +170,14 @@ class YoloDetector:
         }
         if os.getenv("EDGE_TRT_HALF", "1").strip().lower() in {"1", "true", "yes", "y"}:
             export_kwargs["half"] = True
+        if os.getenv("EDGE_TRT_DYNAMIC", "0").strip().lower() in {"1", "true", "yes", "y"}:
+            export_kwargs["dynamic"] = True
+        batch_raw = os.getenv("EDGE_TRT_BATCH", "").strip()
+        if batch_raw:
+            try:
+                export_kwargs["batch"] = max(1, int(batch_raw))
+            except Exception:
+                pass
         workspace = os.getenv("EDGE_TRT_WORKSPACE_GB", "").strip()
         if workspace:
             try:
@@ -182,9 +197,9 @@ class YoloDetector:
 
     def _predict_device_arg(self):  # type: ignore[no-untyped-def]
         if self.backend == "tensorrt":
-            return 0
+            return "cuda"
         if self.runtime_device == "cuda:0":
-            return "cuda:0"
+            return 0
         return "cpu"
 
     def _class_name(self, class_id: int) -> str:
