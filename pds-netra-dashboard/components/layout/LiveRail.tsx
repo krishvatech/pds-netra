@@ -8,6 +8,7 @@ import { getAlertCues, onAlertCuesChange } from '@/lib/alertCues';
 import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
 
 const POLL_INTERVAL_MS = 15000;
+const MEDIA_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 function severityRank(sev: Severity) {
   if (sev === 'critical') return 3;
@@ -84,6 +85,25 @@ function alertDetail(alert: AlertItem): string | null {
     const name = alert.key_meta?.person_name ?? 'Unknown';
     const score = formatScore(alert.key_meta?.match_score);
     return score ? `Blacklisted: ${name} | Match ${score}` : `Blacklisted: ${name}`;
+  }
+  return null;
+}
+
+function resolveMediaUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${MEDIA_BASE}${url}`;
+  return url;
+}
+
+function alertSnapshotUrl(alert: AlertItem): string | null {
+  const snapshot = alert.key_meta?.snapshot_url;
+  if (typeof snapshot === 'string' && snapshot.trim()) {
+    return resolveMediaUrl(snapshot);
+  }
+  const image = alert.key_meta?.image_url;
+  if (typeof image === 'string' && image.trim()) {
+    return resolveMediaUrl(image);
   }
   return null;
 }
@@ -318,7 +338,9 @@ export function LiveRail() {
         {timeline.length === 0 && (
           <div className="text-sm text-slate-400">No open alerts right now.</div>
         )}
-        {timeline.map((alert) => (
+        {timeline.map((alert) => {
+          const snapshotUrl = alertSnapshotUrl(alert);
+          return (
           <div key={alert.id} className="alert-toast p-3">
             <div className="flex items-center justify-between">
               <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Alert</div>
@@ -327,6 +349,16 @@ export function LiveRail() {
             <div className="mt-1 text-sm font-semibold text-white">
               {alertTitle(alert)}
             </div>
+            {snapshotUrl ? (
+              <a href={snapshotUrl} target="_blank" rel="noreferrer" className="mt-2 block">
+                <img
+                  src={snapshotUrl}
+                  alt={`Snapshot ${alert.id}`}
+                  className="h-20 w-full rounded-lg object-cover border border-white/10"
+                  loading="lazy"
+                />
+              </a>
+            ) : null}
             {alertDetail(alert) ? (
               <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
             ) : null}
@@ -351,7 +383,7 @@ export function LiveRail() {
               Acknowledge
             </button>
           </div>
-        ))}
+        )})}
       </div>
     </aside>
   );
@@ -370,6 +402,7 @@ export function MobileRail() {
 
   if (!mounted || !uiPrefs.railOpen) return null;
   const latest = alerts[0];
+  const latestSnapshot = latest ? alertSnapshotUrl(latest) : null;
 
   if (!latest) return null;
 
@@ -384,6 +417,16 @@ export function MobileRail() {
         <div className="text-sm font-semibold text-white truncate">
           {alertTitle(latest)}
         </div>
+        {latestSnapshot ? (
+          <a href={latestSnapshot} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={latestSnapshot}
+              alt={`Snapshot ${latest.id}`}
+              className="h-14 w-full rounded-md object-cover border border-white/10"
+              loading="lazy"
+            />
+          </a>
+        ) : null}
         {alertDetail(latest) ? (
           <div className="text-xs text-slate-300 truncate">{alertDetail(latest)}</div>
         ) : null}
