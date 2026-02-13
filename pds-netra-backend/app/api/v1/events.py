@@ -12,8 +12,8 @@ from __future__ import annotations
 from typing import List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 import json
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
@@ -141,19 +141,60 @@ def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
 
 
 def _event_to_item(event: Event) -> dict:
-    image_url = event.image_url
-    if image_url and "/media/snapshots/" in image_url:
+    snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
+
+    def _to_snapshot_relpath(value: str) -> Optional[str]:
+        raw = value.strip()
+        if not raw:
+            return None
         try:
-            parsed = urlparse(image_url)
-            path = parsed.path
-            if path.startswith("/media/snapshots/"):
-                rel = path.replace("/media/snapshots/", "")
-                snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
-                file_path = snapshots_root / rel
-                if not file_path.exists():
-                    image_url = None
+            parsed = urlsplit(raw)
+            path = parsed.path or raw
         except Exception:
-            pass
+            path = raw
+        marker = "/media/snapshots/"
+        if marker in path:
+            return path.split(marker, 1)[1].lstrip("/")
+        marker = "/snapshots/"
+        if marker in path:
+            return path.split(marker, 1)[1].lstrip("/")
+        return None
+
+    image_url: Optional[str] = None
+    candidates: list[str] = []
+    if isinstance(event.image_url, str) and event.image_url.strip():
+        candidates.append(event.image_url.strip())
+    meta = event.meta if isinstance(event.meta, dict) else {}
+    extra = meta.get("extra") if isinstance(meta, dict) else None
+    if isinstance(extra, dict):
+        for key in ("snapshot_url", "local_snapshot_path"):
+            candidate = extra.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                candidates.append(candidate.strip())
+
+    for candidate in candidates:
+        rel = _to_snapshot_relpath(candidate)
+        if rel:
+            file_path = snapshots_root / rel
+            if file_path.exists():
+                image_url = f"/media/snapshots/{rel}"
+                break
+            # If caller already provided an API-style media path, keep it.
+            if candidate.startswith("/media/snapshots/"):
+                image_url = candidate
+                break
+        if candidate.startswith(("http://", "https://")):
+            image_url = candidate
+            break
+
+    if not image_url and event.event_id_edge:
+        inferred_rel = (
+            f"{event.godown_id}/{event.camera_id}/"
+            f"{event.timestamp_utc.date().isoformat()}/{event.event_id_edge}.jpg"
+        )
+        if (snapshots_root / inferred_rel).exists():
+            image_url = f"/media/snapshots/{inferred_rel}"
+
     return {
         "id": event.id,
         "event_id": event.event_id_edge,

@@ -5,6 +5,14 @@ import type { EventItem } from '@/lib/types';
 import { formatUtc, humanEventType, severityBadgeClass } from '@/lib/formatters';
 export function EventsTable({ events, showGodown = false }: { events: EventItem[]; showGodown?: boolean }) {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001';
+  const resolveSnapshot = (event: EventItem) => {
+    const direct = event.image_url;
+    const metaSnapshot =
+      ((event.meta as any)?.extra?.snapshot_url as string | undefined) ??
+      ((event.meta as any)?.snapshot_url as string | undefined) ??
+      null;
+    return resolveMediaUrl(direct || metaSnapshot || undefined);
+  };
   const resolveMediaUrl = (url?: string | null) => {
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
@@ -63,8 +71,8 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
               <TD>{e.camera_id}</TD>
               <TD>{e.meta?.zone_id ?? '-'}</TD>
               <TD>
-                {e.image_url ? (
-                  <Link className="text-sm underline" href={resolveMediaUrl(e.image_url)} target="_blank" rel="noreferrer">
+                {resolveSnapshot(e) ? (
+                  <Link className="text-sm underline" href={resolveSnapshot(e)} target="_blank" rel="noreferrer">
                     View
                   </Link>
                 ) : (

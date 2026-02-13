@@ -195,6 +195,17 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         inferred_zone = _infer_zone_id(event_in.bbox, camera.zones_json)
         if inferred_zone:
             meta["zone_id"] = inferred_zone
+    # Keep snapshot URL redundantly in both Event.image_url and meta.extra.snapshot_url
+    # because some producers populate only one of these.
+    extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
+    image_url = event_in.image_url
+    if not image_url:
+        candidate_snapshot = extra.get("snapshot_url")
+        if isinstance(candidate_snapshot, str) and candidate_snapshot.strip():
+            image_url = candidate_snapshot.strip()
+    if image_url:
+        extra.setdefault("snapshot_url", image_url)
+    meta["extra"] = extra
     if event_in.event_type in {"ANPR_HIT", "FIRE_DETECTED"}:
         existing = (
             db.query(Event)
@@ -217,7 +228,7 @@ def handle_incoming_event(event_in: EventIn, db: Session) -> Event:
         timestamp_utc=event_in.timestamp_utc,
         bbox=str(event_in.bbox) if event_in.bbox else None,
         track_id=event_in.track_id,
-        image_url=event_in.image_url,
+        image_url=image_url,
         clip_url=event_in.clip_url,
         meta=meta,
     )
