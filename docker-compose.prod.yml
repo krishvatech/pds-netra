@@ -32,11 +32,18 @@ services:
     env_file:
       - ./deployment/env/backend.env
     depends_on:
+<<<<<<< HEAD
       - backend
       - mosquitto
     volumes:
       - ./deployment/data/backend:/opt/app/data
       - /data/pds-live:/data/pds-live
+=======
+      - mosquitto
+      - backend
+    volumes:
+      - ./deployment/env/backend.env:/opt/app/.env:ro
+>>>>>>> 2f77490 (upadte)
     command: ["python", "-m", "app.worker"]
 
   dashboard:
