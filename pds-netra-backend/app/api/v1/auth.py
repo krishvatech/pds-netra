@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...core.auth import UserContext, get_optional_user
 from ...core.db import get_db
-from ...core.security import create_access_token, hash_password, verify_password
+from ...core.security import create_access_token, decode_access_token, hash_password, verify_password
 from ...models.app_user import AppUser
 
 
@@ -58,6 +58,25 @@ def _build_login_response(
             "role": role,
             "district": None,
         },
+    }
+
+
+def _extract_bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    if not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    return token or None
+
+
+def _user_payload(*, user_id: str, username: str, role: str) -> dict:
+    return {
+        "id": user_id,
+        "username": username,
+        "name": username.title(),
+        "role": role,
+        "district": None,
     }
 
 
@@ -123,3 +142,53 @@ def register(
 
     token = "demo-token" if _auth_disabled() else create_access_token(sub=user.username, role=role, user_id=user.id)
     return _build_login_response(username=user.username, role=role, user_id=user.id, token=token)
+
+
+@router.get("/session")
+def session(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    token = _extract_bearer_token(authorization) or request.cookies.get("pdsnetra_session")
+
+    # Dev/PoC mode: keep session endpoint available even without explicit token.
+    if _auth_disabled():
+        if token:
+            try:
+                claims = decode_access_token(token)
+                user_id = str(claims.get("user_id") or "demo")
+                username = str(claims.get("sub") or "demo")
+                role = str(claims.get("role") or "STATE_ADMIN").upper()
+                return {"user": _user_payload(user_id=user_id, username=username, role=role)}
+            except Exception:
+                pass
+        return {"user": _user_payload(user_id="demo", username="demo", role="STATE_ADMIN")}
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        claims = decode_access_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    username = str(claims.get("sub") or "").strip()
+    user_id = str(claims.get("user_id") or "").strip()
+    role = str(claims.get("role") or "USER").strip().upper()
+    if not username or not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token claims")
+
+    user = db.query(AppUser).filter(AppUser.id == user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return {"user": _user_payload(user_id=user.id, username=user.username, role=(user.role or role).upper())}
+
+
+@router.post("/logout")
+def logout(response: Response) -> dict:
+    # Compatibility endpoint when auth calls are routed directly to backend.
+    response.delete_cookie("pdsnetra_session", path="/")
+    response.delete_cookie("pdsnetra_user", path="/")
+    return {"status": "ok"}
