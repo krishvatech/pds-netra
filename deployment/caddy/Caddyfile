@@ -1,8 +1,9 @@
 {$CADDY_DOMAIN} {
     encode gzip
 
-    # API must always go to backend
-    reverse_proxy /api/* backend:8001
+    # Route all v1 API calls through Next.js API proxy.
+    # This allows cookie session -> Authorization header translation.
+    reverse_proxy /api/v1/* dashboard:3000
 
     # Media served by backend
     reverse_proxy /media/* backend:8001

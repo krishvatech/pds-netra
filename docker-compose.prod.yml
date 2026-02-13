@@ -24,11 +24,7 @@ services:
       - /data/pds-live:/data/pds-live
     command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"]
 
-<<<<<<< HEAD
   backend-worker:
-=======
-  worker:
->>>>>>> 8e19976 (update)
     build:
       context: ./pds-netra-backend
       dockerfile: Dockerfile
@@ -36,17 +32,11 @@ services:
     env_file:
       - ./deployment/env/backend.env
     depends_on:
-<<<<<<< HEAD
-      - mosquitto
-      - backend
-=======
       - backend
       - mosquitto
     volumes:
-      - ./data/backend:/opt/app/data
-      - ./deployment/env/backend.env:/opt/app/.env:ro
+      - ./deployment/data/backend:/opt/app/data
       - /data/pds-live:/data/pds-live
->>>>>>> 8e19976 (update)
     command: ["python", "-m", "app.worker"]
 
   dashboard:
