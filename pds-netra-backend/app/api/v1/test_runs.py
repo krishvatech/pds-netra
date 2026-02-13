@@ -23,7 +23,7 @@ from ...services.test_runs import (
     write_edge_override,
 )
 from ...core.db import SessionLocal
-from ...models.godown import Godown
+from ...models.godown import Camera, Godown
 from ...models.event import Alert
 from ...core.pagination import clamp_page_size
 from ...core.request_limits import enforce_upload_limit, copy_upload_file
@@ -83,6 +83,33 @@ def _cleanup_media(godown_id: str, camera_id: str, keep_run_id: Optional[str] = 
                         target.unlink()
                     except Exception:
                         pass
+
+
+def _set_camera_source(
+    *,
+    godown_id: str,
+    camera_id: str,
+    source_type: str,
+    source_path: Optional[str] = None,
+    source_run_id: Optional[str] = None,
+) -> None:
+    with SessionLocal() as db:
+        camera = (
+            db.query(Camera)
+            .filter(Camera.godown_id == godown_id, Camera.id == camera_id)
+            .first()
+        )
+        if not camera:
+            return
+        camera.source_type = source_type
+        if source_type == "test":
+            camera.source_path = source_path
+            camera.source_run_id = source_run_id
+        else:
+            camera.source_path = None
+            camera.source_run_id = None
+        db.add(camera)
+        db.commit()
 
 
 @router.post("")
@@ -180,6 +207,14 @@ def activate_run(run_id: str, user: UserContext = Depends(get_current_user)) -> 
                 **({"override_path": override_str} if override_str else {}),
             },
         )
+        try:
+            _set_camera_source(
+                godown_id=str(run["godown_id"]),
+                camera_id=str(run["camera_id"]),
+                source_type="live",
+            )
+        except Exception:
+            pass
 
         raise HTTPException(
             status_code=409,
@@ -187,6 +222,16 @@ def activate_run(run_id: str, user: UserContext = Depends(get_current_user)) -> 
         )
     override_path = write_edge_override(run, mode="test")
     activated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    try:
+        _set_camera_source(
+            godown_id=str(run["godown_id"]),
+            camera_id=str(run["camera_id"]),
+            source_type="test",
+            source_path=str(saved_path),
+            source_run_id=str(run["run_id"]),
+        )
+    except Exception:
+        pass
 
     # DEACTIVATE others for the same camera
     all_runs = list_test_runs()
@@ -239,6 +284,14 @@ def deactivate_run(run_id: str, user: UserContext = Depends(get_current_user)) -
         raise HTTPException(status_code=404, detail="Test run not found")
     _assert_run_access(user, run)
     override_path = write_edge_override(run, mode="live")
+    try:
+        _set_camera_source(
+            godown_id=str(run["godown_id"]),
+            camera_id=str(run["camera_id"]),
+            source_type="live",
+        )
+    except Exception:
+        pass
     deactivated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     updated = update_test_run(
         run_id,
@@ -261,6 +314,14 @@ def delete_run(run_id: str, user: UserContext = Depends(get_current_user)) -> di
     # IMPORTANT: force edge back to live before deleting
     try:
         write_edge_override(run, mode="live")
+    except Exception:
+        pass
+    try:
+        _set_camera_source(
+            godown_id=str(run["godown_id"]),
+            camera_id=str(run["camera_id"]),
+            source_type="live",
+        )
     except Exception:
         pass
 

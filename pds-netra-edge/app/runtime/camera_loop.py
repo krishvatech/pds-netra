@@ -564,7 +564,21 @@ def start_camera_loops(
                 return
             started_cameras.add(camera.id)
         default_source = camera.rtsp_url
-        if camera.test_video:
+        if getattr(camera, "source_type", "live") == "test" and getattr(camera, "source_path", None):
+            source_path = Path(str(camera.source_path)).expanduser()
+            if source_path.is_absolute():
+                resolved_source = source_path
+            else:
+                resolved_source = (Path.cwd() / source_path).resolve()
+            if resolved_source.exists():
+                default_source = str(resolved_source)
+            else:
+                logger.warning(
+                    "DB test source not found for camera %s: %s (falling back to live source)",
+                    camera.id,
+                    resolved_source,
+                )
+        elif camera.test_video:
             test_path = Path(camera.test_video).expanduser()
             if test_path.is_absolute():
                 resolved_test = test_path
@@ -822,6 +836,20 @@ def start_camera_loops(
                 nonlocal default_source_local
                 # Determine "live" fallback dynamically from latest camera_obj state
                 live_fallback = camera_obj.rtsp_url or default_source_local
+                if getattr(camera_obj, "source_type", "live") == "test" and getattr(camera_obj, "source_path", None):
+                    source_path = Path(str(camera_obj.source_path)).expanduser()
+                    if source_path.is_absolute():
+                        resolved_source = source_path
+                    else:
+                        resolved_source = (Path.cwd() / source_path).resolve()
+                    if resolved_source.exists():
+                        return str(resolved_source), "test", getattr(camera_obj, "source_run_id", None)
+                    logger.warning(
+                        "DB test source not found for camera %s: %s (falling back to live source)",
+                        camera_obj.id,
+                        resolved_source,
+                    )
+
                 if camera_obj.test_video:
                     test_path = Path(camera_obj.test_video).expanduser()
                     if test_path.is_absolute():
@@ -1458,6 +1486,10 @@ def start_camera_loops(
                         rtsp_url = cam.get("rtsp_url") or cam.get("rtsp")
                         if not rtsp_url:
                             continue
+                        source_type_raw = str(cam.get("source_type") or "live").strip().lower()
+                        source_type = source_type_raw if source_type_raw in {"live", "test"} else "live"
+                        source_path = cam.get("source_path")
+                        source_run_id = cam.get("source_run_id")
                         zones = []
                         zones_raw = cam.get("zones_json")
                         if zones_raw:
@@ -1481,6 +1513,15 @@ def start_camera_loops(
                                 restart_needed = False
                                 if existing_cam.rtsp_url != rtsp_url:
                                     existing_cam.rtsp_url = rtsp_url
+                                    restart_needed = True
+                                if getattr(existing_cam, "source_type", "live") != source_type:
+                                    existing_cam.source_type = source_type
+                                    restart_needed = True
+                                if getattr(existing_cam, "source_path", None) != source_path:
+                                    existing_cam.source_path = source_path
+                                    restart_needed = True
+                                if getattr(existing_cam, "source_run_id", None) != source_run_id:
+                                    existing_cam.source_run_id = source_run_id
                                     restart_needed = True
                                 new_test_video = cam.get("test_video")
                                 if existing_cam.test_video != new_test_video:
@@ -1527,6 +1568,9 @@ def start_camera_loops(
                         new_camera = CameraConfig(
                             id=cam_id,
                             rtsp_url=rtsp_url,
+                            source_type=source_type,
+                            source_path=str(source_path) if source_path else None,
+                            source_run_id=str(source_run_id) if source_run_id else None,
                             role=role,
                             role_explicit=bool(cam.get("role")),
                             modules=modules_cfg,

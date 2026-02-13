@@ -26,6 +26,12 @@ def _apply_lightweight_migrations() -> None:
                     conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
                 if "modules_json" not in cols:
                     conn.execute(text("ALTER TABLE cameras ADD COLUMN modules_json TEXT"))
+                if "source_type" not in cols:
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN source_type VARCHAR(16)"))
+                if "source_path" not in cols:
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN source_path VARCHAR(1024)"))
+                if "source_run_id" not in cols:
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN source_run_id VARCHAR(64)"))
     except Exception as exc:
         logger.warning("Lightweight migrations failed: %s", exc)
 

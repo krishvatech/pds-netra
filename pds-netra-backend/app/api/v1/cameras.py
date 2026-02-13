@@ -63,6 +63,9 @@ class CameraCreate(BaseModel):
     label: Optional[str] = None
     role: Optional[str] = None
     rtsp_url: str = Field(..., min_length=1)
+    source_type: Optional[str] = Field(default=None, pattern="^(live|test)$")
+    source_path: Optional[str] = None
+    source_run_id: Optional[str] = None
     is_active: bool = True
     modules: Optional[CameraModules] = None
 
@@ -71,6 +74,9 @@ class CameraUpdate(BaseModel):
     label: Optional[str] = None
     role: Optional[str] = None
     rtsp_url: Optional[str] = None
+    source_type: Optional[str] = Field(default=None, pattern="^(live|test)$")
+    source_path: Optional[str] = None
+    source_run_id: Optional[str] = None
     is_active: Optional[bool] = None
     modules: Optional[CameraModules] = None
 
@@ -94,6 +100,9 @@ def _camera_payload(camera: Camera) -> dict:
         "label": camera.label,
         "role": camera.role,
         "rtsp_url": camera.rtsp_url,
+        "source_type": camera.source_type or "live",
+        "source_path": camera.source_path,
+        "source_run_id": camera.source_run_id,
         "is_active": camera.is_active,
         "zones_json": camera.zones_json,
         "modules": _parse_modules(camera.modules_json),
@@ -235,6 +244,9 @@ def create_camera(
         label=payload.label,
         role=payload.role,
         rtsp_url=payload.rtsp_url,
+        source_type=payload.source_type or "live",
+        source_path=payload.source_path if (payload.source_type or "live") == "test" else None,
+        source_run_id=payload.source_run_id if (payload.source_type or "live") == "test" else None,
         is_active=payload.is_active,
         modules_json=modules_json,
     )
@@ -262,6 +274,15 @@ def update_camera(
         camera.role = payload.role
     if payload.rtsp_url is not None:
         camera.rtsp_url = payload.rtsp_url
+    if payload.source_type is not None:
+        camera.source_type = payload.source_type
+        if payload.source_type == "live":
+            camera.source_path = None
+            camera.source_run_id = None
+    if payload.source_path is not None:
+        camera.source_path = payload.source_path
+    if payload.source_run_id is not None:
+        camera.source_run_id = payload.source_run_id
     if payload.is_active is not None:
         camera.is_active = payload.is_active
     if payload.modules is not None:

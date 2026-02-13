@@ -40,6 +40,9 @@ class Camera(Base):
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)  # e.g. GATE, AISLE, PERIMETER
     rtsp_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    source_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     zones_json: Mapped[str | None] = mapped_column(String, nullable=True)
     modules_json: Mapped[str | None] = mapped_column(String, nullable=True)

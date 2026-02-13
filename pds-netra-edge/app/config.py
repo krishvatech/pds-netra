@@ -50,6 +50,9 @@ class CameraConfig:
     """Configuration for a single camera source."""
     id: str
     rtsp_url: str
+    source_type: str = "live"
+    source_path: Optional[str] = None
+    source_run_id: Optional[str] = None
     test_video: Optional[str] = None
     role: str = "SECURITY"
     # Track if role was explicitly provided in config to preserve legacy behavior.
@@ -476,9 +479,15 @@ def load_settings(config_path: str) -> Settings:
         role = str(role_raw or "SECURITY").strip().upper()
         modules_cfg = _parse_camera_modules(cam_dict.get("modules"))
         anpr_cam_cfg = _parse_camera_anpr_config(cam_dict)
+        source_type = str(cam_dict.get("source_type") or "live").strip().lower()
+        if source_type not in {"live", "test"}:
+            source_type = "live"
         cameras_cfg.append(CameraConfig(
             id=cam_id,
             rtsp_url=rtsp_url,
+            source_type=source_type,
+            source_path=cam_dict.get("source_path"),
+            source_run_id=cam_dict.get("source_run_id"),
             test_video=cam_dict.get('test_video'),
             role=role,
             role_explicit=role_explicit,

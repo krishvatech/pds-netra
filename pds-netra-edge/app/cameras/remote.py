@@ -109,6 +109,10 @@ def fetch_camera_configs(
         role_raw = c.get("role")
         role_explicit = role_raw is not None
         role = str(role_raw or "SECURITY").strip().upper()
+        source_type_raw = str(c.get("source_type") or "live").strip().lower()
+        source_type = source_type_raw if source_type_raw in {"live", "test"} else "live"
+        source_path = c.get("source_path")
+        source_run_id = c.get("source_run_id")
         modules_cfg = None
         modules_raw = c.get("modules")
         if isinstance(modules_raw, dict):
@@ -123,6 +127,9 @@ def fetch_camera_configs(
             CameraConfig(
                 id=str(cam_id),
                 rtsp_url=str(rtsp),
+                source_type=source_type,
+                source_path=str(source_path) if source_path else None,
+                source_run_id=str(source_run_id) if source_run_id else None,
                 test_video=c.get("test_video"),
                 role=role,
                 role_explicit=role_explicit,

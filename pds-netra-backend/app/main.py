@@ -85,6 +85,12 @@ def create_app() -> FastAPI:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
                     if "modules_json" not in cols:
                         conn.execute(text("ALTER TABLE cameras ADD COLUMN modules_json TEXT"))
+                    if "source_type" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN source_type VARCHAR(16)"))
+                    if "source_path" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN source_path VARCHAR(1024)"))
+                    if "source_run_id" not in cols:
+                        conn.execute(text("ALTER TABLE cameras ADD COLUMN source_run_id VARCHAR(64)"))
             if "godowns" in inspector.get_table_names():
                 cols = {col["name"] for col in inspector.get_columns("godowns")}
                 with engine.begin() as conn:
