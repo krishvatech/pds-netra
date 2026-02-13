@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from typing import List, Optional
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -97,6 +98,21 @@ def _camera_payload(camera: Camera) -> dict:
         "zones_json": camera.zones_json,
         "modules": _parse_modules(camera.modules_json),
     }
+
+
+def _live_root() -> Path:
+    return Path(
+        os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[3] / "data" / "live"))
+    ).expanduser()
+
+
+def _remove_live_latest_frame(godown_id: str, camera_id: str) -> None:
+    latest = _live_root() / godown_id / f"{camera_id}_latest.jpg"
+    try:
+        latest.unlink(missing_ok=True)
+    except Exception:
+        # Best effort cleanup; camera CRUD should not fail if file delete fails.
+        pass
 
 
 def _parse_zones(zones_json: str | None) -> List[dict]:
@@ -239,6 +255,7 @@ def update_camera(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     camera = _get_camera(db, camera_id, godown_id, user)
+    prev_is_active = camera.is_active
     if payload.label is not None:
         camera.label = payload.label
     if payload.role is not None:
@@ -253,6 +270,8 @@ def update_camera(
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    if prev_is_active and camera.is_active is False:
+        _remove_live_latest_frame(camera.godown_id, camera.id)
     return _camera_payload(camera)
 
 
@@ -264,6 +283,9 @@ def delete_camera(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     camera = _get_camera(db, camera_id, godown_id, user)
+    camera_key = camera.id
+    godown_key = camera.godown_id
     db.delete(camera)
     db.commit()
+    _remove_live_latest_frame(godown_key, camera_key)
     return {"status": "deleted", "camera_id": camera_id}

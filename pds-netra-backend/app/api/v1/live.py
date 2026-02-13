@@ -8,9 +8,12 @@ from pathlib import Path
 import os
 import time
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
 from ...core.pagination import clamp_page_size
+from ...core.db import get_db
+from ...models.godown import Camera
+from sqlalchemy.orm import Session
 
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -23,17 +26,18 @@ def list_live_cameras(
     godown_id: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
 ) -> dict:
     page_size = clamp_page_size(page_size)
-    live_root = _live_root()
-    godown_dir = live_root / godown_id
-    if not godown_dir.exists():
-        return {"godown_id": godown_id, "cameras": [], "total": 0, "page": page, "page_size": page_size}
-    cameras = []
-    for item in godown_dir.glob("*_latest.jpg"):
-        camera_id = item.name.replace("_latest.jpg", "")
-        cameras.append(camera_id)
-    cameras_sorted = sorted(cameras)
+    cameras_sorted = [
+        row[0]
+        for row in (
+            db.query(Camera.id)
+            .filter(Camera.godown_id == godown_id, Camera.is_active.is_(True))
+            .order_by(Camera.id.asc())
+            .all()
+        )
+    ]
     total = len(cameras_sorted)
     start = max((page - 1) * page_size, 0)
     end = start + page_size
