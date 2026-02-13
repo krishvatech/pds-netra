@@ -8,8 +8,24 @@ export const dynamic = 'force-dynamic';
 
 type RouteCtx = { params: { path: string[] } };
 
-function backendBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001').replace(/\/+$/, '');
+function backendBaseUrl(req: NextRequest): string {
+  const internal = (process.env.BACKEND_INTERNAL_API_BASE_URL || '').trim();
+  if (internal) return internal.replace(/\/+$/, '');
+
+  const configured = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim();
+  if (!configured) return 'http://127.0.0.1:8001';
+
+  // Avoid proxy self-loop when public base points to this same origin.
+  try {
+    const upstream = new URL(configured);
+    const current = req.nextUrl;
+    if (upstream.host === current.host) {
+      return 'http://backend:8001';
+    }
+  } catch {
+    // If not a valid absolute URL, use as-is.
+  }
+  return configured.replace(/\/+$/, '');
 }
 
 function decodeUserCookie(raw: string | undefined): any | null {
@@ -93,7 +109,7 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
     return resp;
   }
 
-  const upstreamUrl = `${backendBaseUrl()}/api/v1/${joined}${req.nextUrl.search}`;
+  const upstreamUrl = `${backendBaseUrl(req)}/api/v1/${joined}${req.nextUrl.search}`;
   const headers = buildForwardHeaders(req);
   if (joined === 'auth/login' || joined === 'auth/register') {
     headers.delete('Authorization');

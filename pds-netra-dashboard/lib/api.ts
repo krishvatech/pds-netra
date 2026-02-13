@@ -43,7 +43,7 @@ import type {
   AnprDailyReportResponse,
   CsvImportSummary
 } from './types';
-import { clearSession, getUser } from './auth';
+import { clearSession, getToken, getUser } from './auth';
 
 const BASE_URL = '';// Prefer Next.js rewrites (/api/...) to avoid CORS in local dev.
 
@@ -63,6 +63,7 @@ function buildQuery(query?: Query): string {
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const user = typeof window !== 'undefined' ? getUser() : null;
+  const token = typeof window !== 'undefined' ? getToken() : null;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -78,6 +79,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
   if (user?.district) headers['X-User-District'] = String(user.district);
   if (user?.name) headers['X-User-Name'] = String(user.name);
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const resp = await fetch(url, {
     ...init,
@@ -103,11 +105,13 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 async function apiFetchForm<T>(path: string, form: FormData): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const user = typeof window !== 'undefined' ? getUser() : null;
+  const token = typeof window !== 'undefined' ? getToken() : null;
   const headers: Record<string, string> = {};
   if (user?.role) headers['X-User-Role'] = user.role;
   if (user?.godown_id) headers['X-User-Godown'] = String(user.godown_id);
   if (user?.district) headers['X-User-District'] = String(user.district);
   if (user?.name) headers['X-User-Name'] = String(user.name);
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const resp = await fetch(url, {
     method: 'POST',
