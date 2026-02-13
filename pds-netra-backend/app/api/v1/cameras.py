@@ -5,7 +5,7 @@ Camera configuration endpoints.
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -41,7 +41,9 @@ def _camera_query_for_user(db: Session, user: UserContext):
 
 class ZoneIn(BaseModel):
     id: str = Field(..., min_length=1)
-    polygon: List[List[int]]
+    # Accept both normalized points (0..1 floats) and absolute pixel points.
+    # Tuple enforces exactly 2 coordinates per point.
+    polygon: List[Tuple[float, float]]
 
 
 class ZoneUpdate(BaseModel):

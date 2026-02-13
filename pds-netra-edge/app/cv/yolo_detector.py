@@ -58,7 +58,25 @@ class YoloDetector:
 
         self.runtime_device = self._normalize_device(device)
         self.backend = "tensorrt" if self._should_use_tensorrt(model_name, self.runtime_device) else "pytorch"
+        if self.backend == "pytorch" and self.runtime_device == "cuda:0" and not self._cuda_available():
+            self.logger.warning(
+                "CUDA requested but unavailable. Falling back to CPU inference for model=%s",
+                model_name,
+            )
+            self.runtime_device = "cpu"
         self.model_path = self._resolve_model_path(model_name)
+        if self.backend == "tensorrt" and not self._cuda_available():
+            if self.model_path.lower().endswith(".pt"):
+                self.logger.warning(
+                    "TensorRT requested but CUDA unavailable. Falling back to PyTorch CPU for model=%s",
+                    self.model_path,
+                )
+                self.backend = "pytorch"
+                self.runtime_device = "cpu"
+            else:
+                raise RuntimeError(
+                    f"TensorRT engine requires CUDA, but torch.cuda.is_available() is False: {self.model_path}"
+                )
         if self.backend == "tensorrt":
             self.model_path = self._resolve_or_export_tensorrt_engine(self.model_path)
 
@@ -94,6 +112,15 @@ class YoloDetector:
                     return "cpu"
             return "cpu"
         return v
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        if torch is None:
+            return False
+        try:
+            return bool(torch.cuda.is_available())
+        except Exception:
+            return False
 
     def _should_use_tensorrt(self, model_name: str, device: str) -> bool:
         if device == "tensorrt":

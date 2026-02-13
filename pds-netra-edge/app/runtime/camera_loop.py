@@ -905,11 +905,20 @@ def start_camera_loops(
 
             if state_local.started_at_utc is None:
                 state_local.started_at_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-            live_dir = os.getenv(
-                "EDGE_LIVE_ANNOTATED_DIR",
-                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "live"),
+            # Keep edge writer path aligned with backend reader path.
+            # Precedence:
+            # 1) EDGE_LIVE_DIR (new explicit edge override)
+            # 2) EDGE_LIVE_ANNOTATED_DIR (legacy env name kept for compatibility)
+            # 3) PDS_LIVE_DIR (backend env; convenient shared value)
+            # 4) repo-default sibling backend data path
+            live_dir = (
+                os.getenv("EDGE_LIVE_DIR")
+                or os.getenv("EDGE_LIVE_ANNOTATED_DIR")
+                or os.getenv("PDS_LIVE_DIR")
+                or str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "live")
             )
             live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
+            logger.info("Live frame output path camera=%s path=%s", camera_obj.id, live_latest_path)
             live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
             live_raw_fallback_sec = max(0.2, _read_float_env("EDGE_LIVE_RAW_FALLBACK_SEC", 1.5))
             live_write_state_lock = threading.Lock()

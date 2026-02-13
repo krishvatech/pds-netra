@@ -202,6 +202,17 @@ EDGE_RTSP_CAPTURE_BUFFER=1
 
 `EDGE_LIVE_LATEST_FRAME_MODE` keeps only the most recent camera frame for processing (drops stale buffered frames), which prevents multi-minute RTSP lag when inference runs slower than camera FPS.
 
+Important deployment note:
+- Edge writer and backend reader must point to the same live-frame directory.
+- Set one shared path for both services (example below):
+
+```bash
+export PDS_LIVE_DIR=/var/lib/pds/live
+export EDGE_LIVE_DIR=/var/lib/pds/live
+```
+
+Edge runtime also supports legacy `EDGE_LIVE_ANNOTATED_DIR`, but `EDGE_LIVE_DIR` is preferred.
+
 ## Using Docker
 
 A `docker-compose.yml` file is provided for local development. It starts a Mosquitto broker and the edge node container. To build and run the stack:
