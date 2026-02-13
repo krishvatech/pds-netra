@@ -232,11 +232,77 @@ def _targets_from_recipients(
 ) -> list[tuple[str, str]]:
     targets: list[tuple[str, str]] = []
     for r in recipients:
-        if not r.is_enabled:
+        # Backward/forward compatibility:
+        # - Some schemas use `is_enabled`, some don't.
+        # - Some schemas use `target`, others use `destination`.
+        is_enabled = getattr(r, "is_enabled", True)
+        if not is_enabled:
             continue
-        norm = _normalize_target(r.channel, r.target)
+        recipient_target = getattr(r, "target", None) or getattr(r, "destination", None)
+        norm = _normalize_target(getattr(r, "channel", None), recipient_target)
         if norm:
             targets.append(norm)
+    return targets
+
+
+def _parse_scoped_targets(raw: str, *, godown_id: Optional[str], channel: str) -> list[tuple[str, str]]:
+    targets: list[tuple[str, str]] = []
+    if not raw:
+        return targets
+    # Format: GDN_001:+911111111111,+922222222222;GDN_002:+933333333333
+    for item in raw.split(";"):
+        if ":" not in item:
+            continue
+        gid, dests = item.split(":", 1)
+        if godown_id and gid.strip() != godown_id:
+            continue
+        for dest in dests.split(","):
+            norm = _normalize_target(channel, dest)
+            if norm:
+                targets.append(norm)
+    return targets
+
+
+def _targets_from_env(*, godown_id: Optional[str], scopes: Iterable[str]) -> list[tuple[str, str]]:
+    scope_set = {str(s).upper() for s in scopes}
+    targets: list[tuple[str, str]] = []
+
+    if "HQ" in scope_set:
+        for value in (os.getenv("WATCHLIST_NOTIFY_HQ_EMAILS", "") or "").split(","):
+            norm = _normalize_target("EMAIL", value)
+            if norm:
+                targets.append(norm)
+        for value in (os.getenv("WATCHLIST_NOTIFY_HQ_WHATSAPP", "") or "").split(","):
+            norm = _normalize_target("WHATSAPP", value)
+            if norm:
+                targets.append(norm)
+        for value in (os.getenv("WATCHLIST_NOTIFY_HQ_CALLS", "") or "").split(","):
+            norm = _normalize_target("CALL", value)
+            if norm:
+                targets.append(norm)
+
+    if "GODOWN_MANAGER" in scope_set and godown_id:
+        targets.extend(
+            _parse_scoped_targets(
+                os.getenv("WATCHLIST_NOTIFY_GODOWN_EMAILS", "") or "",
+                godown_id=godown_id,
+                channel="EMAIL",
+            )
+        )
+        targets.extend(
+            _parse_scoped_targets(
+                os.getenv("WATCHLIST_NOTIFY_GODOWN_WHATSAPP", "") or "",
+                godown_id=godown_id,
+                channel="WHATSAPP",
+            )
+        )
+        targets.extend(
+            _parse_scoped_targets(
+                os.getenv("WATCHLIST_NOTIFY_GODOWN_CALLS", "") or "",
+                godown_id=godown_id,
+                channel="CALL",
+            )
+        )
     return targets
 
 
@@ -246,12 +312,17 @@ def resolve_notification_targets(
     godown_id: Optional[str],
     scopes: Iterable[str],
 ) -> list[tuple[str, str]]:
+    scopes = tuple(scopes)
     endpoints = db.query(NotificationEndpoint).all()
     recipients = db.query(NotificationRecipient).all()
     targets: list[tuple[str, str]] = []
     for scope in scopes:
         targets.extend(_targets_from_endpoints(endpoints, godown_id=godown_id, scope=scope))
-    targets = _merge_targets(targets, _targets_from_recipients(recipients))
+    targets = _merge_targets(
+        targets,
+        _targets_from_recipients(recipients),
+        _targets_from_env(godown_id=godown_id, scopes=scopes),
+    )
     return targets
 
 
