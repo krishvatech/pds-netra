@@ -109,23 +109,21 @@ def validate_runtime_settings() -> None:
         if not auth_disabled and len(jwt_secret) < 20:
             logger.warning("PDS_JWT_SECRET is weak or missing; dev fallback will be used.")
 
-    # Provider validation: log and fail-safe to log providers when missing config.
+    # WhatsApp provider validation (Meta Cloud API only).
     provider = (os.getenv("WHATSAPP_PROVIDER") or "").lower().strip()
-    http_url = (os.getenv("WHATSAPP_HTTP_URL") or os.getenv("WHATSAPP_WEBHOOK_URL") or "").strip()
-    if provider in {"http", "meta"} and not http_url:
-        logger.error("WHATSAPP_PROVIDER=%s but WHATSAPP_HTTP_URL missing; disabling WhatsApp provider.", provider)
-        os.environ["WHATSAPP_PROVIDER"] = "log"
-    if provider == "twilio":
+    if not provider:
+        provider = "meta"
+        os.environ["WHATSAPP_PROVIDER"] = provider
+    if provider == "meta":
         missing = []
-        if not (os.getenv("TWILIO_MSG_ACCOUNT_SID") or os.getenv("TWILIO_ACCOUNT_SID")):
-            missing.append("TWILIO_MSG_ACCOUNT_SID/TWILIO_ACCOUNT_SID")
-        if not (os.getenv("TWILIO_MSG_AUTH_TOKEN") or os.getenv("TWILIO_AUTH_TOKEN")):
-            missing.append("TWILIO_MSG_AUTH_TOKEN/TWILIO_AUTH_TOKEN")
-        if not os.getenv("TWILIO_WHATSAPP_FROM"):
-            missing.append("TWILIO_WHATSAPP_FROM")
+        if not (os.getenv("META_WA_ACCESS_TOKEN") or "").strip():
+            missing.append("META_WA_ACCESS_TOKEN")
+        if not (os.getenv("META_WA_PHONE_NUMBER_ID") or "").strip():
+            missing.append("META_WA_PHONE_NUMBER_ID")
         if missing:
-            logger.error("Twilio WhatsApp enabled but missing %s; disabling WhatsApp provider.", ", ".join(missing))
-            os.environ["WHATSAPP_PROVIDER"] = "log"
+            logger.error("WHATSAPP_PROVIDER=meta but missing %s; WhatsApp sends will fail.", ", ".join(missing))
+    else:
+        logger.error("Unsupported WHATSAPP_PROVIDER=%s. Only 'meta' is supported.", provider)
 
     if env == "prod":
         smtp_host = os.getenv("SMTP_HOST") or ""
