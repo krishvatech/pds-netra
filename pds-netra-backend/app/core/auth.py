@@ -9,7 +9,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Optional
 
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, HTTPException, Depends, Request
 from .security import decode_access_token
 
 
@@ -44,6 +44,7 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
 
 
 def get_current_user(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_godown: Optional[str] = Header(None, alias="X-User-Godown"),
     x_user_district: Optional[str] = Header(None, alias="X-User-District"),
@@ -56,9 +57,9 @@ def get_current_user(
             district=x_user_district,
             godown_id=x_user_godown,
         )
-    token = _extract_bearer_token(authorization)
+    token = _extract_bearer_token(authorization) or request.cookies.get("pdsnetra_session")
     if not token:
-        raise HTTPException(status_code=401, detail="Missing bearer token")
+        raise HTTPException(status_code=401, detail="Missing bearer/session token")
     claims: dict
     try:
         claims = decode_access_token(token)
@@ -83,6 +84,7 @@ def get_current_user(
 
 
 def get_optional_user(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_godown: Optional[str] = Header(None, alias="X-User-Godown"),
     x_user_district: Optional[str] = Header(None, alias="X-User-District"),
@@ -95,9 +97,11 @@ def get_optional_user(
             district=x_user_district,
             godown_id=x_user_godown,
         )
-    if not authorization:
+    token = _extract_bearer_token(authorization) or request.cookies.get("pdsnetra_session")
+    if not token:
         return None
     return get_current_user(
+        request=request,
         authorization=authorization,
         x_user_godown=x_user_godown,
         x_user_district=x_user_district,

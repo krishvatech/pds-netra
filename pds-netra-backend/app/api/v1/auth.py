@@ -7,7 +7,9 @@ and user profile for the dashboard to use.
 
 from __future__ import annotations
 
+import json
 import os
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -80,8 +82,31 @@ def _user_payload(*, user_id: str, username: str, role: str) -> dict:
     }
 
 
+def _set_session_cookies(response: Response, *, token: str, user: dict) -> None:
+    secure = (os.getenv("PDS_ENV") or os.getenv("APP_ENV") or "dev").strip().lower() == "prod"
+    max_age = 60 * 60 * 12  # 12 hours
+    response.set_cookie(
+        key="pdsnetra_session",
+        value=token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+        max_age=max_age,
+    )
+    response.set_cookie(
+        key="pdsnetra_user",
+        value=quote(json.dumps(user)),
+        httponly=False,
+        secure=secure,
+        samesite="lax",
+        path="/",
+        max_age=max_age,
+    )
+
+
 @router.post("/login")
-def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict:
+def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)) -> dict:
     # PoC-only fallback mode.
     if _auth_disabled():
         token = "demo-token"
@@ -100,12 +125,15 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict:
         role = (user.role or "USER").upper()
         user_id = user.id
         token = create_access_token(sub=user.username, role=role, user_id=user_id)
-    return _build_login_response(username=username, role=role, user_id=user_id, token=token)
+    out = _build_login_response(username=username, role=role, user_id=user_id, token=token)
+    _set_session_cookies(response, token=token, user=out["user"])
+    return out
 
 
 @router.post("/register")
 def register(
     payload: RegisterIn,
+    response: Response,
     db: Session = Depends(get_db),
     requester: UserContext | None = Depends(get_optional_user),
 ) -> dict:
@@ -141,7 +169,9 @@ def register(
     db.refresh(user)
 
     token = "demo-token" if _auth_disabled() else create_access_token(sub=user.username, role=role, user_id=user.id)
-    return _build_login_response(username=user.username, role=role, user_id=user.id, token=token)
+    out = _build_login_response(username=user.username, role=role, user_id=user.id, token=token)
+    _set_session_cookies(response, token=token, user=out["user"])
+    return out
 
 
 @router.get("/session")
