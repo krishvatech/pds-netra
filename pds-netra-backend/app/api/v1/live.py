@@ -12,7 +12,8 @@ import threading
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse
+from fastapi import Response
 from ...core.pagination import clamp_page_size
 from ...core.db import get_db
 from ...models.godown import Camera
@@ -156,25 +157,35 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
 
 
 @router.get("/frame/{godown_id}/{camera_id}")
-def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
+def latest_frame(godown_id: str, camera_id: str) -> Response:
     live_root = _live_root()
     latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
     if not latest_path.exists():
         raise HTTPException(status_code=404, detail="Live frame not available")
+
+    # IMPORTANT: Do NOT use FileResponse here because the file is continuously rewritten.
+    # FileResponse sets Content-Length from stat(); if the file changes mid-send -> h11 errors.
+    try:
+        data = latest_path.read_bytes()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read live frame: {exc}")
+
     meta = _frame_meta(latest_path)
     threshold_seconds = _stale_threshold_sec()
     stale = _is_stale(meta["age_seconds"], threshold_seconds)
+
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
+        "X-Frame-Stale": "1" if stale else "0",
+        "X-Frame-Stale-Threshold-Seconds": f"{threshold_seconds:.3f}",
     }
     if meta["captured_at_utc"] is not None:
         headers["X-Frame-Captured-At"] = str(meta["captured_at_utc"])
     if meta["age_seconds"] is not None:
         headers["X-Frame-Age-Seconds"] = f"{meta['age_seconds']:.3f}"
-    headers["X-Frame-Stale"] = "1" if stale else "0"
-    headers["X-Frame-Stale-Threshold-Seconds"] = f"{threshold_seconds:.3f}"
+
     if stale and meta["age_seconds"] is not None:
         _maybe_log_stale_frame(
             godown_id,
@@ -182,11 +193,8 @@ def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
             age_seconds=float(meta["age_seconds"]),
             threshold_seconds=threshold_seconds,
         )
-    return FileResponse(
-        latest_path,
-        media_type="image/jpeg",
-        headers=headers,
-    )
+
+    return Response(content=data, media_type="image/jpeg", headers=headers)
 
 
 @router.get("/frame-meta/{godown_id}/{camera_id}")
