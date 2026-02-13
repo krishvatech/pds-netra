@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     media_root = Path(__file__).resolve().parents[1] / "data" / "snapshots"
     annotated_root = Path(__file__).resolve().parents[1] / "data" / "annotated"
-    live_root = Path(__file__).resolve().parents[1] / "data" / "live"
+    live_root = Path(os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[1] / "data" / "live"))).expanduser()
     watchlist_root = Path(__file__).resolve().parents[1] / "data" / "watchlist"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")

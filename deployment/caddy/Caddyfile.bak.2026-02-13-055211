@@ -1,0 +1,14 @@
+cv.krishvatech.com {
+	encode gzip
+
+	# API should go to backend (FastAPI)
+	reverse_proxy /api/* backend:8001
+
+	# Media should go to backend
+	reverse_proxy /media/* backend:8001
+
+	# Everything else to dashboard (Next.js)
+	reverse_proxy /* dashboard:3000
+
+	tls {$CADDY_EMAIL}
+}

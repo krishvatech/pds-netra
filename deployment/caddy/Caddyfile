@@ -1,9 +1,13 @@
 {$CADDY_DOMAIN} {
     encode gzip
 
-    reverse_proxy /api/* dashboard:3000
+    # API must always go to backend
+    reverse_proxy /api/* backend:8001
+
+    # Media served by backend
     reverse_proxy /media/* backend:8001
 
+    # Everything else to dashboard (Next.js)
     reverse_proxy /* dashboard:3000
 
     tls {$CADDY_EMAIL}
