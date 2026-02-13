@@ -7,9 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import sys
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Tuple
@@ -27,18 +25,8 @@ from .mqtt_publisher import publish_watchlist_sync
 from .incident_lifecycle import touch_detection_timestamp
 
 _logger = logging.getLogger("watchlist")
-
-# -----------------------------------------------------------------------------
-# Embedding backend:
-# 1) Try edge tool (pds-netra-edge/tools/generate_face_embedding.py)
-# 2) Fallback to insightface directly (works on server if deps are installed)
-# -----------------------------------------------------------------------------
-
 _embedding_fn: Optional[Callable[[str], list[float]]] = None
 _embedding_fn_attempted = False
-
-_insightface_app = None
-_insightface_attempted = False
 
 
 def _utc_now() -> datetime:
@@ -204,198 +192,56 @@ def _hash_embedding_vector(embedding: Iterable[float]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-# -----------------------------------------------------------------------------
-# Embedding: option 1 (edge tool)
-# -----------------------------------------------------------------------------
-
-def _get_embedding_fn_from_edge_tool() -> Optional[Callable[[str], list[float]]]:
+def _get_embedding_fn() -> Optional[Callable[[str], list[float]]]:
     global _embedding_fn, _embedding_fn_attempted
     if _embedding_fn_attempted:
         return _embedding_fn
     _embedding_fn_attempted = True
-
-    # This only works when the repo layout contains pds-netra-edge at runtime.
     edge_path = Path(__file__).resolve().parents[3] / "pds-netra-edge"
     if not edge_path.exists():
-        _logger.debug("Edge tool path not present at runtime: %s", edge_path)
-        _embedding_fn = None
         return None
-
     if str(edge_path) not in sys.path:
         sys.path.append(str(edge_path))
-
     try:
-        from tools.generate_face_embedding import compute_embedding  # type: ignore
+        from tools.generate_face_embedding import compute_embedding
 
         _embedding_fn = compute_embedding
-        _logger.info("Using edge embedding tool: tools.generate_face_embedding.compute_embedding")
     except (ImportError, SystemExit) as exc:
-        _logger.debug("Watchlist edge embedding tool unavailable: %s", exc)
+        _logger.debug("Watchlist embedding tool unavailable: %s", exc)
         _embedding_fn = None
-
     return _embedding_fn
 
 
-# -----------------------------------------------------------------------------
-# Embedding: option 2 (backend insightface fallback)
-# -----------------------------------------------------------------------------
-
-def _get_insightface_app():
-    """
-    Lazy-init InsightFace app.
-    Returns prepared FaceAnalysis instance or None.
-    """
-    global _insightface_app, _insightface_attempted
-    if _insightface_attempted:
-        return _insightface_app
-    _insightface_attempted = True
-
-    try:
-        import insightface  # noqa: F401
-        from insightface.app import FaceAnalysis
-    except Exception as exc:
-        _logger.warning("InsightFace not available in backend env: %s", exc)
-        _insightface_app = None
-        return None
-
-    try:
-        # INSIGHTFACE_HOME can control model cache location
-        # If not set, InsightFace defaults to ~/.insightface (inside container -> /root/.insightface)
-        providers = None
-        try:
-            import onnxruntime as ort  # noqa: F401
-
-            # Prefer CUDA if available, else CPU
-            available = []
-            try:
-                import onnxruntime as ort2
-                available = ort2.get_available_providers()
-            except Exception:
-                pass
-
-            if "CUDAExecutionProvider" in available:
-                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            else:
-                providers = ["CPUExecutionProvider"]
-        except Exception as exc:
-            _logger.warning("onnxruntime not available; insightface may fail: %s", exc)
-            providers = None
-
-        app = FaceAnalysis(name="buffalo_l", providers=providers)
-        # det_size used for detection; 640x640 ok
-        app.prepare(ctx_id=0 if providers and "CUDAExecutionProvider" in providers else -1, det_size=(640, 640))
-
-        _insightface_app = app
-        _logger.info("Using backend InsightFace fallback for embeddings (providers=%s)", providers)
-        return _insightface_app
-
-    except Exception as exc:
-        _logger.exception("Failed to init InsightFace FaceAnalysis: %s", exc)
-        _insightface_app = None
-        return None
-
-
-def _compute_embedding_via_insightface(image_path: Path) -> Optional[list[float]]:
-    """
-    Compute embedding from an image file using InsightFace.
-    Returns list[float] or None.
-    """
-    if not image_path.exists():
-        return None
-
-    app = _get_insightface_app()
-    if app is None:
-        return None
-
-    try:
-        import cv2
-        import numpy as np
-
-        img = cv2.imread(str(image_path))
-        if img is None:
-            return None
-
-        faces = app.get(img)
-        if not faces:
-            return None
-
-        # pick largest face
-        def _area(f):
-            b = getattr(f, "bbox", None)
-            if b is None:
-                return 0.0
-            x1, y1, x2, y2 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
-            return max(0.0, (x2 - x1) * (y2 - y1))
-
-        best = max(faces, key=_area)
-
-        emb = getattr(best, "embedding", None)
-        if emb is None:
-            return None
-
-        emb = np.asarray(emb, dtype="float32").reshape(-1)
-        # normalize
-        norm = float((emb**2).sum() ** 0.5) if emb.size else 0.0
-        if norm > 0:
-            emb = emb / norm
-
-        return [float(x) for x in emb.tolist()]
-
-    except Exception as exc:
-        _logger.warning("InsightFace embedding generation failed for %s: %s", image_path, exc)
-        return None
-
-
-# -----------------------------------------------------------------------------
-# Unified embedding function
-# -----------------------------------------------------------------------------
-
 def _compute_embedding_from_image(image_path: Path) -> Optional[list[float]]:
-    """
-    Try edge tool first (if repo layout exists at runtime),
-    otherwise fallback to InsightFace inside backend.
-    """
+    fn = _get_embedding_fn()
+    if fn is None:
+        return None
     if not image_path.exists():
         return None
-
-    # 1) Try edge embedding tool (local/dev)
-    fn = _get_embedding_fn_from_edge_tool()
-    if fn is not None:
-        try:
-            vec = fn(str(image_path))
-            return vec if vec else None
-        except ValueError as exc:
-            _logger.debug("Edge embedding skipped: %s", exc)
-        except Exception as exc:
-            _logger.warning("Edge embedding generation failed for %s: %s", image_path, exc)
-
-    # 2) Fallback to backend InsightFace (server-friendly)
-    return _compute_embedding_via_insightface(image_path)
+    try:
+        return fn(str(image_path))
+    except ValueError as exc:
+        _logger.debug("Watchlist embedding skipped: %s", exc)
+        return None
+    except Exception as exc:
+        _logger.warning("Watchlist embedding generation failed for %s: %s", image_path, exc)
+        return None
 
 
 def _auto_embed_from_images(db: Session, person: WatchlistPerson, images: list[WatchlistPersonImage]) -> None:
     if not images:
         return
-
     payloads: list[WatchlistEmbeddingIn] = []
-
     for img in images:
         storage_path = img.storage_path
         if not storage_path:
             continue
-
-        p = Path(storage_path)
-
-        # If storage_path is not a real file path (e.g. S3 key), this will not exist.
-        # In that case, skip auto-embed here (you can extend storage provider to download if needed).
-        if not p.exists():
-            _logger.debug("Watchlist image storage_path not present on disk: %s", storage_path)
+        path = Path(storage_path)
+        if not path.exists():
             continue
-
-        embedding = _compute_embedding_from_image(p)
+        embedding = _compute_embedding_from_image(path)
         if not embedding:
             continue
-
         payloads.append(
             WatchlistEmbeddingIn(
                 embedding=embedding,
@@ -404,13 +250,10 @@ def _auto_embed_from_images(db: Session, person: WatchlistPerson, images: list[W
             )
         )
         break
-
     if not payloads:
         return
-
     _logger.info("Auto-generated watchlist embedding for person %s", person.id)
     add_embeddings(db, person=person, embeddings=payloads)
-
 
 def build_sync_payload(db: Session) -> dict:
     persons = (
@@ -499,7 +342,6 @@ def ingest_face_match_event(db: Session, event_in: FaceMatchEventIn) -> Tuple[Fa
         if person is not None:
             person_name = person.name
             event_meta["person_name"] = person.name
-
     event = Event(
         godown_id=event_in.godown_id,
         camera_id=event_in.camera_id,
@@ -529,13 +371,7 @@ def ingest_face_match_event(db: Session, event_in: FaceMatchEventIn) -> Tuple[Fa
             correlation_id=event_in.correlation_id,
         )
         if alert_created:
-            notify_blacklist_alert(
-                db,
-                alert,
-                person_name=person_name,
-                match_score=person_candidate.match_score,
-                snapshot_url=evidence.snapshot_url,
-            )
+            notify_blacklist_alert(db, alert, person_name=person_name, match_score=person_candidate.match_score, snapshot_url=evidence.snapshot_url)
     return face_event, alert_created
 
 
@@ -556,7 +392,6 @@ def _ensure_blacklist_alert(
         Alert.start_time >= cutoff,
         Alert.status.in_(["OPEN", "ACK"]),
     )
-
     if person_id:
         candidates = None
         if db.bind and db.bind.dialect.name == "sqlite":
@@ -570,7 +405,6 @@ def _ensure_blacklist_alert(
                     candidates = []
             except Exception:
                 candidates = q.all()
-
         if candidates is not None:
             existing = None
             for alert in candidates:
@@ -592,7 +426,6 @@ def _ensure_blacklist_alert(
     summary = "Blacklisted person detected"
     if person_name:
         summary = f"Blacklisted person detected: {person_name}"
-
     alert = Alert(
         godown_id=event.godown_id,
         camera_id=event.camera_id,

@@ -502,11 +502,7 @@ async def register_authorized_user_with_face(
             pass
 
     if not embedding_vector:
-        # The real reason will be logged by watchlist._compute_embedding_from_image
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to compute face embedding. Check backend logs for onnxruntime/insightface/model-path error."
-        )
+        raise HTTPException(status_code=500, detail="Failed to compute face embedding locally.")
 
     # Create new user in DB (DB is the source of truth).
     new_user = AuthorizedUser(
