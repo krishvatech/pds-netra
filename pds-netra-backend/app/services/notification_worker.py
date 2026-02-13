@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import smtplib
+import requests
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -19,7 +20,7 @@ from urllib.parse import urlparse
 import urllib.request
 import urllib.error
 from ..core.config import settings
-from ..integrations.twilio_client import get_twilio_messaging_client, get_twilio_voice_client
+from ..integrations.twilio_client import get_twilio_voice_client
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -54,38 +55,108 @@ class WhatsAppLogProvider(NotificationProvider):
         return None
 
 
-class WhatsAppHttpProvider(NotificationProvider):
-    def __init__(self, url: str, token: Optional[str]) -> None:
-        self.url = url
-        self.token = token
+def _normalize_meta_whatsapp_target(target: str) -> str:
+    raw = (target or "").strip()
+    if not raw:
+        raise RuntimeError("Meta WhatsApp target is empty")
+    if raw.lower().startswith("whatsapp:"):
+        raw = raw.split(":", 1)[1].strip()
+    if raw.startswith("+"):
+        raw = raw[1:]
+    if not raw.isdigit() or len(raw) < 8:
+        raise RuntimeError(f"Invalid WhatsApp target for Meta: {target!r}")
+    return raw
+
+
+def _post_meta_whatsapp_message(
+    *,
+    access_token: str,
+    api_version: str,
+    phone_number_id: str,
+    payload: dict,
+) -> dict:
+    url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=(5, 20))
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Meta WhatsApp request failed: {exc}") from exc
+
+    if response.status_code // 100 != 2:
+        detail = response.text
+        try:
+            err_json = response.json()
+            error_obj = err_json.get("error") if isinstance(err_json, dict) else None
+            if isinstance(error_obj, dict):
+                detail = (
+                    f"type={error_obj.get('type')} "
+                    f"code={error_obj.get('code')} "
+                    f"message={error_obj.get('message')}"
+                )
+        except Exception:
+            pass
+        raise RuntimeError(f"Meta WhatsApp send failed status={response.status_code} detail={detail}")
+
+    try:
+        return response.json()
+    except Exception as exc:
+        raise RuntimeError(f"Meta WhatsApp send succeeded but response was not JSON: {exc}") from exc
+
+
+class WhatsAppMetaProvider(NotificationProvider):
+    def __init__(self) -> None:
+        self.access_token = (os.getenv("META_WA_ACCESS_TOKEN") or "").strip()
+        self.phone_number_id = (os.getenv("META_WA_PHONE_NUMBER_ID") or "").strip()
+        self.api_version = (os.getenv("META_WA_API_VERSION") or "v20.0").strip() or "v20.0"
+        missing = []
+        if not self.access_token:
+            missing.append("META_WA_ACCESS_TOKEN")
+        if not self.phone_number_id:
+            missing.append("META_WA_PHONE_NUMBER_ID")
+        if missing:
+            raise RuntimeError(f"Meta WhatsApp disabled (missing env): {', '.join(missing)}")
 
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
-        if not self.url:
-            raise RuntimeError("WHATSAPP_HTTP_URL is not configured")
-        payload = {"to": to, "message": message, "media_url": media_url}
-        body = json.dumps(payload).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
-        req = urllib.request.Request(self.url, data=body, headers=headers)
+        target = _normalize_meta_whatsapp_target(to)
+        msg = (message or "").strip()
+        use_image = bool(media_url and str(media_url).startswith("https://"))
+        payload: dict
+        if use_image:
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": target,
+                "type": "image",
+                "image": {"link": media_url, "caption": msg[:900]},
+            }
+        else:
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": target,
+                "type": "text",
+                "text": {"body": msg},
+            }
+
+        logger.info("Meta WhatsApp send attempt to=%s mode=%s", target, "image" if use_image else "text")
         try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                status = getattr(resp, "status", None) or resp.getcode()
-                data = resp.read().decode("utf-8")
-            try:
-                payload = json.loads(data)
-                return payload.get("message_id") or payload.get("id")
-            except Exception:
-                logging.getLogger("notification_worker").warning(
-                    "WhatsApp HTTP response parse failed status=%s response_len=%s",
-                    status,
-                    len(data) if data else 0,
-                )
-                return None
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"WhatsApp HTTP send failed status={exc.code}") from exc
+            data = _post_meta_whatsapp_message(
+                access_token=self.access_token,
+                api_version=self.api_version,
+                phone_number_id=self.phone_number_id,
+                payload=payload,
+            )
         except Exception as exc:
-            raise RuntimeError(f"WhatsApp HTTP send failed: {exc}") from exc
+            logger.warning("Meta WhatsApp send failed to=%s err=%s", target, exc)
+            raise
+
+        messages = data.get("messages") if isinstance(data, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                return first.get("id")
+        return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
         return None
@@ -93,37 +164,18 @@ class WhatsAppHttpProvider(NotificationProvider):
     def send_call(self, to: str, message: str) -> Optional[str]:
         return None
 
-class WhatsAppTwilioProvider(NotificationProvider):
-    def __init__(self) -> None:
-        self.from_whatsapp = (
-            settings.TWILIO_WHATSAPP_FROM or os.getenv("TWILIO_WHATSAPP_FROM")
-        )
-        if not self.from_whatsapp:
-            raise RuntimeError("Twilio WhatsApp 'from' number is missing (TWILIO_WHATSAPP_FROM).")
-        self.client = get_twilio_messaging_client()
 
-    def _normalize_to(self, to: str) -> str:
-        t = (to or "").strip()
-        if not t:
-            raise RuntimeError("WhatsApp target is empty")
-        if t.startswith("whatsapp:"):
-            return t
-        if t.startswith("+"):
-            return f"whatsapp:{t}"
-        return f"whatsapp:+{t}"
+class WhatsAppUnavailableProvider(NotificationProvider):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
 
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
-        kwargs = {
-            "from_": self.from_whatsapp,
-            "to": self._normalize_to(to),
-            "body": message,
-        }
-        if media_url:
-            kwargs["media_url"] = [media_url]
-        msg = self.client.messages.create(**kwargs)
-        return getattr(msg, "sid", None)
+        raise RuntimeError(self.reason)
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
+        return None
+
+    def send_call(self, to: str, message: str) -> Optional[str]:
         return None
 
 class EmailLogProvider(NotificationProvider):
@@ -316,9 +368,6 @@ class ProviderSet:
     def send(self, outbox: NotificationOutbox) -> Optional[str]:
         if outbox.channel == "WHATSAPP":
             media_url = _normalize_media_url(outbox.media_url)
-            # Avoid media URLs that are only reachable locally (Twilio can't fetch them).
-            if isinstance(self.whatsapp, WhatsAppTwilioProvider) and _is_local_media_url(media_url):
-                media_url = None
             return self.whatsapp.send_whatsapp(outbox.target, outbox.message, media_url)
         if outbox.channel == "EMAIL":
             subject = outbox.subject or "PDS Netra Alert"
@@ -364,28 +413,22 @@ def _normalize_media_url(url: Optional[str]) -> Optional[str]:
 
 def _build_providers() -> ProviderSet:
     logger = logging.getLogger("notification_worker")
-    # WhatsApp (keep as-is)
+    # WhatsApp (Meta Cloud API only)
     provider = (os.getenv("WHATSAPP_PROVIDER", "") or "").lower().strip()
-    http_url = (os.getenv("WHATSAPP_HTTP_URL") or os.getenv("WHATSAPP_WEBHOOK_URL") or "").strip()
-
     if not provider:
-        provider = "http" if http_url else "log"
+        provider = "meta"
 
-    if provider == "twilio":
+    if provider == "meta":
         try:
-            whatsapp = WhatsAppTwilioProvider()
+            whatsapp = WhatsAppMetaProvider()
         except Exception as exc:
-            logger.error("WhatsApp Twilio disabled: %s", exc)
-            whatsapp = WhatsAppLogProvider()
-    elif provider in {"http", "meta"}:
-        if not http_url:
-            logger.error("WHATSAPP_PROVIDER=%s but WHATSAPP_HTTP_URL missing; using log provider.", provider)
-            whatsapp = WhatsAppLogProvider()
-        else:
-            token = (os.getenv("WHATSAPP_HTTP_TOKEN") or "").strip()
-            whatsapp = WhatsAppHttpProvider(http_url, token or None)
+            reason = f"Meta WhatsApp unavailable: {exc}"
+            logger.error(reason)
+            whatsapp = WhatsAppUnavailableProvider(reason)
     else:
-        whatsapp = WhatsAppLogProvider()
+        reason = f"Unsupported WHATSAPP_PROVIDER={provider!r}. Only 'meta' is supported."
+        logger.error(reason)
+        whatsapp = WhatsAppUnavailableProvider(reason)
 
     # Email (GUARANTEED via settings.env_file)
     smtp_host = (os.getenv("SMTP_HOST") or "").strip()
