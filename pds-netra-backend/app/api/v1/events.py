@@ -179,10 +179,9 @@ def _event_to_item(event: Event) -> dict:
             if file_path.exists():
                 image_url = f"/media/snapshots/{rel}"
                 break
-            # If caller already provided an API-style media path, keep it.
-            if candidate.startswith("/media/snapshots/"):
-                image_url = candidate
-                break
+            # Snapshot path is known but file is missing on backend storage.
+            # Do not return a broken URL.
+            continue
         if candidate.startswith(("http://", "https://")):
             image_url = candidate
             break

@@ -31,10 +31,12 @@ services:
       - EDGE_FIRE_DEVICE=cuda:0
       - EDGE_LIVE_ANNOTATED_DIR=/live
       - EDGE_OVERRIDE_DIR=/opt/app/data/edge_overrides
+      - EDGE_SNAPSHOT_DIR=/opt/app/data/snapshots
 
     runtime: nvidia
     volumes:
       - ./:/opt/app
+      - ${EDGE_SNAPSHOT_HOST_DIR:-/data/pds-backend/snapshots}:/opt/app/data/snapshots
       - ./data/ultralytics:/opt/app/.cache/Ultralytics
       - ./data/insightface:/root/.insightface
       - ./data/paddleocr:/root/.paddleocr

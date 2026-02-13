@@ -20,6 +20,7 @@ services:
       - EDGE_TIMEZONE=${EDGE_TIMEZONE}
       - EDGE_BACKEND_URL=${EDGE_BACKEND_URL}
       - EDGE_BACKEND_TOKEN=${EDGE_BACKEND_TOKEN}
+      - EDGE_SNAPSHOT_DIR=/opt/app/data/snapshots
       - EDGE_RULES_SOURCE=${EDGE_RULES_SOURCE}
       - EDGE_CAMERAS_SOURCE=${EDGE_CAMERAS_SOURCE}
       - MQTT_BROKER_HOST=mosquitto
@@ -28,6 +29,7 @@ services:
     volumes:
       - ./:/opt/app
       - ./data:/opt/app/data
+      - ${EDGE_SNAPSHOT_HOST_DIR:-../deployment/data/backend/snapshots}:/opt/app/data/snapshots
       - ./models:/opt/app/models
       - ./cache/ultralytics:/opt/app/.config/Ultralytics
       - ./cache/insightface:/opt/app/.insightface
