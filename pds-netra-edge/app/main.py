@@ -33,7 +33,8 @@ from .rules.remote import fetch_rule_configs
 from .cameras.remote import fetch_camera_configs
 
 
-ALLOWED_DEVICES = {"cpu", "cuda:0", "tensorrt"}
+ALLOWED_DEVICES = {"auto", "cpu", "cuda:0", "tensorrt"}
+DEVICE_ALIASES = {"cuda": "cuda:0"}
 
 
 def _normalize_device(raw: str | None) -> str | None:
@@ -42,9 +43,7 @@ def _normalize_device(raw: str | None) -> str | None:
     val = str(raw).strip().lower()
     if not val:
         return None
-    if val == "cuda":
-        return "cuda:0"
-    return val
+    return DEVICE_ALIASES.get(val, val)
 
 
 def _torch_cuda_snapshot() -> tuple[str | None, bool, str | None]:
@@ -67,23 +66,23 @@ def _torch_cuda_snapshot() -> tuple[str | None, bool, str | None]:
 
 
 def _resolve_inference_device(cli_device: str | None, logger: logging.Logger) -> str:
-    requested_raw = cli_device if cli_device is not None else os.getenv("EDGE_DEVICE")
+    requested_raw = cli_device if cli_device is not None else os.getenv("EDGE_DEVICE", "auto")
     requested = _normalize_device(requested_raw)
     if requested and requested not in ALLOWED_DEVICES:
         logger.warning(
             "Unsupported EDGE_DEVICE/--device value '%s'. Falling back to auto-select.",
             requested_raw,
         )
-        requested = None
+        requested = "auto"
 
     torch_version, cuda_available, gpu_name = _torch_cuda_snapshot()
     logger.info("torch version: %s", torch_version or "not installed")
     logger.info("torch.cuda.is_available(): %s", cuda_available)
     logger.info("torch.cuda.get_device_name(0): %s", gpu_name or "N/A")
 
-    if requested is None:
+    if requested in {None, "auto"}:
         if cuda_available:
-            logger.info("No --device provided. Auto-selecting cuda:0.")
+            logger.info("Auto-selecting cuda:0 (CUDA is available).")
             return "cuda:0"
         logger.warning(
             "========== GPU WARNING ==========\n"
@@ -116,10 +115,10 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default=None,
-        choices=["cpu", "cuda:0", "tensorrt"],
-        help="Inference device (cpu | cuda:0 | tensorrt). "
-        "Default: auto (cuda:0 if available, else cpu).",
+        default=os.getenv("EDGE_DEVICE", "auto"),
+        choices=["auto", "cpu", "cuda", "cuda:0", "tensorrt"],
+        help="Inference device (auto | cpu | cuda:0 | tensorrt). "
+        "Alias: cuda -> cuda:0. Default: auto.",
     )
     parser.add_argument(
         "--log-level",
@@ -168,6 +167,11 @@ def main(argv: List[str] | None = None) -> int:
     logger.info("Loaded settings for godown %s", settings.godown_id)
     effective_device = _resolve_inference_device(args.device, logger)
     logger.info("Inference device: %s", effective_device)
+    logger.info(
+        "Selected inference backend=%s device=%s",
+        "tensorrt" if effective_device == "tensorrt" else "pytorch",
+        effective_device,
+    )
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
         backend_url = os.getenv("EDGE_BACKEND_URL", os.getenv("BACKEND_URL", "http://127.0.0.1:8001"))

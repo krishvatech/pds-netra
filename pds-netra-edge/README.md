@@ -72,11 +72,40 @@ This will start the MQTT client, spawn a processing thread per camera, and emit 
 
 Device options:
 
+- `--device auto` (default)
 - `--device cpu`
 - `--device cuda:0`
 - `--device tensorrt`
+- `--device cuda` (alias for `cuda:0`, backward compatible)
 
 If `--device` is not provided, the app auto-selects `cuda:0` when CUDA is available, otherwise falls back to `cpu` with a warning.
+
+## Inference Entrypoints (Current)
+
+Direct model inference paths in this repo:
+
+- `app/cv/yolo_detector.py`
+: `YoloDetector.detect()` -> `self.model.predict(...)`
+: `YoloDetector.track()` -> `self.model.track(...)`
+- `app/cv/fire_detection.py`
+: `FireDetectionProcessor.process()` -> `self.detector.detect(frame)` (delegates to `YoloDetector.detect`)
+- `app/cv/anpr.py`
+: `PlateDetector.detect_plates()` -> `self.detector.detect(frame)` (delegates to `YoloDetector.detect`)
+
+Pipeline/runtime callsites:
+
+- `app/cv/pipeline.py`
+: `Pipeline.run()` -> `self.detector.track(frame)`
+- `app/runtime/camera_loop.py`
+: `_start_camera()` creates `YoloDetector(...)` for general detection
+: `_create_anpr_processor_for_camera()` creates ANPR `YoloDetector(...)`
+
+Backend/library notes from scan:
+
+- `torch`: used in `app/main.py` (startup capability logging) and `app/cv/yolo_detector.py` (CUDA model placement checks)
+- `onnxruntime`: listed in `requirements.txt`; used indirectly by face/embedding stack, not as a direct detection entrypoint in edge runtime
+- `tensorrt`: used through Ultralytics engine export/load path in `app/cv/yolo_detector.py`
+- `deepstream`, `triton`, `cv2.dnn`: no direct runtime inference path found in current edge app code
 
 ## Jetson GPU Setup (JetPack 6.2.2 / L4T 36.5.0)
 
