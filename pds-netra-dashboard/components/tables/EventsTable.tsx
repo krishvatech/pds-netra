@@ -15,7 +15,22 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
   };
   const resolveMediaUrl = (url?: string | null) => {
     if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        const internal =
+          host === 'backend' ||
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === '0.0.0.0' ||
+          host.startsWith('127.');
+        if (internal && parsed.pathname.startsWith('/media/')) {
+          return `${apiBase}${parsed.pathname}${parsed.search}`;
+        }
+      } catch {}
+      return url;
+    }
     if (url.startsWith('/media/')) return `${apiBase}${url}`;
     return url;
   };

@@ -143,6 +143,10 @@ def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
 def _event_to_item(event: Event) -> dict:
     snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
 
+    def _is_internal_host(value: str) -> bool:
+        host = value.strip().lower()
+        return host in {"backend", "localhost", "127.0.0.1", "0.0.0.0"} or host.startswith("127.")
+
     def _to_snapshot_relpath(value: str) -> Optional[str]:
         raw = value.strip()
         if not raw:
@@ -173,6 +177,19 @@ def _event_to_item(event: Event) -> dict:
                 candidates.append(candidate.strip())
 
     for candidate in candidates:
+        # Convert Docker-internal absolute URLs into relative media paths for browser clients.
+        try:
+            parsed = urlsplit(candidate)
+            if (
+                parsed.scheme in {"http", "https"}
+                and parsed.hostname
+                and _is_internal_host(parsed.hostname)
+                and parsed.path.startswith("/media/snapshots/")
+            ):
+                candidate = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        except Exception:
+            pass
+
         rel = _to_snapshot_relpath(candidate)
         if rel:
             file_path = snapshots_root / rel
