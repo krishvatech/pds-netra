@@ -1079,7 +1079,11 @@ def start_camera_loops(
                         last_face_sync = now_mono
 
                 # Log per-frame counts for people and face recognition results.
-                person_count = sum(1 for obj in objects if obj.class_name == "person")
+                person_count = sum(
+                    1
+                    for obj in objects
+                    if isinstance(obj.class_name, str) and obj.class_name.lower() == "person"
+                )
                 known_faces = 0
                 unknown_faces = 0
 
