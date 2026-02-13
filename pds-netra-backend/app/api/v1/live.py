@@ -164,7 +164,11 @@ def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
     meta = _frame_meta(latest_path)
     threshold_seconds = _stale_threshold_sec()
     stale = _is_stale(meta["age_seconds"], threshold_seconds)
-    headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
     if meta["captured_at_utc"] is not None:
         headers["X-Frame-Captured-At"] = str(meta["captured_at_utc"])
     if meta["age_seconds"] is not None:

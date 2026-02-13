@@ -25,7 +25,14 @@ function buildForwardHeaders(req: NextRequest): Headers {
   const headers = new Headers();
   req.headers.forEach((value, key) => {
     const k = key.toLowerCase();
-    if (k === 'host' || k === 'connection' || k === 'content-length' || k === 'cookie') return;
+    if (
+      k === 'host' ||
+      k === 'connection' ||
+      k === 'content-length' ||
+      k === 'cookie' ||
+      k === 'if-none-match' ||
+      k === 'if-modified-since'
+    ) return;
     headers.set(key, value);
   });
 
@@ -126,8 +133,6 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
     'content-type',
     'cache-control',
     'content-disposition',
-    'etag',
-    'last-modified',
     'x-frame-captured-at',
     'x-frame-age-seconds',
     'x-frame-stale',

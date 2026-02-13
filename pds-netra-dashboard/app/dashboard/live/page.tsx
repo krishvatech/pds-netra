@@ -15,6 +15,8 @@ type AuthedLiveImageProps = {
   requestUrl: string;
   alt: string;
   className?: string;
+  pollMs?: number;
+  refreshToken?: number;
   onStatusChange?: (ok: boolean) => void;
   onLoad?: (evt: SyntheticEvent<HTMLImageElement, Event>) => void;
   onFrameMeta?: (meta: { ageSeconds: number | null; capturedAtUtc: string | null } | null) => void;
@@ -30,14 +32,33 @@ function buildLiveHeaders(): Record<string, string> {
   return headers;
 }
 
-function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad, onFrameMeta }: AuthedLiveImageProps) {
+function appendCacheBust(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_t=${Date.now()}`;
+}
+
+function AuthedLiveImage({
+  requestUrl,
+  alt,
+  className,
+  pollMs = 1000,
+  refreshToken = 0,
+  onStatusChange,
+  onLoad,
+  onFrameMeta
+}: AuthedLiveImageProps) {
   const [blobUrl, setBlobUrl] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
+    let activeController: AbortController | null = null;
 
-    const load = async () => {
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(() => resolve(), ms);
+      });
+
+    const run = async () => {
       if (!requestUrl) {
         setBlobUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -48,55 +69,62 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad, o
         return;
       }
 
-      try {
-        const resp = await fetch(requestUrl, {
-          headers: buildLiveHeaders(),
-          cache: 'no-store',
-          signal: controller.signal
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const capturedAtHeader = resp.headers.get('X-Frame-Captured-At');
-        const ageHeader = resp.headers.get('X-Frame-Age-Seconds');
-        let ageSeconds: number | null = null;
-        if (ageHeader !== null) {
-          const parsed = Number(ageHeader);
-          if (Number.isFinite(parsed) && parsed >= 0) {
-            ageSeconds = parsed;
+      while (!cancelled) {
+        try {
+          activeController = new AbortController();
+          const resp = await fetch(appendCacheBust(requestUrl), {
+            headers: buildLiveHeaders(),
+            cache: 'no-store',
+            signal: activeController.signal
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const capturedAtHeader = resp.headers.get('X-Frame-Captured-At');
+          const ageHeader = resp.headers.get('X-Frame-Age-Seconds');
+          let ageSeconds: number | null = null;
+          if (ageHeader !== null) {
+            const parsed = Number(ageHeader);
+            if (Number.isFinite(parsed) && parsed >= 0) {
+              ageSeconds = parsed;
+            }
           }
+          onFrameMeta?.({
+            ageSeconds,
+            capturedAtUtc: capturedAtHeader || null
+          });
+          const blob = await resp.blob();
+          const nextUrl = URL.createObjectURL(blob);
+          if (cancelled) {
+            URL.revokeObjectURL(nextUrl);
+            return;
+          }
+          setBlobUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return nextUrl;
+          });
+          onStatusChange?.(true);
+        } catch {
+          if (cancelled) return;
+          setBlobUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return '';
+          });
+          onStatusChange?.(false);
+          onFrameMeta?.(null);
         }
-        onFrameMeta?.({
-          ageSeconds,
-          capturedAtUtc: capturedAtHeader || null
-        });
-        const blob = await resp.blob();
-        const nextUrl = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(nextUrl);
+        if (pollMs <= 0) {
           return;
         }
-        setBlobUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return nextUrl;
-        });
-        onStatusChange?.(true);
-      } catch {
-        if (cancelled) return;
-        setBlobUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return '';
-        });
-        onStatusChange?.(false);
-        onFrameMeta?.(null);
+        await sleep(pollMs);
       }
     };
 
-    load();
+    run();
 
     return () => {
       cancelled = true;
-      controller.abort();
+      if (activeController) activeController.abort();
     };
-  }, [requestUrl]);
+  }, [requestUrl, pollMs, refreshToken]);
 
   if (!blobUrl) return null;
   return <img src={blobUrl} alt={alt} className={className} onLoad={onLoad} />;
@@ -292,22 +320,11 @@ export default function LiveCamerasPage() {
       mounted = false;
     };
   }, [zoneCameraId, selectedGodown]);
-  const streamUrl = useMemo(() => {
-    if (!selectedGodown || !selectedCamera) return '';
-    return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(selectedCamera)}?ts=${streamNonce}`;
-  }, [selectedGodown, selectedCamera, streamNonce]);
   const zoneImageUrl = useMemo(() => {
     if (!selectedGodown || !zoneCameraId) return '';
     if (liveCameraIds.length > 0 && !liveCameraIds.includes(zoneCameraId)) return '';
     return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(zoneCameraId)}?z=${zoneImageNonce}`;
   }, [selectedGodown, zoneCameraId, zoneImageNonce, liveCameraIds]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setStreamNonce((n) => n + 1);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (zonePoints.length >= 3) {
@@ -632,7 +649,7 @@ export default function LiveCamerasPage() {
               {cameras.map((camera) => {
                 const camUrl = `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(
                   camera.camera_id
-                )}?ts=${streamNonce}`;
+                )}`;
                 const isLive = liveCameraIds.length === 0 || liveCameraIds.includes(camera.camera_id);
                 const hasError = cameraErrors[camera.camera_id];
                 const frameMeta = cameraFrameMeta[camera.camera_id];
@@ -744,6 +761,8 @@ export default function LiveCamerasPage() {
                           requestUrl={camUrl}
                           alt={`Live ${camera.camera_id}`}
                           className="h-full w-full object-contain"
+                          pollMs={1000}
+                          refreshToken={streamNonce}
                           onStatusChange={(ok) =>
                             setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
                           }
@@ -865,6 +884,7 @@ export default function LiveCamerasPage() {
                     requestUrl={zoneImageUrl}
                     alt="Zone reference"
                     className="w-full h-auto block"
+                    pollMs={0}
                     onStatusChange={(ok) => setZoneImageError(!ok)}
                     onLoad={(e) => {
                       const img = e.currentTarget;
@@ -928,9 +948,11 @@ export default function LiveCamerasPage() {
             </div>
             <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
               <AuthedLiveImage
-                requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
+                requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}`}
                 alt={`Live ${fullscreenCameraId}`}
                 className="max-h-full w-auto max-w-full object-contain"
+                pollMs={1000}
+                refreshToken={streamNonce}
                 onFrameMeta={(meta) =>
                   setCameraFrameMeta((prev) => ({
                     ...prev,
