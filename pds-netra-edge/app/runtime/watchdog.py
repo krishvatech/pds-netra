@@ -55,6 +55,7 @@ class EdgeWatchdog:
         self.interval_sec = _read_float("EDGE_WATCHDOG_INTERVAL_SEC", 5.0)
         self.stall_sec = _read_int("EDGE_WATCHDOG_CAMERA_STALL_SEC", 45)
         self.fatal_sec = _read_int("EDGE_WATCHDOG_FATAL_SEC", 180)
+        self.fatal_exit_enabled = _read_bool("EDGE_WATCHDOG_FATAL_EXIT_ENABLED", "false")
         self.health_path = self._resolve_health_path(
             os.getenv(
                 "EDGE_WATCHDOG_HEARTBEAT_PATH",
@@ -69,6 +70,7 @@ class EdgeWatchdog:
         self._last_health: Dict[str, object] = {}
         self._stall_since: Dict[str, datetime.datetime] = {}
         self._restart_attempted: Dict[str, datetime.datetime] = {}
+        self._fatal_notified: Dict[str, datetime.datetime] = {}
         self._http_server = None
         self._http_thread: Optional[threading.Thread] = None
 
@@ -83,10 +85,11 @@ class EdgeWatchdog:
         if self.http_enabled:
             self._start_http_server()
         self.logger.info(
-            "Watchdog started interval=%ss stall=%ss fatal=%ss health=%s",
+            "Watchdog started interval=%ss stall=%ss fatal=%ss fatal_exit=%s health=%s",
             self.interval_sec,
             self.stall_sec,
             self.fatal_sec,
+            self.fatal_exit_enabled,
             self.health_path,
         )
 
@@ -171,6 +174,7 @@ class EdgeWatchdog:
                 self.logger.info("Camera recovered from stall: %s", cam_id)
                 self._stall_since.pop(cam_id, None)
                 self._restart_attempted.pop(cam_id, None)
+                self._fatal_notified.pop(cam_id, None)
             return
 
         stall_since = self._stall_since.get(cam_id)
@@ -191,9 +195,19 @@ class EdgeWatchdog:
                     self.logger.warning("Camera restart requested: %s", cam_id)
             return
 
+        if self.fatal_sec <= 0:
+            return
         if (now - stall_since).total_seconds() >= self.fatal_sec:
-            self.logger.critical("Fatal camera stall: camera=%s age_sec=%.1f", cam_id, last_frame_age)
-            os._exit(2)
+            if self.fatal_exit_enabled:
+                self.logger.critical("Fatal camera stall: camera=%s age_sec=%.1f", cam_id, last_frame_age)
+                os._exit(2)
+            if cam_id not in self._fatal_notified:
+                self.logger.critical(
+                    "Fatal stall threshold reached for camera=%s age_sec=%.1f but fatal exit is disabled.",
+                    cam_id,
+                    last_frame_age,
+                )
+                self._fatal_notified[cam_id] = now
 
     def _emit_offline_event(self, cam_id: str, now: datetime.datetime, reason: str) -> None:
         try:

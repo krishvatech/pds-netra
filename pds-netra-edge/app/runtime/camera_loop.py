@@ -220,6 +220,15 @@ def start_camera_loops(
             return val.strip()
         return None
 
+    def _retry_delay(attempt: int) -> int:
+        if attempt <= 1:
+            return 2
+        if attempt == 2:
+            return 5
+        if attempt == 3:
+            return 10
+        return 30
+
     def _call_default_snapshot_writer(godown_id: str, camera_id: str):
         """
         Different repos have different signatures:
@@ -862,8 +871,22 @@ def start_camera_loops(
                 os.getenv("BACKEND_URL", "http://127.0.0.1:8001"),
             ).rstrip("/")
             last_test_video: dict[str, Optional[str]] = {"path": None}
+            missing_source_log_interval = max(5.0, _read_float_env("EDGE_MISSING_SOURCE_LOG_INTERVAL_SEC", 60.0))
+            last_missing_db_source = {"path": None, "ts": 0.0}
+            last_missing_test_video = {"path": None, "ts": 0.0}
             face_sync_interval = float(os.getenv("EDGE_FACE_SYNC_INTERVAL_SEC", "30"))
             last_face_sync = 0.0
+
+            def _warn_missing_path(cache: dict[str, Any], message: str, missing_path: Path) -> None:
+                now_ts = time.monotonic()
+                path_str = str(missing_path)
+                if (
+                    cache.get("path") != path_str
+                    or (now_ts - float(cache.get("ts") or 0.0)) >= missing_source_log_interval
+                ):
+                    logger.warning(message, camera_obj.id, missing_path)
+                    cache["path"] = path_str
+                    cache["ts"] = now_ts
 
             def _resolve_source_local() -> tuple[str, str, Optional[str]]:
                 nonlocal default_source_local
@@ -876,10 +899,11 @@ def start_camera_loops(
                     else:
                         resolved_source = (Path.cwd() / source_path).resolve()
                     if resolved_source.exists():
+                        last_missing_db_source["path"] = None
                         return str(resolved_source), "test", getattr(camera_obj, "source_run_id", None)
-                    logger.warning(
+                    _warn_missing_path(
+                        last_missing_db_source,
                         "DB test source not found for camera %s: %s (falling back to live source)",
-                        camera_obj.id,
                         resolved_source,
                     )
 
@@ -892,14 +916,14 @@ def start_camera_loops(
                     if resolved_test.exists():
                         live_fallback = str(resolved_test)
                         default_source_local = live_fallback
+                        last_missing_test_video["path"] = None
                     else:
-                        if last_test_video["path"] != str(resolved_test):
-                            logger.warning(
-                                "Test video not found for camera %s: %s (falling back to rtsp)",
-                                camera_obj.id,
-                                resolved_test,
-                            )
-                            last_test_video["path"] = str(resolved_test)
+                        _warn_missing_path(
+                            last_missing_test_video,
+                            "Test video not found for camera %s: %s (falling back to rtsp)",
+                            resolved_test,
+                        )
+                        last_test_video["path"] = str(resolved_test)
 
                 return override_manager.get_camera_source(camera_obj.id, live_fallback)
 
@@ -1386,6 +1410,8 @@ def start_camera_loops(
 
             last_restart_token = restart_tokens.get(camera_obj.id, 0)
             force_restart = False
+            live_restart_failures = 0
+            min_live_cycle_sec = max(1.0, _read_float_env("EDGE_LIVE_MIN_CYCLE_SEC", 5.0))
             while True:
                 if restart_tokens.get(camera_obj.id, 0) != last_restart_token:
                     logger.info("Camera restart requested: %s", camera_obj.id)
@@ -1474,7 +1500,9 @@ def start_camera_loops(
                     frame_processors=[bag_handler],
                     latest_frame_hook=(latest_frame_hook if current_mode == "live" else None),
                 )
+                cycle_started = time.monotonic()
                 pipeline.run()
+                cycle_elapsed = time.monotonic() - cycle_started
                 if force_restart:
                     logger.info("Camera pipeline stopping for restart: %s", camera_obj.id)
                     return
@@ -1488,6 +1516,7 @@ def start_camera_loops(
                         )
 
                 if next_source["value"]:
+                    live_restart_failures = 0
                     current_source = next_source["value"]
                     current_mode = next_mode["value"] or "live"
                     current_run_id = next_run_id["value"]
@@ -1495,6 +1524,7 @@ def start_camera_loops(
                 # Handle overrides that arrived while pipeline exited early (e.g., RTSP open failed)
                 desired_source, desired_mode, desired_run_id = _resolve_source_local()
                 if desired_source != current_source:
+                    live_restart_failures = 0
                     current_source = desired_source
                     current_mode = desired_mode
                     current_run_id = desired_run_id
@@ -1530,7 +1560,24 @@ def start_camera_loops(
                             )
                         except Exception:
                             pass
-                break
+                    break
+
+                # Live mode should keep retrying. Without this loop, one transient RTSP
+                # open failure leaves the camera permanently stale until process restart.
+                if cycle_elapsed < min_live_cycle_sec:
+                    live_restart_failures += 1
+                else:
+                    live_restart_failures = 0
+                retry_delay = _retry_delay(live_restart_failures)
+                logger.warning(
+                    "Live pipeline exited for camera %s (elapsed=%.1fs, retry in %ss, source=%s)",
+                    camera_obj.id,
+                    cycle_elapsed,
+                    retry_delay,
+                    current_source,
+                )
+                time.sleep(retry_delay)
+                continue
 
         t = threading.Thread(
             target=camera_runner,

@@ -19,6 +19,7 @@ import datetime
 import cv2  # type: ignore
 import time
 import threading
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .yolo_detector import YoloDetector
 
@@ -65,7 +66,7 @@ class Pipeline:
         latest_frame_hook: Optional[Callable[[Any, float], None]] = None,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.source = source
+        self.source = self._normalize_source(source)
         self.camera_id = camera_id
         self.detector = detector
         self.callback = callback
@@ -79,8 +80,56 @@ class Pipeline:
         return s.startswith(("rtsp://", "rtsps://", "http://", "https://"))
 
     @staticmethod
+    def _normalize_source(source: str) -> str:
+        src = (source or "").strip()
+        if not src:
+            return source
+        if not src.lower().startswith(("rtsp://", "rtsps://")):
+            return src
+        try:
+            parsed = urlsplit(src)
+            query_items = parse_qsl(parsed.query, keep_blank_values=True)
+            cleaned_items = []
+            transport_hint = None
+            if parsed.query.strip().lower() == "tcp":
+                transport_hint = "tcp"
+            elif parsed.query.strip().lower() == "udp":
+                transport_hint = "udp"
+            for key, value in query_items:
+                key_l = key.strip().lower()
+                value_l = value.strip().lower()
+                if key_l == "tcp" and value_l in {"", "1", "true", "yes", "on"}:
+                    transport_hint = "tcp"
+                    continue
+                if key_l in {"rtsp_transport", "transport"} and value_l in {"tcp", "udp"}:
+                    transport_hint = value_l
+                    continue
+                cleaned_items.append((key, value))
+            if transport_hint:
+                os.environ.setdefault("EDGE_RTSP_TRANSPORT", transport_hint)
+            cleaned_query = urlencode(cleaned_items, doseq=True)
+            return urlunsplit(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    cleaned_query,
+                    parsed.fragment,
+                )
+            )
+        except Exception:
+            return src
+
+    @staticmethod
     def _env_true(name: str, default: str = "false") -> bool:
         return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except Exception:
+            return default
 
     @staticmethod
     def _reconnect_delay(attempt: int) -> int:
@@ -108,10 +157,18 @@ class Pipeline:
     def _open_capture(self, *, realtime_source: bool) -> Any:
         if realtime_source:
             # Lower FFmpeg demux/decode latency if options were not set externally.
-            os.environ.setdefault(
-                "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;0|reorder_queue_size;0",
-            )
+            if "OPENCV_FFMPEG_CAPTURE_OPTIONS" not in os.environ:
+                transport = os.getenv("EDGE_RTSP_TRANSPORT", "tcp").strip().lower()
+                if transport not in {"tcp", "udp"}:
+                    transport = "tcp"
+                open_timeout_us = max(1_000_000, self._env_int("EDGE_RTSP_OPEN_TIMEOUT_US", 5_000_000))
+                rw_timeout_us = max(1_000_000, self._env_int("EDGE_RTSP_RW_TIMEOUT_US", 5_000_000))
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    f"rtsp_transport;{transport}|"
+                    f"stimeout;{open_timeout_us}|"
+                    f"rw_timeout;{rw_timeout_us}|"
+                    "fflags;nobuffer|flags;low_delay|max_delay;0|reorder_queue_size;0"
+                )
             cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 cap = cv2.VideoCapture(self.source)
@@ -133,10 +190,28 @@ class Pipeline:
         realtime_source = self._is_realtime_source(self.source)
         latest_frame_mode = realtime_source and self._env_true("EDGE_LIVE_LATEST_FRAME_MODE", "true")
 
-        cap = self._open_capture(realtime_source=realtime_source)
-        if cap is None:
-            self.logger.error("Unable to open video source: %s", self.source)
-            return
+        cap = None
+        open_attempt = 0
+        while cap is None:
+            if self.stop_check and self.stop_check():
+                self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
+                return
+            cap = self._open_capture(realtime_source=realtime_source)
+            if cap is not None:
+                break
+            if not realtime_source:
+                self.logger.error("Unable to open video source: %s", self.source)
+                return
+            open_attempt += 1
+            delay = self._reconnect_delay(open_attempt)
+            self.logger.warning(
+                "Unable to open video source for camera=%s (attempt=%d, retry in %ds): %s",
+                self.camera_id,
+                open_attempt,
+                delay,
+                self.source,
+            )
+            time.sleep(delay)
         debug_draw = os.getenv("PDS_DEBUG_DRAW", "0") == "1"
         debug_out = os.getenv("PDS_DEBUG_VIDEO_PATH", f"logs/debug_{self.camera_id}.mp4")
         writer = None
