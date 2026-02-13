@@ -47,10 +47,24 @@ class SnapshotWriter:
         return str(out_path.resolve())
 
 
+def resolve_snapshot_base_dir() -> Path:
+    """Resolve snapshot storage path with deployment-first defaults."""
+    configured = (os.getenv("EDGE_SNAPSHOT_DIR") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    candidates = [
+        Path("/opt/app/data/snapshots"),
+        Path(__file__).resolve().parents[2] / "data" / "snapshots",
+        Path(__file__).resolve().parents[2] / "pds-netra-backend" / "data" / "snapshots",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    # Default to deployment data mount even if it does not exist yet.
+    return candidates[0]
+
+
 def default_snapshot_writer() -> Optional[SnapshotWriter]:
-    base_dir = os.getenv("EDGE_SNAPSHOT_DIR")
-    if not base_dir:
-        # Default to backend data/snapshots folder if present
-        base_dir = str(Path(__file__).resolve().parents[2] / "pds-netra-backend" / "data" / "snapshots")
+    base_dir = str(resolve_snapshot_base_dir())
     base_url = os.getenv("EDGE_SNAPSHOT_BASE_URL", "http://127.0.0.1:8001/media/snapshots")
     return SnapshotWriter(base_dir=base_dir, base_url=base_url)

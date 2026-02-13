@@ -61,7 +61,7 @@ from ..watchlist.processor import WatchlistProcessor
 from ..watchlist.sync_subscriber import WatchlistSyncSubscriber
 from ..presence.processor import AfterHoursPresenceProcessor, PresenceConfig
 from ..overrides import EdgeOverrideManager
-from ..snapshots import default_snapshot_writer
+from ..snapshots import default_snapshot_writer, resolve_snapshot_base_dir
 from ..annotated_video import AnnotatedVideoWriter, LiveFrameWriter
 from .pipeline_router import select_pipeline
 
@@ -1325,12 +1325,7 @@ def start_camera_loops(
                 ):
                     now_ts = time.monotonic()
                     if now_ts - current_state["last_snapshot_ts"] >= 0.5:
-                        snapshots_root = Path(
-                            os.getenv(
-                                "EDGE_SNAPSHOT_DIR",
-                                str(Path(__file__).resolve().parents[3] / "pds-netra-backend" / "data" / "snapshots"),
-                            )
-                        )
+                        snapshots_root = resolve_snapshot_base_dir()
                         out_dir = snapshots_root / settings.godown_id / current_state["run_id"] / camera_obj.id
                         out_dir.mkdir(parents=True, exist_ok=True)
                         filename = f"det_{int(now_ts * 1000)}.jpg"
