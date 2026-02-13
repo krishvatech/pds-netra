@@ -18,6 +18,7 @@ import os
 import datetime
 import cv2  # type: ignore
 import time
+import threading
 
 from .yolo_detector import YoloDetector
 
@@ -70,6 +71,55 @@ class Pipeline:
         self.stop_check = stop_check
         self.frame_processors = frame_processors or []
 
+    @staticmethod
+    def _is_realtime_source(source: str) -> bool:
+        s = (source or "").strip().lower()
+        return s.startswith(("rtsp://", "rtsps://", "http://", "https://"))
+
+    @staticmethod
+    def _env_true(name: str, default: str = "false") -> bool:
+        return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    @staticmethod
+    def _reconnect_delay(attempt: int) -> int:
+        if attempt <= 1:
+            return 2
+        if attempt == 2:
+            return 5
+        if attempt == 3:
+            return 10
+        return 30
+
+    def _apply_capture_tuning(self, cap: Any, *, realtime_source: bool) -> None:
+        if not realtime_source:
+            return
+        try:
+            buffer_size = int(os.getenv("EDGE_RTSP_CAPTURE_BUFFER", "1"))
+        except Exception:
+            buffer_size = 1
+        if buffer_size > 0:
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
+            except Exception:
+                pass
+
+    def _open_capture(self, *, realtime_source: bool) -> Any:
+        if realtime_source:
+            # Lower FFmpeg demux/decode latency if options were not set externally.
+            os.environ.setdefault(
+                "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;0|reorder_queue_size;0",
+            )
+            cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(self.source)
+        else:
+            cap = cv2.VideoCapture(self.source)
+        if not cap.isOpened():
+            return None
+        self._apply_capture_tuning(cap, realtime_source=realtime_source)
+        return cap
+
     def run(self) -> None:
         """
         Execute the pipeline loop until the video source is exhausted.
@@ -78,65 +128,23 @@ class Pipeline:
         sequentially and invokes the callback with detected objects.
         """
         self.logger.info("Starting pipeline for camera %s", self.camera_id)
-        cap = cv2.VideoCapture(self.source)
-        if not cap.isOpened():
+        realtime_source = self._is_realtime_source(self.source)
+        latest_frame_mode = realtime_source and self._env_true("EDGE_LIVE_LATEST_FRAME_MODE", "true")
+
+        cap = self._open_capture(realtime_source=realtime_source)
+        if cap is None:
             self.logger.error("Unable to open video source: %s", self.source)
             return
         debug_draw = os.getenv("PDS_DEBUG_DRAW", "0") == "1"
         debug_out = os.getenv("PDS_DEBUG_VIDEO_PATH", f"logs/debug_{self.camera_id}.mp4")
         writer = None
+        fps_hint = cap.get(cv2.CAP_PROP_FPS)
+        if not fps_hint or fps_hint <= 0:
+            fps_hint = 15.0
         try:
-            self._rtsp_retry = 0
-            
-            while True:
-                if self.stop_check and self.stop_check():
-                    self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
-                    break
-                # Initialize retry counter once
-                if not hasattr(self, "_rtsp_retry"):
-                    self._rtsp_retry = 0
-
-                ret, frame = cap.read()
-
-                if not ret:
-                    self._rtsp_retry += 1
-
-                    # Backoff strategy
-                    if self._rtsp_retry == 1:
-                        delay = 2
-                    elif self._rtsp_retry == 2:
-                        delay = 5
-                    elif self._rtsp_retry == 3:
-                        delay = 10
-                    else:
-                        delay = 30
-
-                    self.logger.warning(
-                        "RTSP stream ended for camera %s (attempt=%d, retry in %ds)",
-                        self.camera_id,
-                        self._rtsp_retry,
-                        delay,
-                    )
-
-                    try:
-                        cap.release()
-                    except Exception as exc:
-                        self.logger.warning("Failed to release capture for camera %s: %s", self.camera_id, exc)
-
-                    time.sleep(delay)
-
-                    cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
-                    if not cap.isOpened():
-                        self.logger.warning("Reconnect failed (still offline): camera=%s", self.camera_id)
-                        continue
-
-                    continue
-
-                # ✅ If frame received successfully, reset retry counter
-                self._rtsp_retry = 0
-                # Perform tracking using the detector's built-in tracker.
+            def process_frame(frame: Any) -> None:
+                nonlocal writer
                 tracked = self.detector.track(frame)
-                # Convert to DetectedObject instances
                 now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
                 timestamp = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 objects: List[DetectedObject] = []
@@ -168,12 +176,9 @@ class Pipeline:
                     self.logger.exception("Callback raised exception: %s", exc)
                 if debug_draw:
                     if writer is None:
-                        fps = cap.get(cv2.CAP_PROP_FPS)
-                        if not fps or fps <= 0:
-                            fps = 15.0
                         height, width = frame.shape[:2]
                         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                        writer = cv2.VideoWriter(debug_out, fourcc, fps, (width, height))
+                        writer = cv2.VideoWriter(debug_out, fourcc, fps_hint, (width, height))
                         if not writer.isOpened():
                             self.logger.error("Failed to open debug video writer at %s", debug_out)
                             writer = None
@@ -222,8 +227,117 @@ class Pipeline:
                             )
                     if writer is not None:
                         writer.write(frame)
+
+            if latest_frame_mode:
+                frame_cond = threading.Condition()
+                capture_stop = threading.Event()
+                latest_frame: Optional[Any] = None
+                latest_seq = 0
+                self._rtsp_retry = 0
+
+                def capture_loop() -> None:
+                    nonlocal cap, latest_frame, latest_seq
+                    while not capture_stop.is_set():
+                        if cap is None or not cap.isOpened():
+                            cap = self._open_capture(realtime_source=realtime_source)
+                            if cap is None:
+                                self._rtsp_retry += 1
+                                delay = self._reconnect_delay(self._rtsp_retry)
+                                self.logger.warning(
+                                    "Reconnect failed for camera=%s (attempt=%d, retry in %ds)",
+                                    self.camera_id,
+                                    self._rtsp_retry,
+                                    delay,
+                                )
+                                capture_stop.wait(timeout=delay)
+                                continue
+                            self._rtsp_retry = 0
+
+                        ret, frame = cap.read()
+                        if not ret:
+                            self._rtsp_retry += 1
+                            delay = self._reconnect_delay(self._rtsp_retry)
+                            self.logger.warning(
+                                "RTSP read failed for camera=%s (attempt=%d, retry in %ds)",
+                                self.camera_id,
+                                self._rtsp_retry,
+                                delay,
+                            )
+                            try:
+                                cap.release()
+                            except Exception:
+                                pass
+                            cap = None
+                            capture_stop.wait(timeout=delay)
+                            continue
+
+                        self._rtsp_retry = 0
+                        with frame_cond:
+                            latest_frame = frame
+                            latest_seq += 1
+                            frame_cond.notify_all()
+
+                capture_thread = threading.Thread(
+                    target=capture_loop,
+                    name=f"Capture-{self.camera_id}",
+                    daemon=True,
+                )
+                capture_thread.start()
+
+                last_seen_seq = 0
+                while True:
+                    if self.stop_check and self.stop_check():
+                        self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
+                        break
+                    with frame_cond:
+                        if latest_seq == last_seen_seq:
+                            frame_cond.wait(timeout=1.0)
+                        if latest_seq == last_seen_seq:
+                            continue
+                        last_seen_seq = latest_seq
+                        frame = latest_frame.copy() if latest_frame is not None else None
+                    if frame is None:
+                        continue
+                    process_frame(frame)
+
+                capture_stop.set()
+                with frame_cond:
+                    frame_cond.notify_all()
+                capture_thread.join(timeout=5)
+            else:
+                self._rtsp_retry = 0
+                while True:
+                    if self.stop_check and self.stop_check():
+                        self.logger.info("Stopping pipeline for camera %s (source switch)", self.camera_id)
+                        break
+
+                    ret, frame = cap.read()
+                    if not ret:
+                        self._rtsp_retry += 1
+                        delay = self._reconnect_delay(self._rtsp_retry)
+                        self.logger.warning(
+                            "RTSP stream ended for camera %s (attempt=%d, retry in %ds)",
+                            self.camera_id,
+                            self._rtsp_retry,
+                            delay,
+                        )
+                        try:
+                            cap.release()
+                        except Exception as exc:
+                            self.logger.warning("Failed to release capture for camera %s: %s", self.camera_id, exc)
+                        time.sleep(delay)
+                        cap = self._open_capture(realtime_source=realtime_source)
+                        if cap is None:
+                            self.logger.warning("Reconnect failed (still offline): camera=%s", self.camera_id)
+                            continue
+                        self._rtsp_retry = 0
+                        continue
+
+                    self._rtsp_retry = 0
+                    process_frame(frame)
         finally:
             if writer is not None:
                 writer.release()
-            cap.release()
+            if cap is not None:
+                cap.release()
             self.logger.info("Pipeline for camera %s stopped", self.camera_id)

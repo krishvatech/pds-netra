@@ -70,6 +70,17 @@ python -m app.main --config config/pds_netra_config.yaml --device cpu --log-leve
 
 This will start the MQTT client, spawn a processing thread per camera, and emit dummy events to the configured broker. Logs will be printed to the console. Modify `config/pds_netra_config.yaml` or set environment variables (see `.env.example`) to point to your own cameras or broker.
 
+## Jetson live-lag tuning
+
+If the dashboard live feed is delayed on Jetson (while local works), enable low-latency capture controls in `.env`:
+
+```bash
+EDGE_LIVE_LATEST_FRAME_MODE=true
+EDGE_RTSP_CAPTURE_BUFFER=1
+```
+
+`EDGE_LIVE_LATEST_FRAME_MODE` keeps only the most recent camera frame for processing (drops stale buffered frames), which prevents multi-minute RTSP lag when inference runs slower than camera FPS.
+
 ## Using Docker
 
 A `docker-compose.yml` file is provided for local development. It starts a Mosquitto broker and the edge node container. To build and run the stack:
