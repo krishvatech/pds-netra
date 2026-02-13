@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { acknowledgeAlert, getAlerts } from '@/lib/api';
+import { getToken } from '@/lib/auth';
 import type { AlertItem, Severity } from '@/lib/types';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
 import { getAlertCues, onAlertCuesChange } from '@/lib/alertCues';
@@ -96,16 +97,110 @@ function resolveMediaUrl(url?: string | null): string | null {
   return url;
 }
 
+function isLikelyImageUrl(value: string): boolean {
+  const url = value.trim();
+  if (!url) return false;
+  if (/^\d+$/.test(url)) return false;
+  return (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('/')
+  );
+}
+
 function alertSnapshotUrl(alert: AlertItem): string | null {
   const snapshot = alert.key_meta?.snapshot_url;
-  if (typeof snapshot === 'string' && snapshot.trim()) {
+  if (typeof snapshot === 'string' && isLikelyImageUrl(snapshot)) {
     return resolveMediaUrl(snapshot);
   }
   const image = alert.key_meta?.image_url;
-  if (typeof image === 'string' && image.trim()) {
+  if (typeof image === 'string' && isLikelyImageUrl(image)) {
     return resolveMediaUrl(image);
   }
   return null;
+}
+
+function AlertSnapshot({
+  url,
+  alt,
+  compact = false,
+}: {
+  url: string | null;
+  alt: string;
+  compact?: boolean;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    setBlobUrl(null);
+    setFailed(false);
+
+    if (!url) {
+      setFailed(true);
+      return () => {};
+    }
+
+    (async () => {
+      try {
+        const headers = new Headers();
+        const token = getToken();
+        if (token) headers.set('Authorization', `Bearer ${token}`);
+
+        const resp = await fetch(url, {
+          method: 'GET',
+          headers,
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!resp.ok) throw new Error(`snapshot_http_${resp.status}`);
+        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.startsWith('image/')) throw new Error('snapshot_not_image');
+
+        const blob = await resp.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setBlobUrl(objectUrl);
+      } catch {
+        if (active) setFailed(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
+
+  if (!url) return null;
+
+  if (failed) {
+    return <div className="mt-2 text-[11px] text-slate-500">Snapshot unavailable</div>;
+  }
+
+  if (!blobUrl) {
+    return (
+      <div
+        className={`mt-2 w-full rounded-lg border border-white/10 bg-white/5 animate-pulse ${
+          compact ? 'h-14 rounded-md' : 'h-20'
+        }`}
+      />
+    );
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="mt-2 block">
+      <img
+        src={blobUrl}
+        alt={alt}
+        className={`w-full rounded-lg object-cover border border-white/10 ${
+          compact ? 'h-14 rounded-md' : 'h-20'
+        }`}
+        loading="lazy"
+      />
+    </a>
+  );
 }
 
 function alertEpoch(alert: AlertItem): number | null {
@@ -349,16 +444,7 @@ export function LiveRail() {
             <div className="mt-1 text-sm font-semibold text-white">
               {alertTitle(alert)}
             </div>
-            {snapshotUrl ? (
-              <a href={snapshotUrl} target="_blank" rel="noreferrer" className="mt-2 block">
-                <img
-                  src={snapshotUrl}
-                  alt={`Snapshot ${alert.id}`}
-                  className="h-20 w-full rounded-lg object-cover border border-white/10"
-                  loading="lazy"
-                />
-              </a>
-            ) : null}
+            <AlertSnapshot url={snapshotUrl} alt={`Snapshot ${alert.id}`} />
             {alertDetail(alert) ? (
               <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
             ) : null}
@@ -417,16 +503,7 @@ export function MobileRail() {
         <div className="text-sm font-semibold text-white truncate">
           {alertTitle(latest)}
         </div>
-        {latestSnapshot ? (
-          <a href={latestSnapshot} target="_blank" rel="noreferrer" className="block">
-            <img
-              src={latestSnapshot}
-              alt={`Snapshot ${latest.id}`}
-              className="h-14 w-full rounded-md object-cover border border-white/10"
-              loading="lazy"
-            />
-          </a>
-        ) : null}
+        <AlertSnapshot url={latestSnapshot} alt={`Snapshot ${latest.id}`} compact />
         {alertDetail(latest) ? (
           <div className="text-xs text-slate-300 truncate">{alertDetail(latest)}</div>
         ) : null}
