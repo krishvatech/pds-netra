@@ -17,6 +17,7 @@ type AuthedLiveImageProps = {
   className?: string;
   onStatusChange?: (ok: boolean) => void;
   onLoad?: (evt: SyntheticEvent<HTMLImageElement, Event>) => void;
+  onFrameMeta?: (meta: { ageSeconds: number | null; capturedAtUtc: string | null } | null) => void;
 };
 
 function buildLiveHeaders(): Record<string, string> {
@@ -29,7 +30,7 @@ function buildLiveHeaders(): Record<string, string> {
   return headers;
 }
 
-function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }: AuthedLiveImageProps) {
+function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad, onFrameMeta }: AuthedLiveImageProps) {
   const [blobUrl, setBlobUrl] = useState<string>('');
 
   useEffect(() => {
@@ -43,6 +44,7 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }:
           return '';
         });
         onStatusChange?.(false);
+        onFrameMeta?.(null);
         return;
       }
 
@@ -53,6 +55,19 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }:
           signal: controller.signal
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const capturedAtHeader = resp.headers.get('X-Frame-Captured-At');
+        const ageHeader = resp.headers.get('X-Frame-Age-Seconds');
+        let ageSeconds: number | null = null;
+        if (ageHeader !== null) {
+          const parsed = Number(ageHeader);
+          if (Number.isFinite(parsed) && parsed >= 0) {
+            ageSeconds = parsed;
+          }
+        }
+        onFrameMeta?.({
+          ageSeconds,
+          capturedAtUtc: capturedAtHeader || null
+        });
         const blob = await resp.blob();
         const nextUrl = URL.createObjectURL(blob);
         if (cancelled) {
@@ -71,6 +86,7 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }:
           return '';
         });
         onStatusChange?.(false);
+        onFrameMeta?.(null);
       }
     };
 
@@ -84,6 +100,41 @@ function AuthedLiveImage({ requestUrl, alt, className, onStatusChange, onLoad }:
 
   if (!blobUrl) return null;
   return <img src={blobUrl} alt={alt} className={className} onLoad={onLoad} />;
+}
+
+function formatFrameAge(ageSeconds: number | null | undefined): string {
+  if (ageSeconds === null || ageSeconds === undefined || !Number.isFinite(ageSeconds)) return 'Age: --';
+  if (ageSeconds < 1) return 'Age: <1s';
+  if (ageSeconds < 60) return `Age: ${Math.round(ageSeconds)}s`;
+  const minutes = Math.floor(ageSeconds / 60);
+  const seconds = Math.round(ageSeconds % 60);
+  return `Age: ${minutes}m ${seconds}s`;
+}
+
+function formatCapturedTime(capturedAtUtc: string | null | undefined): string {
+  if (!capturedAtUtc) return 'Captured: --';
+  const d = new Date(capturedAtUtc);
+  if (Number.isNaN(d.getTime())) return 'Captured: --';
+  return `Captured: ${d.toLocaleTimeString()}`;
+}
+
+function frameAgeClass(ageSeconds: number | null | undefined): string {
+  if (ageSeconds === null || ageSeconds === undefined || !Number.isFinite(ageSeconds)) return 'text-slate-200';
+  if (ageSeconds <= 5) return 'text-emerald-300';
+  if (ageSeconds <= 20) return 'text-amber-300';
+  return 'text-rose-300';
+}
+
+const LIVE_STALE_THRESHOLD_SECONDS = (() => {
+  const raw = process.env.NEXT_PUBLIC_LIVE_STALE_THRESHOLD_SECONDS ?? '30';
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  return 30;
+})();
+
+function isFrameStale(ageSeconds: number | null | undefined): boolean {
+  if (ageSeconds === null || ageSeconds === undefined || !Number.isFinite(ageSeconds)) return false;
+  return ageSeconds >= LIVE_STALE_THRESHOLD_SECONDS;
 }
 
 export default function LiveCamerasPage() {
@@ -105,6 +156,7 @@ export default function LiveCamerasPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [zoneImageError, setZoneImageError] = useState(false);
   const [cameraErrors, setCameraErrors] = useState<Record<string, boolean>>({});
+  const [cameraFrameMeta, setCameraFrameMeta] = useState<Record<string, { ageSeconds: number | null; capturedAtUtc: string | null }>>({});
   const [liveCameraIds, setLiveCameraIds] = useState<string[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [newCameraId, setNewCameraId] = useState('');
@@ -160,6 +212,10 @@ export default function LiveCamerasPage() {
     return () => {
       mounted = false;
     };
+  }, [selectedGodown]);
+
+  useEffect(() => {
+    setCameraFrameMeta({});
   }, [selectedGodown]);
 
   useEffect(() => {
@@ -579,6 +635,9 @@ export default function LiveCamerasPage() {
                 )}?ts=${streamNonce}`;
                 const isLive = liveCameraIds.length === 0 || liveCameraIds.includes(camera.camera_id);
                 const hasError = cameraErrors[camera.camera_id];
+                const frameMeta = cameraFrameMeta[camera.camera_id];
+                const ageLabelClass = frameAgeClass(frameMeta?.ageSeconds);
+                const stale = isFrameStale(frameMeta?.ageSeconds);
                 const isEditing = editingCameraId === camera.camera_id;
                 return (
                   <div
@@ -660,6 +719,15 @@ export default function LiveCamerasPage() {
                       </div>
                     ) : null}
                     <div className="relative mt-3 aspect-video w-full overflow-hidden rounded-2xl border border-white/40 bg-black/85 shadow-inner">
+                      <div className={`absolute left-3 top-3 z-[2] rounded-md border border-white/30 bg-black/60 px-2 py-1 text-[11px] ${ageLabelClass}`}>
+                        <div>{formatFrameAge(frameMeta?.ageSeconds)}</div>
+                        <div>{formatCapturedTime(frameMeta?.capturedAtUtc)}</div>
+                      </div>
+                      {stale ? (
+                        <div className="absolute left-3 top-16 z-[2] rounded-md border border-rose-300/80 bg-rose-600/90 px-2 py-1 text-[11px] font-semibold tracking-wide text-white">
+                          STALE
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => handleOpenFullscreen(camera.camera_id)}
@@ -678,6 +746,12 @@ export default function LiveCamerasPage() {
                           className="h-full w-full object-contain"
                           onStatusChange={(ok) =>
                             setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
+                          }
+                          onFrameMeta={(meta) =>
+                            setCameraFrameMeta((prev) => ({
+                              ...prev,
+                              [camera.camera_id]: meta ?? { ageSeconds: null, capturedAtUtc: null }
+                            }))
                           }
                         />
                       ) : (
@@ -857,8 +931,25 @@ export default function LiveCamerasPage() {
                 requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}?ts=${streamNonce}`}
                 alt={`Live ${fullscreenCameraId}`}
                 className="max-h-full w-auto max-w-full object-contain"
+                onFrameMeta={(meta) =>
+                  setCameraFrameMeta((prev) => ({
+                    ...prev,
+                    [fullscreenCameraId]: meta ?? { ageSeconds: null, capturedAtUtc: null }
+                  }))
+                }
               />
             </div>
+              <div className="absolute left-6 top-14 z-10 rounded-md border border-white/30 bg-black/60 px-2 py-1 text-xs text-slate-200">
+                <div className={frameAgeClass(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}>
+                  {formatFrameAge(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}
+                </div>
+                <div>{formatCapturedTime(cameraFrameMeta[fullscreenCameraId]?.capturedAtUtc)}</div>
+              </div>
+              {isFrameStale(cameraFrameMeta[fullscreenCameraId]?.ageSeconds) ? (
+                <div className="absolute left-6 top-28 z-10 rounded-md border border-rose-300/80 bg-rose-600/90 px-2 py-1 text-xs font-semibold tracking-wide text-white">
+                  STALE
+                </div>
+              ) : null}
           </div>,
           document.body
         )

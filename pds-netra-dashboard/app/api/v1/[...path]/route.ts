@@ -122,7 +122,17 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
 
   const raw = await upstream.arrayBuffer();
   const resp = new NextResponse(raw, { status: upstream.status });
-  const passHeaders = ['content-type', 'cache-control', 'content-disposition', 'etag', 'last-modified'];
+  const passHeaders = [
+    'content-type',
+    'cache-control',
+    'content-disposition',
+    'etag',
+    'last-modified',
+    'x-frame-captured-at',
+    'x-frame-age-seconds',
+    'x-frame-stale',
+    'x-frame-stale-threshold-seconds'
+  ];
   for (const key of passHeaders) {
     const v = upstream.headers.get(key);
     if (v) resp.headers.set(key, v);
