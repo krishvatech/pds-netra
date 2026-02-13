@@ -62,6 +62,7 @@ class Pipeline:
         callback: Callable[[List[DetectedObject]], None],
         stop_check: Optional[Callable[[], bool]] = None,
         frame_processors: Optional[List[Callable[[List[DetectedObject], datetime.datetime, Any], None]]] = None,
+        latest_frame_hook: Optional[Callable[[Any, float], None]] = None,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.source = source
@@ -70,6 +71,7 @@ class Pipeline:
         self.callback = callback
         self.stop_check = stop_check
         self.frame_processors = frame_processors or []
+        self.latest_frame_hook = latest_frame_hook
 
     @staticmethod
     def _is_realtime_source(source: str) -> bool:
@@ -142,7 +144,7 @@ class Pipeline:
         if not fps_hint or fps_hint <= 0:
             fps_hint = 15.0
         try:
-            def process_frame(frame: Any) -> None:
+            def process_frame(frame: Any, frame_ts: Optional[float] = None) -> None:
                 nonlocal writer
                 tracked = self.detector.track(frame)
                 now_utc = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
@@ -166,12 +168,13 @@ class Pipeline:
                 # Invoke callback; if callback accepts a frame argument, pass it
                 overlay_payload = None
                 try:
-                    # Try passing frame via keyword. This allows callbacks that accept
-                    # an optional ``frame`` parameter to receive the raw image.
-                    overlay_payload = self.callback(objects, frame=frame)
+                    overlay_payload = self.callback(objects, frame=frame, frame_ts=frame_ts)
                 except TypeError:
-                    # Fallback for callbacks that only accept the list of objects
-                    overlay_payload = self.callback(objects)
+                    try:
+                        overlay_payload = self.callback(objects, frame=frame)
+                    except TypeError:
+                        # Fallback for callbacks that only accept the list of objects
+                        overlay_payload = self.callback(objects)
                 except Exception as exc:
                     self.logger.exception("Callback raised exception: %s", exc)
                 if debug_draw:
@@ -232,11 +235,12 @@ class Pipeline:
                 frame_cond = threading.Condition()
                 capture_stop = threading.Event()
                 latest_frame: Optional[Any] = None
+                latest_frame_ts: Optional[float] = None
                 latest_seq = 0
                 self._rtsp_retry = 0
 
                 def capture_loop() -> None:
-                    nonlocal cap, latest_frame, latest_seq
+                    nonlocal cap, latest_frame, latest_frame_ts, latest_seq
                     while not capture_stop.is_set():
                         if cap is None or not cap.isOpened():
                             cap = self._open_capture(realtime_source=realtime_source)
@@ -271,11 +275,18 @@ class Pipeline:
                             capture_stop.wait(timeout=delay)
                             continue
 
+                        capture_ts = time.time()
                         self._rtsp_retry = 0
                         with frame_cond:
                             latest_frame = frame
+                            latest_frame_ts = capture_ts
                             latest_seq += 1
                             frame_cond.notify_all()
+                        if self.latest_frame_hook is not None:
+                            try:
+                                self.latest_frame_hook(frame, capture_ts)
+                            except Exception as exc:
+                                self.logger.debug("latest_frame_hook failed for camera %s: %s", self.camera_id, exc)
 
                 capture_thread = threading.Thread(
                     target=capture_loop,
@@ -296,9 +307,10 @@ class Pipeline:
                             continue
                         last_seen_seq = latest_seq
                         frame = latest_frame.copy() if latest_frame is not None else None
+                        frame_ts = latest_frame_ts
                     if frame is None:
                         continue
-                    process_frame(frame)
+                    process_frame(frame, frame_ts=frame_ts)
 
                 capture_stop.set()
                 with frame_cond:
@@ -333,8 +345,14 @@ class Pipeline:
                         self._rtsp_retry = 0
                         continue
 
+                    capture_ts = time.time()
                     self._rtsp_retry = 0
-                    process_frame(frame)
+                    if realtime_source and self.latest_frame_hook is not None:
+                        try:
+                            self.latest_frame_hook(frame, capture_ts)
+                        except Exception as exc:
+                            self.logger.debug("latest_frame_hook failed for camera %s: %s", self.camera_id, exc)
+                    process_frame(frame, frame_ts=capture_ts)
         finally:
             if writer is not None:
                 writer.release()

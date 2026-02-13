@@ -911,6 +911,9 @@ def start_camera_loops(
             )
             live_latest_path = Path(live_dir) / settings.godown_id / f"{camera_obj.id}_latest.jpg"
             live_writer = LiveFrameWriter(str(live_latest_path), latest_interval=0.2)
+            live_raw_fallback_sec = max(0.2, _read_float_env("EDGE_LIVE_RAW_FALLBACK_SEC", 1.5))
+            live_write_state_lock = threading.Lock()
+            last_live_annotated_mono = 0.0
 
             def _sync_zones(width: int, height: int) -> None:
                 nonlocal last_zone_sync
@@ -1003,9 +1006,11 @@ def start_camera_loops(
             def callback(
                 objects: list[DetectedObject],
                 frame=None,
+                frame_ts: Optional[float] = None,
             ) -> None:
                 """Composite callback handling rule evaluation, ANPR and tamper detection."""
                 nonlocal last_face_sync
+                nonlocal last_live_annotated_mono
                 now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
                 if frame is not None:
@@ -1315,7 +1320,10 @@ def start_camera_loops(
                     if annotated_writer is not None:
                         annotated_writer.write_frame(frame, dets)
                     if live_writer is not None:
-                        live_writer.write_frame(frame, dets)
+                        wrote_live = live_writer.write_frame(frame, dets, source_ts=frame_ts)
+                        if wrote_live:
+                            with live_write_state_lock:
+                                last_live_annotated_mono = time.monotonic()
 
                 if (
                     frame is not None
@@ -1351,6 +1359,21 @@ def start_camera_loops(
                         except Exception:
                             pass
                         current_state["last_snapshot_ts"] = now_ts
+
+            def latest_frame_hook(raw_frame, capture_ts: float) -> None:
+                nonlocal last_live_annotated_mono
+                if live_writer is None or raw_frame is None:
+                    return
+                if current_state["mode"] != "live":
+                    return
+                now_mono = time.monotonic()
+                with live_write_state_lock:
+                    if (now_mono - last_live_annotated_mono) < live_raw_fallback_sec:
+                        return
+                try:
+                    live_writer.write_frame(raw_frame, [], source_ts=capture_ts)
+                except Exception as exc:
+                    logger.debug("Live raw fallback write failed camera=%s err=%s", camera_obj.id, exc)
 
             last_restart_token = restart_tokens.get(camera_obj.id, 0)
             force_restart = False
@@ -1440,6 +1463,7 @@ def start_camera_loops(
                     callback,
                     stop_check=should_stop,
                     frame_processors=[bag_handler],
+                    latest_frame_hook=(latest_frame_hook if current_mode == "live" else None),
                 )
                 pipeline.run()
                 if force_restart:

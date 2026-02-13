@@ -14,6 +14,7 @@ from pathlib import Path
 import logging
 from typing import Optional, Sequence, Tuple
 import time
+import threading
 
 try:
     import cv2  # type: ignore
@@ -172,44 +173,62 @@ class LiveFrameWriter:
         self.latest_path = Path(latest_path)
         self.latest_interval = latest_interval
         self._last_latest_ts = 0.0
+        self._last_source_ts = 0.0
+        self._write_lock = threading.Lock()
         self._log = logging.getLogger("live_frame_writer")
 
     def write_frame(
         self,
         frame,
         detections: Sequence[Tuple[str, float, Sequence[int], Optional[int]]],
-    ) -> None:
+        source_ts: Optional[float] = None,
+    ) -> bool:
         if cv2 is None:
-            return
+            return False
 
         now = time.monotonic()
-        if now - self._last_latest_ts < self.latest_interval:
-            return
+        with self._write_lock:
+            if source_ts is not None:
+                try:
+                    src_ts = float(source_ts)
+                except Exception:
+                    src_ts = None
+                if src_ts is not None and src_ts <= self._last_source_ts:
+                    return False
+            else:
+                src_ts = None
+            if now - self._last_latest_ts < self.latest_interval:
+                return False
 
-        canvas = frame.copy()
-        for class_name, confidence, bbox, track_id in detections:
-            x1, y1, x2, y2 = bbox
-            cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
-            label = f"{class_name} {confidence:.2f}"
-            # ✅ FIX: track_id can be None
-            if track_id is not None and track_id >= 0:
-                label = f"{label} id={track_id}"
-            cv2.putText(
-                canvas,
-                label,
-                (x1, max(y1 - 6, 10)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 200, 255),
-                1,
-                cv2.LINE_AA,
-            )
+            canvas = frame.copy()
+            for class_name, confidence, bbox, track_id in detections:
+                x1, y1, x2, y2 = bbox
+                cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 2)
+                label = f"{class_name} {confidence:.2f}"
+                # ✅ FIX: track_id can be None
+                if track_id is not None and track_id >= 0:
+                    label = f"{label} id={track_id}"
+                cv2.putText(
+                    canvas,
+                    label,
+                    (x1, max(y1 - 6, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 200, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
 
-        try:
-            ok = _atomic_write_jpg(self.latest_path, canvas, retries=6, delay=0.02)
-            if not ok:
-                self._log.warning("Failed to write live frame to %s", self.latest_path)
-        except Exception:
-            self._log.exception("Failed to write live frame to %s", self.latest_path)
+            try:
+                ok = _atomic_write_jpg(self.latest_path, canvas, retries=6, delay=0.02)
+                if not ok:
+                    self._log.warning("Failed to write live frame to %s", self.latest_path)
+                    return False
+            except Exception:
+                self._log.exception("Failed to write live frame to %s", self.latest_path)
+                return False
 
-        self._last_latest_ts = now
+            self._last_latest_ts = now
+            if src_ts is not None:
+                self._last_source_ts = max(self._last_source_ts, src_ts)
+            return True
