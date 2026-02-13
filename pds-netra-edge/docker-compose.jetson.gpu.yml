@@ -28,7 +28,7 @@ services:
       - EDGE_BACKEND_URL=https://cv.krishvatech.com
       - EDGE_TIMEZONE=Asia/Kolkata
       - YOLO_CONFIG_DIR=/opt/app/.cache/Ultralytics
-      - EDGE_FIRE_DEVICE=cuda
+      - EDGE_FIRE_DEVICE=cuda:0
       - EDGE_LIVE_ANNOTATED_DIR=/live
       - EDGE_OVERRIDE_DIR=/opt/app/data/edge_overrides
 

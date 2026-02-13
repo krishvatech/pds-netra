@@ -65,10 +65,87 @@ pytest -q
 The edge node can operate on RTSP streams or local video files for development. To run against the sample configuration using local MP4 files:
 
 ```bash
-python -m app.main --config config/pds_netra_config.yaml --device cpu --log-level DEBUG
+python -m app.main --config config/pds_netra_config.yaml --device cuda:0 --log-level DEBUG
 ```
 
 This will start the MQTT client, spawn a processing thread per camera, and emit dummy events to the configured broker. Logs will be printed to the console. Modify `config/pds_netra_config.yaml` or set environment variables (see `.env.example`) to point to your own cameras or broker.
+
+Device options:
+
+- `--device cpu`
+- `--device cuda:0`
+- `--device tensorrt`
+
+If `--device` is not provided, the app auto-selects `cuda:0` when CUDA is available, otherwise falls back to `cpu` with a warning.
+
+## Jetson GPU Setup (JetPack 6.2.2 / L4T 36.5.0)
+
+For Jetson host installs (outside Docker), install CUDA-enabled PyTorch wheels first:
+
+```bash
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install --extra-index-url https://pypi.ngc.nvidia.com --upgrade torch torchvision torchaudio
+python3 -m pip install -r requirements.txt
+```
+
+Sanity-check CUDA from Python:
+
+```bash
+python3 - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda_available:", torch.cuda.is_available())
+print("gpu0:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A")
+PY
+```
+
+Run edge on GPU:
+
+```bash
+python3 -m app.main --config config/pds_netra_config.yaml --device cuda:0
+```
+
+## TensorRT Path
+
+Use TensorRT directly with an engine model:
+
+```bash
+python3 -m app.main --config config/pds_netra_config.yaml --device tensorrt
+```
+
+If your model is `.pt` and the `.engine` file is missing, the app auto-exports on first run.
+You can also export manually:
+
+```bash
+python3 scripts/export_tensorrt_engine.py --model animal.pt --imgsz 640 --half
+```
+
+The runtime also supports loading an explicit engine path (for example `animal.engine`) via `EDGE_YOLO_MODEL`.
+
+## Verify GPU Inference
+
+Use the built-in benchmark/check script:
+
+```bash
+python3 scripts/check_gpu_inference.py --model animal.pt --device cuda:0 --warmup 15 --runs 50
+```
+
+It prints warmup/timed latency, FPS, and whether GPU path is active.
+
+While the app runs, confirm GPU activity with tegrastats:
+
+```bash
+sudo tegrastats --interval 1000
+```
+
+Check for non-zero `GR3D_FREQ` while inference is running.
+
+Optional jtop monitoring:
+
+```bash
+sudo -H pip3 install -U jetson-stats
+sudo jtop
+```
 
 ## Jetson live-lag tuning
 

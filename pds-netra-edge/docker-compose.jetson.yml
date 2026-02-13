@@ -21,7 +21,7 @@ services:
       - driver: nvidia
         count: all
         capabilities: [gpu]
-    command: python -m app.main --config /opt/app/config/pds_netra_config.yaml --device cuda --preflight-on-start
+    command: python -m app.main --config /opt/app/config/pds_netra_config.yaml --device cuda:0 --preflight-on-start
     healthcheck:
       test: ["CMD-SHELL", "test -f /opt/app/data/edge_health.json && find /opt/app/data/edge_health.json -mmin -2 | grep -q edge_health.json"]
       interval: 30s

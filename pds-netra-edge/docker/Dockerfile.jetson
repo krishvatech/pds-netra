@@ -18,4 +18,4 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 
 # Set the default command to run the edge node on GPU
-CMD ["python3", "-m", "app.main", "--config", "config/pds_netra_config.yaml", "--device", "cuda"]
+CMD ["python3", "-m", "app.main", "--config", "config/pds_netra_config.yaml", "--device", "cuda:0"]

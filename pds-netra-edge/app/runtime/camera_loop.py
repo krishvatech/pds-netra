@@ -18,7 +18,7 @@ import time
 import json
 import datetime
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Dict, Tuple, Any, Callable
 
 from ..cv.pipeline import Pipeline, DetectedObject
@@ -120,7 +120,7 @@ def start_camera_loops(
     mqtt_client: MQTTClient
         Connected MQTT client used to publish events.
     device: str
-        Device specifier for YOLO detector ("cpu" or "cuda").
+        Device specifier for YOLO detector ("cpu", "cuda:0", or "tensorrt").
 
     Returns
     -------
@@ -602,7 +602,7 @@ def start_camera_loops(
         need_general_detector = modules.animal_detection_enabled or modules.person_after_hours_enabled
         if need_general_detector:
             try:
-                model_path = os.getenv("EDGE_YOLO_MODEL", "animal.pt")
+                model_path, model_conf, model_iou, model_imgsz, model_classes, model_max_det = _resolve_general_model_cfg()
                 detector = YoloDetector(
                     model_name=model_path,
                     device=device,
@@ -610,6 +610,11 @@ def start_camera_loops(
                     track_persist=settings.tracking.track_persist,
                     track_conf=settings.tracking.conf,
                     track_iou=settings.tracking.iou,
+                    conf=model_conf,
+                    iou=model_iou,
+                    imgsz=model_imgsz,
+                    classes=model_classes,
+                    max_det=model_max_det,
                 )
             except Exception as exc:
                 logger.error("Error loading YOLO detector: %s", exc)
@@ -781,10 +786,18 @@ def start_camera_loops(
 
         fire_processor: Optional[FireDetectionProcessor] = None
         if settings.fire_detection and settings.fire_detection.enabled and modules.fire_detection_enabled:
+            fire_cfg = settings.fire_detection
+            fire_device_env = os.getenv("EDGE_FIRE_DEVICE", "").strip()
+            fire_device = fire_device_env or str(fire_cfg.device or "").strip() or "cpu"
+            # Keep fire inference aligned with global runtime when the fire config is left at legacy default "cpu".
+            if not fire_device_env and fire_device.lower() == "cpu" and device != "cpu":
+                fire_device = device
+            if fire_device != fire_cfg.device:
+                fire_cfg = replace(fire_cfg, device=fire_device)
             fire_processor = FireDetectionProcessor(
                 camera_id=camera.id,
                 godown_id=settings.godown_id,
-                config=settings.fire_detection,
+                config=fire_cfg,
                 zone_polygons=zone_polygons,
             )
         snapshot_writer = default_snapshot_writer()

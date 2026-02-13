@@ -3,7 +3,7 @@ Entry point for the PDS Netra edge node.
 
 Usage (from project root)::
 
-    python -m app.main --config config/pds_netra_config.yaml --device cpu
+    python -m app.main --config config/pds_netra_config.yaml --device cuda:0
 
 This script loads the configuration, initializes logging, connects to
 the MQTT broker, starts video processing pipelines for each camera, and
@@ -33,6 +33,78 @@ from .rules.remote import fetch_rule_configs
 from .cameras.remote import fetch_camera_configs
 
 
+ALLOWED_DEVICES = {"cpu", "cuda:0", "tensorrt"}
+
+
+def _normalize_device(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    val = str(raw).strip().lower()
+    if not val:
+        return None
+    if val == "cuda":
+        return "cuda:0"
+    return val
+
+
+def _torch_cuda_snapshot() -> tuple[str | None, bool, str | None]:
+    try:
+        import torch
+    except Exception:
+        return None, False, None
+    version = getattr(torch, "__version__", None)
+    try:
+        cuda_available = bool(torch.cuda.is_available())
+    except Exception:
+        cuda_available = False
+    gpu_name = None
+    if cuda_available:
+        try:
+            gpu_name = str(torch.cuda.get_device_name(0))
+        except Exception:
+            gpu_name = None
+    return version, cuda_available, gpu_name
+
+
+def _resolve_inference_device(cli_device: str | None, logger: logging.Logger) -> str:
+    requested_raw = cli_device if cli_device is not None else os.getenv("EDGE_DEVICE")
+    requested = _normalize_device(requested_raw)
+    if requested and requested not in ALLOWED_DEVICES:
+        logger.warning(
+            "Unsupported EDGE_DEVICE/--device value '%s'. Falling back to auto-select.",
+            requested_raw,
+        )
+        requested = None
+
+    torch_version, cuda_available, gpu_name = _torch_cuda_snapshot()
+    logger.info("torch version: %s", torch_version or "not installed")
+    logger.info("torch.cuda.is_available(): %s", cuda_available)
+    logger.info("torch.cuda.get_device_name(0): %s", gpu_name or "N/A")
+
+    if requested is None:
+        if cuda_available:
+            logger.info("No --device provided. Auto-selecting cuda:0.")
+            return "cuda:0"
+        logger.warning(
+            "========== GPU WARNING ==========\n"
+            "CUDA is not available. Falling back to CPU inference.\n"
+            "Set up CUDA-enabled PyTorch/TensorRT on Jetson for GPU inference.\n"
+            "================================="
+        )
+        return "cpu"
+
+    if requested in {"cuda:0", "tensorrt"} and not cuda_available:
+        logger.warning(
+            "========== GPU WARNING ==========\n"
+            "Requested device '%s' but CUDA is not available.\n"
+            "Falling back to CPU inference.\n"
+            "=================================",
+            requested,
+        )
+        return "cpu"
+    return requested
+
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PDS Netra Edge Node")
     parser.add_argument(
@@ -44,9 +116,10 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default=os.getenv("EDGE_DEVICE", "cpu"),
-        choices=["cpu", "cuda"],
-        help="Device for running inference (cpu or cuda)",
+        default=None,
+        choices=["cpu", "cuda:0", "tensorrt"],
+        help="Inference device (cpu | cuda:0 | tensorrt). "
+        "Default: auto (cuda:0 if available, else cpu).",
     )
     parser.add_argument(
         "--log-level",
@@ -93,18 +166,7 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("Failed to load configuration: %s", exc)
         return 1
     logger.info("Loaded settings for godown %s", settings.godown_id)
-    requested_device = args.device
-    effective_device = requested_device
-    if requested_device == "cuda":
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                logger.info("CUDA available: %s", torch.cuda.get_device_name(0))
-            else:
-                logger.warning("CUDA requested but not available; continuing anyway")
-        except Exception as exc:
-            logger.warning("CUDA check failed: %s", exc)
+    effective_device = _resolve_inference_device(args.device, logger)
     logger.info("Inference device: %s", effective_device)
     rules_source = os.getenv("EDGE_RULES_SOURCE", "backend").lower()
     if rules_source == "backend":
