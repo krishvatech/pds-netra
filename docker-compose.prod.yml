@@ -46,7 +46,9 @@ services:
       context: ./pds-netra-edge
       dockerfile: docker/Dockerfile.embedding.cpu
     restart: unless-stopped
-    command: ["uvicorn", "app.embedding_api:app", "--host", "0.0.0.0", "--port", "19000", "--log-level", "debug"]
+    volumes:
+      - ./deployment/data/embedding_models:/root/.insightface/models
+    command: ["uvicorn", "app.embedding_api:app", "--host", "0.0.0.0", "--port", "19000"]
 
   dashboard:
     build:
