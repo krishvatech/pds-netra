@@ -9,22 +9,32 @@ from __future__ import annotations
 
 import os
 import uuid
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Header
 
-from tools.generate_face_embedding import compute_embedding, load_known_faces, save_known_faces
+from tools.generate_face_embedding import (
+    compute_embedding,
+    load_known_faces,
+    save_known_faces,
+)
 from app.core.errors import log_exception
 
-app = FastAPI(title="PDS Netra Embedding API", version="1.1")
+app = FastAPI(title="PDS Netra Embedding API", version="1.2")
+
+# ✅ Proper logger (NOT app.logger)
+logger = logging.getLogger("embedding_api")
 
 
 def _verify_auth(authorization: str | None) -> None:
     token = os.getenv("EDGE_EMBEDDING_TOKEN")
     if not token:
         return
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authorization token.")
+
     incoming = authorization.split(" ", 1)[1].strip()
     if incoming != token:
         raise HTTPException(status_code=403, detail="Invalid authorization token.")
@@ -59,10 +69,12 @@ async def face_embedding(
     try:
         temp_path.write_bytes(file_bytes)
 
-        # This will raise ValueError for: no face / multiple faces / bad image
+        # Will raise ValueError for:
+        # - no face
+        # - multiple faces
+        # - bad image
         embedding = compute_embedding(str(temp_path))
 
-        # Update known_faces.json (inside container FS)
         config_path = Path(__file__).resolve().parents[1] / "config" / "known_faces.json"
         data = load_known_faces(str(config_path))
 
@@ -97,29 +109,36 @@ async def face_embedding(
         }
 
     except ValueError as ve:
-        # Clean, user-friendly error (NO 500)
+        # ✅ Clean user error (no 500)
         raise HTTPException(status_code=400, detail=str(ve))
 
     except Exception as exc:
-        # IMPORTANT: log full traceback in docker logs
+        # ✅ Log full traceback properly
         log_exception(
-            app.logger,
+            logger,
             "Embedding failed",
-            extra={"person_id": person_id, "name": name, "filename": file.filename},
+            extra={
+                "person_id": person_id,
+                "name": name,
+                "filename": file.filename,
+            },
             exc=exc,
         )
+
         msg = str(exc) or exc.__class__.__name__
-        # 503 is better than 500 for "service/model not ready" situations
-        raise HTTPException(status_code=503, detail=f"Embedding service error: {msg}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Embedding service error: {msg}",
+        )
 
     finally:
         try:
             if temp_path.exists():
                 temp_path.unlink()
-        except Exception as exc:
+        except Exception as cleanup_exc:
             log_exception(
-                app.logger,
+                logger,
                 "Failed to cleanup temp embedding file",
                 extra={"path": str(temp_path)},
-                exc=exc,
+                exc=cleanup_exc,
             )
