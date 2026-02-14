@@ -46,6 +46,18 @@ def test_gate_anpr_defaults():
     assert modules.health_monitoring_enabled is True
 
 
+def test_gate_anpr_honored_even_when_role_not_explicit():
+    settings = _settings()
+    camera = CameraConfig(id="CAM_GATE", rtsp_url="rtsp://example", role="GATE_ANPR", role_explicit=False)
+    modules = resolve_camera_modules(camera, settings)
+    assert modules.anpr_enabled is True
+    assert modules.gate_entry_exit_enabled is True
+    assert modules.person_after_hours_enabled is False
+    assert modules.animal_detection_enabled is False
+    assert modules.fire_detection_enabled is False
+    assert modules.health_monitoring_enabled is True
+
+
 def test_security_defaults_disable_anpr():
     settings = _settings()
     camera = CameraConfig(id="CAM_SEC", rtsp_url="rtsp://example", role="SECURITY", role_explicit=True)

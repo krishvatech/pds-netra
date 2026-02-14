@@ -59,7 +59,13 @@ def _normalize_role(role: Optional[str]) -> str:
 
 def _resolve_base_modules(camera: CameraConfig, settings: Settings) -> dict[str, bool]:
     role = _normalize_role(camera.role)
-    legacy_defaults = not getattr(camera, "role_explicit", False)
+    # Keep backward compatibility for old cameras, but if a specialized role
+    # is present from backend (GATE_ANPR / HEALTH_ONLY), honor it even when
+    # role_explicit is false.
+    legacy_defaults = (
+        not getattr(camera, "role_explicit", False)
+        and role not in {ROLE_GATE_ANPR, ROLE_HEALTH_ONLY}
+    )
 
     if legacy_defaults:
         return {
@@ -148,4 +154,3 @@ def select_pipeline(camera: CameraConfig, settings: Settings) -> CameraPipeline:
     if role == ROLE_HEALTH_ONLY:
         return HealthOnlyPipeline(camera=camera, role=role, modules=modules)
     return SecurityPipeline(camera=camera, role=role, modules=modules)
-
