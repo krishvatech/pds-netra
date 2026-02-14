@@ -221,10 +221,19 @@ A `docker-compose.yml` file is provided for local development. It starts a Mosqu
 docker compose up --build
 ```
 
-The edge node service uses the `Dockerfile.mac-dev` by default. For Jetson deployment build using `Dockerfile.jetson` on the target device instead:
+The edge node service uses the `Dockerfile.mac-dev` (CPU-only) by default.
+Do not use `docker-compose.yml` on Jetson if you need CUDA/ANPR OCR.
+
+For Jetson GPU deployment (JetPack 6), run:
 
 ```bash
-docker build -f docker/Dockerfile.jetson -t pds-netra-edge:jetson .
+docker compose -f docker-compose.jetson.gpu.yml up --build -d
+```
+
+If you prefer a direct image build, use `docker/Dockerfile.jp6` on the target device:
+
+```bash
+docker build -f docker/Dockerfile.jp6 -t pds-netra-edge:jetson .
 ```
 
 ## Next steps

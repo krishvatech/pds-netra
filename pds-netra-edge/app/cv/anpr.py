@@ -791,7 +791,11 @@ class OcrEngine:
         self.logger = logging.getLogger(self.__class__.__name__)
         paddleocr_cls = _load_paddleocr()
         if paddleocr_cls is None:
-            raise RuntimeError("paddleocr package is not installed.")
+            raise RuntimeError(
+                "paddleocr package is not installed. "
+                "Install paddleocr/paddlepaddle in the edge image (Jetson: use docker/Dockerfile.jp6) "
+                "or set EDGE_ANPR_DISABLE_OCR=true to run detection-only ANPR."
+            )
 
         _set_paddle_flags()
         use_gpu = bool(gpu) and _paddle_gpu_available()

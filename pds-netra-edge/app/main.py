@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import platform
 import sys
 import time
 from typing import List
@@ -79,6 +80,17 @@ def _resolve_inference_device(cli_device: str | None, logger: logging.Logger) ->
     logger.info("torch version: %s", torch_version or "not installed")
     logger.info("torch.cuda.is_available(): %s", cuda_available)
     logger.info("torch.cuda.get_device_name(0): %s", gpu_name or "N/A")
+    try:
+        machine = platform.machine().lower()
+    except Exception:
+        machine = ""
+    if torch_version and "+cpu" in str(torch_version).lower() and machine in {"aarch64", "arm64"}:
+        logger.warning(
+            "CPU-only PyTorch build detected on ARM (%s). "
+            "If this is Jetson, rebuild edge with docker/Dockerfile.jp6 (or docker-compose.jetson.gpu.yml) "
+            "to enable CUDA inference.",
+            machine,
+        )
 
     if requested in {None, "auto"}:
         if cuda_available:

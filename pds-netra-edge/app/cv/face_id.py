@@ -31,6 +31,11 @@ except ImportError:
     FaceAnalysis = None  # type: ignore
 
 try:
+    import onnxruntime as ort  # type: ignore
+except Exception:
+    ort = None  # type: ignore
+
+try:
     import faiss  # type: ignore
     _FAISS_OK = True
 except Exception:
@@ -183,10 +188,45 @@ def _ensure_model() -> "FaceAnalysis":
     model_name = os.getenv("PDS_FACE_MODEL", "antelopev2")
     root = os.getenv("INSIGHTFACE_HOME", os.path.expanduser("~/.insightface"))
 
+    def _resolve_runtime() -> tuple[List[str], int]:
+        providers = ["CPUExecutionProvider"]
+        ctx_id = -1
+        requested = (
+            os.getenv("EDGE_FACE_DEVICE")
+            or os.getenv("EDGE_DEVICE")
+            or "auto"
+        ).strip().lower()
+        wants_gpu = requested in {"auto", "cuda", "cuda:0", "gpu", "tensorrt"}
+
+        available: List[str] = []
+        if ort is not None:
+            try:
+                available = [str(p) for p in ort.get_available_providers()]  # type: ignore[attr-defined]
+            except Exception:
+                available = []
+        if wants_gpu and "CUDAExecutionProvider" in available:
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            ctx_id = 0
+        elif wants_gpu:
+            logger.info(
+                "FaceRecognition: CUDAExecutionProvider unavailable; using CPUExecutionProvider (available=%s)",
+                ",".join(available) if available else "unknown",
+            )
+        return providers, ctx_id
+
     def _init(name: str) -> "FaceAnalysis":
         # allowed_modules is optional but keeps it lean/faster
-        app = FaceAnalysis(name=name, root=root, allowed_modules=["detection", "recognition"])
-        app.prepare(ctx_id=-1, det_size=(640, 640))
+        providers, ctx_id = _resolve_runtime()
+        try:
+            app = FaceAnalysis(
+                name=name,
+                root=root,
+                allowed_modules=["detection", "recognition"],
+                providers=providers,
+            )
+        except TypeError:
+            app = FaceAnalysis(name=name, root=root, allowed_modules=["detection", "recognition"])
+        app.prepare(ctx_id=ctx_id, det_size=(640, 640))
         return app
 
     try:
