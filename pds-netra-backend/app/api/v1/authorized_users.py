@@ -203,6 +203,53 @@ def _get_edge_config_path() -> Path:
     return Path(__file__).resolve().parents[4] / "pds-netra-edge" / "config" / "known_faces.json"
 
 
+def _sync_face_embedding_to_edge(
+    *,
+    edge_embedding_url: str,
+    edge_embedding_token: str | None,
+    person_id: str,
+    name: str,
+    role: str | None,
+    godown_id: str | None,
+    file_name: str,
+    content_type: str | None,
+    file_bytes: bytes,
+) -> tuple[bool, str | None]:
+    headers = {}
+    if edge_embedding_token:
+        headers["Authorization"] = f"Bearer {edge_embedding_token}"
+    files = {
+        "file": (file_name or "face.jpg", file_bytes, content_type or "image/jpeg")
+    }
+    data = {
+        "person_id": person_id,
+        "name": name,
+        "role": role or "",
+        "godown_id": godown_id or "",
+    }
+    try:
+        resp = requests.post(
+            edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        return False, f"Edge embedding service request failed: {exc}"
+
+    if resp.status_code == 200:
+        return True, None
+    detail = resp.text
+    try:
+        parsed = resp.json()
+        if isinstance(parsed, dict) and parsed.get("detail"):
+            detail = str(parsed.get("detail"))
+    except Exception:
+        pass
+    return False, f"Edge embedding service returned {resp.status_code}: {detail}"
+
+
 @router.put("/{person_id}", response_model=AuthorizedUserResponse)
 def update_authorized_user(
     person_id: str,
@@ -488,6 +535,10 @@ async def register_authorized_user_with_face(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty file upload.")
 
+    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
+    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
+    edge_sync_done = False
+
     temp_dir = Path(os.getenv("EDGE_TMP_DIR", "/tmp")) / "pds-faces"
     temp_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(file.filename).suffix or ".jpg"
@@ -502,10 +553,30 @@ async def register_authorized_user_with_face(
             pass
 
     if not embedding_vector:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not detect a single face in the uploaded photo. Use a clear image with one visible face.",
-        )
+        if edge_embedding_url:
+            ok, edge_err = _sync_face_embedding_to_edge(
+                edge_embedding_url=edge_embedding_url,
+                edge_embedding_token=edge_embedding_token,
+                person_id=person_id,
+                name=name,
+                role=role,
+                godown_id=godown_id,
+                file_name=file.filename or "face.jpg",
+                content_type=file.content_type,
+                file_bytes=file_bytes,
+            )
+            if not ok:
+                raise HTTPException(status_code=400, detail=edge_err or "Edge embedding sync failed.")
+            edge_sync_done = True
+            logger.info("Local embedding unavailable; used edge embedding service for person_id=%s", person_id)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not compute face embedding locally. "
+                    "Use a clear image with one visible face, or configure EDGE_EMBEDDING_URL."
+                ),
+            )
 
     # Create new user in DB (DB is the source of truth).
     new_user = AuthorizedUser(
@@ -515,47 +586,29 @@ async def register_authorized_user_with_face(
         godown_id=godown_id,
         is_active=is_active,
         embedding=embedding_vector,
-        embedding_version="v1",
-        embedding_hash=_hash_embedding_vector(embedding_vector),
-        embedding_generated_at=datetime.utcnow(),
+        embedding_version="v1" if embedding_vector else None,
+        embedding_hash=_hash_embedding_vector(embedding_vector) if embedding_vector else None,
+        embedding_generated_at=datetime.utcnow() if embedding_vector else None,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     # Optional best-effort edge sync (do not fail DB create if edge is unreachable).
-    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL")
-    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
-    if edge_embedding_url:
-        headers = {}
-        if edge_embedding_token:
-            headers["Authorization"] = f"Bearer {edge_embedding_token}"
-        files = {
-            "file": (file.filename or "face.jpg", file_bytes, file.content_type or "image/jpeg")
-        }
-        data = {
-            "person_id": person_id,
-            "name": name,
-            "role": role or "",
-            "godown_id": godown_id or "",
-        }
-        try:
-            resp = requests.post(
-                edge_embedding_url.rstrip("/") + "/api/v1/face-embedding",
-                headers=headers,
-                files=files,
-                data=data,
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    "Edge embedding sync failed person_id=%s status=%s body=%s",
-                    person_id,
-                    resp.status_code,
-                    resp.text,
-                )
-        except requests.RequestException as exc:
-            logger.warning("Edge embedding sync request failed person_id=%s err=%s", person_id, exc)
+    if edge_embedding_url and not edge_sync_done:
+        ok, edge_err = _sync_face_embedding_to_edge(
+            edge_embedding_url=edge_embedding_url,
+            edge_embedding_token=edge_embedding_token,
+            person_id=person_id,
+            name=name,
+            role=role,
+            godown_id=godown_id,
+            file_name=file.filename or "face.jpg",
+            content_type=file.content_type,
+            file_bytes=file_bytes,
+        )
+        if not ok:
+            logger.warning("Edge embedding sync failed person_id=%s err=%s", person_id, edge_err)
     else:
         logger.info("EDGE_EMBEDDING_URL not set; skipping optional edge embedding sync for person_id=%s", person_id)
     
