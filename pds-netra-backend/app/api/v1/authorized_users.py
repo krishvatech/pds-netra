@@ -502,7 +502,10 @@ async def register_authorized_user_with_face(
             pass
 
     if not embedding_vector:
-        raise HTTPException(status_code=500, detail="Failed to compute face embedding locally.")
+        raise HTTPException(
+            status_code=400,
+            detail="Could not detect a single face in the uploaded photo. Use a clear image with one visible face.",
+        )
 
     # Create new user in DB (DB is the source of truth).
     new_user = AuthorizedUser(
