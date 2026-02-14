@@ -698,15 +698,30 @@ def start_camera_loops(
                 movement_time_window_sec=settings.bag_movement_time_window_sec,
             )
         # Determine if ANPR rules apply for this camera
-        anpr_rules = [r for r in camera_rules if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))]
+        anpr_rules = [
+            r for r in camera_rules
+            if isinstance(r, (AnprMonitorRule, AnprWhitelistRule, AnprBlacklistRule))
+        ]
+
         anpr_processor: Optional[AnprProcessor] = None
-        if modules.anpr_enabled:
+
+        # Initialize ANPR if module enabled OR rule exists
+        if modules.anpr_enabled or anpr_rules:
+            logger.info(
+                "Initializing ANPR for camera=%s (module_enabled=%s rule_count=%d)",
+                camera.id,
+                modules.anpr_enabled,
+                len(anpr_rules),
+            )
             anpr_processor = _create_anpr_processor_for_camera(
                 camera,
                 zone_polygons,
                 anpr_rules,
                 force_session_heuristic=not modules.gate_entry_exit_enabled,
             )
+        else:
+            logger.info("ANPR disabled for camera=%s", camera.id)
+
 
         # Initialise health state for this camera
         # Use provided health configuration or a default instance
@@ -1228,6 +1243,28 @@ def start_camera_loops(
                             mqtt_client,
                             snapshotter=snapshotter,
                         ) or []
+
+                        # Debug log (safe): shows if ANPR is producing any results
+                        if anpr_results:
+                            logger.info(
+                                "ANPR DETECTED camera=%s count=%d mode=%s",
+                                camera_obj.id,
+                                len(anpr_results),
+                                current_state["mode"],
+                            )
+                        else:
+                            logger.info(
+                                "ANPR NO RESULTS camera=%s mode=%s",
+                                camera_obj.id,
+                                current_state["mode"],
+                            )
+
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "ANPR processing failed for camera %s: %s", camera_obj.id, exc
+                        )
+                        anpr_results = []
+
 
                         # Debug log: tells you if OCR returned text or got filtered
                         if os.getenv("EDGE_ANPR_OCR_DEBUG_LOG", "true").lower() in {"1", "true", "yes"}:
