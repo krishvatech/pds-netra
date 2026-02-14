@@ -1,8 +1,8 @@
 """
-Minimal API for generating face embeddings on the edge device.
+Minimal API for generating face embeddings (server-safe).
 
-Run (on edge):
-  uvicorn app.embedding_api:app --host 0.0.0.0 --port 9000
+Run:
+  uvicorn app.embedding_api:app --host 0.0.0.0 --port 19000
 """
 
 from __future__ import annotations
@@ -13,14 +13,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Header
 
-from tools.generate_face_embedding import (
-    compute_embedding,
-    load_known_faces,
-    save_known_faces,
-)
+from tools.generate_face_embedding import compute_embedding, load_known_faces, save_known_faces
 from app.core.errors import log_exception
 
-app = FastAPI(title="PDS Netra Edge Embedding API", version="1.0")
+app = FastAPI(title="PDS Netra Embedding API", version="1.1")
 
 
 def _verify_auth(authorization: str | None) -> None:
@@ -56,16 +52,17 @@ async def face_embedding(
 
     temp_dir = Path(os.getenv("EDGE_TMP_DIR", "/tmp")) / "pds-faces"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename).suffix or ".jpg"
-    temp_path = temp_dir / f"{person_id}_{uuid.uuid4()}{ext}"
+
+    ext = Path(file.filename or "").suffix or ".jpg"
+    temp_path = temp_dir / f"{person_id}_{uuid.uuid4().hex}{ext}"
 
     try:
-        with open(temp_path, "wb") as f:
-            f.write(file_bytes)
+        temp_path.write_bytes(file_bytes)
 
+        # This will raise ValueError for: no face / multiple faces / bad image
         embedding = compute_embedding(str(temp_path))
 
-        # Update known_faces.json on the edge
+        # Update known_faces.json (inside container FS)
         config_path = Path(__file__).resolve().parents[1] / "config" / "known_faces.json"
         data = load_known_faces(str(config_path))
 
@@ -78,6 +75,7 @@ async def face_embedding(
                 item["embedding"] = embedding
                 updated = True
                 break
+
         if not updated:
             data.append(
                 {
@@ -90,14 +88,38 @@ async def face_embedding(
             )
 
         save_known_faces(str(config_path), data)
-        return {"status": "ok", "person_id": person_id, "embedding_len": len(embedding)}
+
+        return {
+            "status": "ok",
+            "person_id": person_id,
+            "name": name,
+            "embedding_len": len(embedding),
+        }
+
     except ValueError as ve:
+        # Clean, user-friendly error (NO 500)
         raise HTTPException(status_code=400, detail=str(ve))
+
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        # IMPORTANT: log full traceback in docker logs
+        log_exception(
+            app.logger,
+            "Embedding failed",
+            extra={"person_id": person_id, "name": name, "filename": file.filename},
+            exc=exc,
+        )
+        msg = str(exc) or exc.__class__.__name__
+        # 503 is better than 500 for "service/model not ready" situations
+        raise HTTPException(status_code=503, detail=f"Embedding service error: {msg}")
+
     finally:
         try:
             if temp_path.exists():
                 temp_path.unlink()
         except Exception as exc:
-            log_exception(app.logger, "Failed to cleanup temp embedding file", extra={"path": str(temp_path)}, exc=exc)
+            log_exception(
+                app.logger,
+                "Failed to cleanup temp embedding file",
+                extra={"path": str(temp_path)},
+                exc=exc,
+            )
