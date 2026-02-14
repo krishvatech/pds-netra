@@ -227,7 +227,14 @@ Do not use `docker-compose.yml` on Jetson if you need CUDA/ANPR OCR.
 For Jetson GPU deployment (JetPack 6), run:
 
 ```bash
+cd pds-netra-edge
 docker compose -f docker-compose.jetson.gpu.yml up --build -d
+```
+
+If you run from the repo root, use:
+
+```bash
+docker compose -f pds-netra-edge/docker-compose.jetson.gpu.yml up --build -d
 ```
 
 If you prefer a direct image build, use `docker/Dockerfile.jp6` on the target device:

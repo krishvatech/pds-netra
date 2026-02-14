@@ -12,6 +12,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.jp6
     restart: unless-stopped
+    working_dir: /opt/app
     env_file:
       - .env
     environment:
@@ -32,8 +33,10 @@ services:
       - EDGE_LIVE_ANNOTATED_DIR=/live
       - EDGE_OVERRIDE_DIR=/opt/app/data/edge_overrides
       - EDGE_SNAPSHOT_DIR=/opt/app/data/snapshots
+      - EDGE_CAMERA_STARTUP_GRACE_SEC=120
 
     runtime: nvidia
+    command: python3 -m app.main --config config/pds_netra_config.yaml --device cuda:0
     volumes:
       - ./:/opt/app
       - ${EDGE_SNAPSHOT_HOST_DIR:-/data/pds-backend/snapshots}:/opt/app/data/snapshots

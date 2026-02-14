@@ -67,7 +67,11 @@ class Scheduler:
             return
         self._thread = threading.Thread(target=self._run, name="Scheduler", daemon=True)
         self._thread.start()
-        self.logger.info("Scheduler started with interval=%ss", self.interval)
+        self.logger.info(
+            "Scheduler started with interval=%ss startup_grace=%ss",
+            self.interval,
+            self.startup_grace_sec,
+        )
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
