@@ -19,7 +19,7 @@ import json
 import datetime
 import uuid
 import inspect
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Dict, Tuple, Any, Callable, List
 from ..cv.pipeline import Pipeline, DetectedObject
 from ..cv.bag_movement import BagMovementProcessor
@@ -622,6 +622,39 @@ def start_camera_loops(
 
         pipeline_spec = select_pipeline(camera, settings)
         modules = pipeline_spec.modules
+
+        # Runtime guardrail: keep specialized roles from being widened by
+        # stale/incorrect backend module payloads.
+        if pipeline_spec.role == "GATE_ANPR":
+            if (
+                modules.person_after_hours_enabled
+                or modules.animal_detection_enabled
+                or modules.fire_detection_enabled
+            ):
+                logger.warning(
+                    "Forcing GATE_ANPR guardrail for camera=%s: disabling person/animal/fire modules",
+                    camera.id,
+                )
+            modules = replace(
+                modules,
+                anpr_enabled=True,
+                gate_entry_exit_enabled=True,
+                person_after_hours_enabled=False,
+                animal_detection_enabled=False,
+                fire_detection_enabled=False,
+                health_monitoring_enabled=True,
+            )
+        elif pipeline_spec.role == "HEALTH_ONLY":
+            modules = replace(
+                modules,
+                anpr_enabled=False,
+                gate_entry_exit_enabled=False,
+                person_after_hours_enabled=False,
+                animal_detection_enabled=False,
+                fire_detection_enabled=False,
+                health_monitoring_enabled=True,
+            )
+
         logger.info("Camera routing: camera=%s role=%s modules=%s", camera.id, pipeline_spec.role, modules)
 
         # Main detector (animal / general)

@@ -124,8 +124,26 @@ def _apply_module_overrides(base: dict[str, bool], modules: Optional[CameraModul
 
 
 def resolve_camera_modules(camera: CameraConfig, settings: Settings) -> ResolvedModules:
+    role = _normalize_role(camera.role)
     base = _resolve_base_modules(camera, settings)
     base = _apply_module_overrides(base, camera.modules)
+
+    # Enforce role guardrails even if backend sends broad module overrides.
+    # GATE_ANPR must stay ANPR-focused; HEALTH_ONLY must stay health-only.
+    if role == ROLE_GATE_ANPR:
+        base["anpr_enabled"] = True
+        base["gate_entry_exit_enabled"] = True
+        base["person_after_hours_enabled"] = False
+        base["animal_detection_enabled"] = False
+        base["fire_detection_enabled"] = False
+        base["health_monitoring_enabled"] = True
+    elif role == ROLE_HEALTH_ONLY:
+        base["anpr_enabled"] = False
+        base["gate_entry_exit_enabled"] = False
+        base["person_after_hours_enabled"] = False
+        base["animal_detection_enabled"] = False
+        base["fire_detection_enabled"] = False
+        base["health_monitoring_enabled"] = True
 
     # Global safeguards: disable modules when global config is missing or disabled.
     if not settings.anpr or not settings.anpr.enabled:
