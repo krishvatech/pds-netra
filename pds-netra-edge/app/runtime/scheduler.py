@@ -60,6 +60,14 @@ class Scheduler:
             self.startup_grace_sec = int(os.getenv("EDGE_CAMERA_STARTUP_GRACE_SEC", "45"))
         except Exception:
             self.startup_grace_sec = 45
+        try:
+            self.default_no_frame_timeout_sec = int(os.getenv("EDGE_HEALTH_NO_FRAME_TIMEOUT_DEFAULT", "15"))
+        except Exception:
+            self.default_no_frame_timeout_sec = 15
+        try:
+            self.default_min_fps = float(os.getenv("EDGE_HEALTH_MIN_FPS_DEFAULT", "3.0"))
+        except Exception:
+            self.default_min_fps = 3.0
 
     def start(self) -> None:
         """Start the scheduler thread."""
@@ -98,13 +106,22 @@ class Scheduler:
             if cam.health is not None:
                 health_configs[cam.id] = cam.health
             else:
-                health_configs[cam.id] = HealthConfig()
+                health_configs[cam.id] = HealthConfig(
+                    no_frame_timeout_seconds=self.default_no_frame_timeout_sec,
+                    min_fps=self.default_min_fps,
+                )
 
         # Iterate through camera states if available
         if self.camera_states:
             online_cameras = 0
             for cam_id, state in self.camera_states.items():
-                cfg = health_configs.get(cam_id, HealthConfig())
+                cfg = health_configs.get(
+                    cam_id,
+                    HealthConfig(
+                        no_frame_timeout_seconds=self.default_no_frame_timeout_sec,
+                        min_fps=self.default_min_fps,
+                    ),
+                )
                 online = False
                 last_frame_iso: Optional[str] = None
 
@@ -193,13 +210,25 @@ class Scheduler:
                 device_status = "DEGRADED"
 
             for cam_id, state in self.camera_states.items():
-                cfg = health_configs.get(cam_id, HealthConfig())
+                cfg = health_configs.get(
+                    cam_id,
+                    HealthConfig(
+                        no_frame_timeout_seconds=self.default_no_frame_timeout_sec,
+                        min_fps=self.default_min_fps,
+                    ),
+                )
                 if state.fps_estimate is not None and state.fps_estimate < cfg.min_fps:
                     device_status = "DEGRADED"
                     break
 
             for cam_id, state in self.camera_states.items():
-                cfg = health_configs.get(cam_id, HealthConfig())
+                cfg = health_configs.get(
+                    cam_id,
+                    HealthConfig(
+                        no_frame_timeout_seconds=self.default_no_frame_timeout_sec,
+                        min_fps=self.default_min_fps,
+                    ),
+                )
                 if state.fps_estimate is None:
                     continue
                 if state.fps_estimate < cfg.min_fps and not state.fps_degraded:

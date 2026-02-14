@@ -34,6 +34,8 @@ services:
       - EDGE_OVERRIDE_DIR=/opt/app/data/edge_overrides
       - EDGE_SNAPSHOT_DIR=/opt/app/data/snapshots
       - EDGE_CAMERA_STARTUP_GRACE_SEC=120
+      - EDGE_HEALTH_MIN_FPS_DEFAULT=0.5
+      - EDGE_HEALTH_NO_FRAME_TIMEOUT_DEFAULT=45
 
     runtime: nvidia
     command: python3 -m app.main --config config/pds_netra_config.yaml --device cuda:0
