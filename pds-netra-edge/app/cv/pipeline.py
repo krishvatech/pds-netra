@@ -400,10 +400,17 @@ class Pipeline:
 
                     ret, frame = cap.read()
                     if not ret:
+                        if not realtime_source:
+                            self.logger.info(
+                                "Video source exhausted for camera %s (source=%s)",
+                                self.camera_id,
+                                self.source,
+                            )
+                            break
                         self._rtsp_retry += 1
                         delay = self._reconnect_delay(self._rtsp_retry)
                         self.logger.warning(
-                            "RTSP stream ended for camera %s (attempt=%d, retry in %ds)",
+                            "Live stream ended for camera %s (attempt=%d, retry in %ds)",
                             self.camera_id,
                             self._rtsp_retry,
                             delay,

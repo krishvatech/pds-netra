@@ -12,6 +12,7 @@ import threading
 import logging
 import time
 import datetime
+import os
 from typing import Optional, Dict
 
 from ..models.event import HealthModel, CameraStatusModel
@@ -55,6 +56,10 @@ class Scheduler:
         self._thread: Optional[threading.Thread] = None
         # Shared camera state from camera loops
         self.camera_states = camera_states or {}
+        try:
+            self.startup_grace_sec = int(os.getenv("EDGE_CAMERA_STARTUP_GRACE_SEC", "45"))
+        except Exception:
+            self.startup_grace_sec = 45
 
     def start(self) -> None:
         """Start the scheduler thread."""
@@ -122,8 +127,9 @@ class Scheduler:
                         online = True
                 elif state.started_at_utc is not None:
                     time_since_start = (now_dt - state.started_at_utc).total_seconds()
-                    if time_since_start > cfg.no_frame_timeout_seconds:
-                        online = False
+                    effective_startup_timeout = max(cfg.no_frame_timeout_seconds, self.startup_grace_sec)
+                    # Treat camera as online during startup grace even before first frame.
+                    online = time_since_start <= effective_startup_timeout
 
                 if not online and not state.offline_reported and not state.suppress_offline_events:
                     try:
