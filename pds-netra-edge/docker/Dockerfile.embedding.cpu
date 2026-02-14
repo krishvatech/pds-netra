@@ -5,8 +5,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /opt/app
 
-# Required system libs for insightface / opencv / onnxruntime
+# System deps:
+# - build-essential: gcc/g++/make (required to build insightface)
+# - libgl1, libglib2.0-0, libgomp1: required by opencv/onnxruntime
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    gcc \
+    make \
+    pkg-config \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
