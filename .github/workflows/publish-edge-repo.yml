@@ -1,0 +1,104 @@
+name: Publish Edge Repo
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "pds-netra-edge/**"
+      - "deployment/edge/**"
+      - ".github/workflows/publish-edge-repo.yml"
+  workflow_dispatch:
+    inputs:
+      edge_repo:
+        description: "Target repo in owner/name format (optional override)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-edge-repo
+  cancel-in-progress: true
+
+jobs:
+  sync-edge-repo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target repo
+        id: target
+        env:
+          INPUT_EDGE_REPO: ${{ github.event.inputs.edge_repo }}
+          VAR_EDGE_REPO: ${{ vars.EDGE_REPO }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          target="${INPUT_EDGE_REPO:-}"
+          if [ -z "$target" ]; then
+            target="${VAR_EDGE_REPO:-}"
+          fi
+          if [ -z "$target" ]; then
+            target="${REPO_OWNER}/pds-netra-edge"
+          fi
+          echo "repo=$target" >> "$GITHUB_OUTPUT"
+          echo "Resolved EDGE_REPO=$target"
+
+      - name: Configure git
+        run: |
+          git config --global user.name "edge-sync-bot"
+          git config --global user.email "edge-sync-bot@users.noreply.github.com"
+
+      - name: Clone target repo
+        env:
+          EDGE_REPO: ${{ steps.target.outputs.repo }}
+          EDGE_REPO_TOKEN: ${{ secrets.EDGE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EDGE_REPO_TOKEN:-}" ]; then
+            echo "Missing required secret: EDGE_REPO_TOKEN" >&2
+            exit 1
+          fi
+          git clone "https://x-access-token:${EDGE_REPO_TOKEN}@github.com/${EDGE_REPO}.git" edge-out || true
+          if [ ! -d edge-out/.git ]; then
+            mkdir -p edge-out
+            cd edge-out
+            git init
+            git checkout -b main
+            git remote add origin "https://x-access-token:${EDGE_REPO_TOKEN}@github.com/${EDGE_REPO}.git"
+            cd ..
+          fi
+
+      - name: Prepare edge repo contents
+        run: |
+          set -euo pipefail
+          shopt -s dotglob
+          find edge-out -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+
+          rsync -a --delete pds-netra-edge/ edge-out/
+          mkdir -p edge-out/deployment/edge
+          rsync -a --delete deployment/edge/ edge-out/deployment/edge/
+
+          cat > edge-out/SYNC_SOURCE.md <<EOF
+          Synced from: ${GITHUB_REPOSITORY}
+          Commit: ${GITHUB_SHA}
+          Time (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          EOF
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          cd edge-out
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to sync"
+            exit 0
+          fi
+          git commit -m "sync(edge): ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git push origin HEAD:main
