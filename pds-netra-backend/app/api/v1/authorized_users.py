@@ -47,6 +47,8 @@ ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
 
 
 def _is_admin(user: UserContext) -> bool:
+    if user.principal_type == "edge_service":
+        return True
     return (user.role or "").upper() in ADMIN_ROLES
 
 
