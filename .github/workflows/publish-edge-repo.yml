@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve target repo
         id: target
@@ -58,6 +59,7 @@ jobs:
       - name: Clone target repo
         env:
           EDGE_REPO: ${{ steps.target.outputs.repo }}
+          SOURCE_REPO: ${{ github.repository }}
           EDGE_REPO_TOKEN: ${{ secrets.EDGE_REPO_TOKEN }}
         run: |
           set -euo pipefail
@@ -65,6 +67,11 @@ jobs:
             echo "Missing required secret: EDGE_REPO_TOKEN" >&2
             exit 1
           fi
+          if [ "${EDGE_REPO}" = "${SOURCE_REPO}" ]; then
+            echo "Refusing to sync into the same monorepo (${EDGE_REPO}). Set EDGE_REPO to the dedicated edge repo." >&2
+            exit 1
+          fi
+          git ls-remote "https://x-access-token:${EDGE_REPO_TOKEN}@github.com/${EDGE_REPO}.git" >/dev/null
           git clone "https://x-access-token:${EDGE_REPO_TOKEN}@github.com/${EDGE_REPO}.git" edge-out || true
           if [ ! -d edge-out/.git ]; then
             mkdir -p edge-out
@@ -92,9 +99,13 @@ jobs:
           EOF
 
       - name: Commit and push if changed
+        env:
+          EDGE_REPO: ${{ steps.target.outputs.repo }}
+          EDGE_REPO_TOKEN: ${{ secrets.EDGE_REPO_TOKEN }}
         run: |
           set -euo pipefail
           cd edge-out
+          git remote set-url origin "https://x-access-token:${EDGE_REPO_TOKEN}@github.com/${EDGE_REPO}.git"
           git add -A
           if [ -z "$(git status --porcelain)" ]; then
             echo "No changes to sync"
