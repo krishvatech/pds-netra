@@ -20,15 +20,15 @@ mqtt:
 anpr:
   enabled: true
   model_path: "./ML_Model/anpr.pt"
-  conf: 0.35
+  conf: 0.15
   iou: 0.45
-  imgsz: 640
+  imgsz: 1280
   max_det: 60
   classes: [0]
   plate_class_names: null
   ocr_lang: ["en"]
-  ocr_every_n: 2
-  ocr_min_conf: 0.2
+  ocr_every_n: 1
+  ocr_min_conf: 0.3
   ocr_debug: true
   validate_india: true
   allowed_start: "06:00"

@@ -111,7 +111,7 @@ MQTT_USERNAME=your_mqtt_user
 MQTT_PASSWORD=your_mqtt_pass
 EDGE_BACKEND_URL=https://your-domain.example
 EDGE_SNAPSHOT_BASE_URL=https://your-domain.example/media/snapshots
-EDGE_BACKEND_TOKEN=<same as PDS_AUTH_TOKEN>
+EDGE_BACKEND_TOKEN=<same as AUTHORIZED_USERS_SERVICE_TOKEN (or backend EDGE_BACKEND_TOKEN)>
 ```
 
 Restart edge after updating.
@@ -127,6 +127,22 @@ If you need to debug backend quickly (optional):
 docker compose -f deployment/docker-compose.prod.yml logs -f backend
 ```
 
+Test face-index service token path from inside backend container:
+
+```bash
+docker compose -f deployment/docker-compose.prod.yml exec -T backend sh -lc \
+'python - << "PY"
+import os, requests
+token = (os.getenv("AUTHORIZED_USERS_SERVICE_TOKEN") or os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+if not token:
+    raise SystemExit("Missing AUTHORIZED_USERS_SERVICE_TOKEN/EDGE_BACKEND_TOKEN in backend env")
+u = "http://127.0.0.1:8001/api/v1/authorized-users/face-index?godown_id=GDN_001"
+r = requests.get(u, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+print("status:", r.status_code)
+print("body:", r.text[:400])
+PY'
+```
+
 ## Production checklist
 
 - Set `PDS_ENV=prod`.
@@ -134,7 +150,7 @@ docker compose -f deployment/docker-compose.prod.yml logs -f backend
 - `AUTO_CREATE_DB=false`, `AUTO_SEED_* = false` unless explicitly needed.
 - `ENABLE_MQTT_CONSUMER=false` and `ENABLE_DISPATCH_*` disabled unless explicitly required.
 - Supply secrets via env/secret store; never commit real values.
-- Set `EDGE_BACKEND_TOKEN` on Jetson to match `PDS_AUTH_TOKEN`.
+- Set backend `AUTHORIZED_USERS_SERVICE_TOKEN` (or `EDGE_BACKEND_TOKEN`) and keep Jetson `EDGE_BACKEND_TOKEN` identical.
 - MQTT port `1883` is exposed for edge connectivity. Restrict it with firewall rules and plan TLS/ACLs if public.
 
 ## PoC local quickstart

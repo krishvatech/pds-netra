@@ -20,6 +20,7 @@ class UserContext:
     username: Optional[str] = None
     district: Optional[str] = None
     godown_id: Optional[str] = None
+    principal_type: str = "user"
 
 
 def _auth_disabled() -> bool:
@@ -41,6 +42,14 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
         return None
     token = authorization.split(" ", 1)[1].strip()
     return token or None
+
+
+def _authorized_users_service_token() -> str:
+    # Backward-compatible lookup for edge service token.
+    return (
+        (os.getenv("AUTHORIZED_USERS_SERVICE_TOKEN") or "").strip()
+        or (os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+    )
 
 
 def get_current_user(
@@ -80,7 +89,41 @@ def get_current_user(
         username=username,
         district=x_user_district,
         godown_id=x_user_godown,
+        principal_type="user",
     )
+
+
+def get_current_user_or_authorized_users_service(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_godown: Optional[str] = Header(None, alias="X-User-Godown"),
+    x_user_district: Optional[str] = Header(None, alias="X-User-District"),
+    x_user_name: Optional[str] = Header(None, alias="X-User-Name"),
+) -> UserContext:
+    service_token = _authorized_users_service_token()
+    bearer = _extract_bearer_token(authorization)
+    if service_token and bearer and secrets.compare_digest(bearer, service_token):
+        return UserContext(
+            role="EDGE_SERVICE",
+            user_id="edge-service",
+            username="edge-service",
+            district=x_user_district,
+            godown_id=x_user_godown,
+            principal_type="edge_service",
+        )
+
+    try:
+        return get_current_user(
+            request=request,
+            authorization=authorization,
+            x_user_godown=x_user_godown,
+            x_user_district=x_user_district,
+            x_user_name=x_user_name,
+        )
+    except HTTPException as exc:
+        if service_token and bearer and exc.status_code == 401:
+            raise HTTPException(status_code=403, detail="Invalid authorized users service token")
+        raise
 
 
 def get_optional_user(

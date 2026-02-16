@@ -57,12 +57,15 @@ services:
     restart: unless-stopped
     volumes:
       - ./deployment/data/embedding_models:/root/.insightface/models:rw
+      - ./deployment/data/embedding_config:/opt/app/config
     command:
       [
         "sh",
         "-c",
         "mkdir -p /root/.insightface/models && chmod 0777 /root/.insightface/models && uvicorn app.embedding_api:app --host 0.0.0.0 --port 19000",
       ]
+    environment:
+      INSIGHTFACE_MODEL_NAME: buffalo_l
 
   dashboard:
     build:

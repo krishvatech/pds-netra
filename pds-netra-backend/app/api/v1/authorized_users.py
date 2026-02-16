@@ -26,7 +26,11 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 from ...core.request_limits import enforce_upload_limit, read_upload_bytes_async
 from ...models.authorized_user import AuthorizedUser
 from ...models.godown import Godown
-from ...core.auth import UserContext, get_current_user
+from ...core.auth import (
+    UserContext,
+    get_current_user,
+    get_current_user_or_authorized_users_service,
+)
 from ...schemas.authorized_user import (
     AuthorizedUserCreate,
     AuthorizedUserUpdate,
@@ -43,6 +47,8 @@ ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
 
 
 def _is_admin(user: UserContext) -> bool:
+    if user.principal_type == "edge_service":
+        return True
     return (user.role or "").upper() in ADMIN_ROLES
 
 
@@ -93,7 +99,7 @@ def list_authorized_users(
 def get_authorized_user_face_index(
     godown_id: str = Query(..., description="Godown ID for edge face index sync"),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_user_or_authorized_users_service),
 ) -> List[AuthorizedUser]:
     """
     Return active authorized users with embeddings for edge face recognition.
@@ -108,6 +114,8 @@ def get_authorized_user_face_index(
     query = query.filter(
         (AuthorizedUser.godown_id == godown_id) | (AuthorizedUser.godown_id.is_(None))
     )
+    if user.principal_type == "edge_service":
+        logger.info("face-index requested by edge service godown_id=%s", godown_id)
     return query.order_by(AuthorizedUser.person_id.asc()).all()
 
 
