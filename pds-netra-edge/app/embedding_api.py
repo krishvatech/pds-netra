@@ -106,6 +106,7 @@ async def face_embedding(
             "person_id": person_id,
             "name": name,
             "embedding_len": len(embedding),
+            "embedding": embedding,
         }
 
     except ValueError as ve:

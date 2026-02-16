@@ -214,7 +214,7 @@ def _sync_face_embedding_to_edge(
     file_name: str,
     content_type: str | None,
     file_bytes: bytes,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, list[float] | None, str | None]:
     headers = {}
     if edge_embedding_token:
         headers["Authorization"] = f"Bearer {edge_embedding_token}"
@@ -236,10 +236,21 @@ def _sync_face_embedding_to_edge(
             timeout=30,
         )
     except requests.RequestException as exc:
-        return False, f"Edge embedding service request failed: {exc}"
+        return False, None, f"Edge embedding service request failed: {exc}"
 
     if resp.status_code == 200:
-        return True, None
+        try:
+            parsed = resp.json()
+        except Exception:
+            parsed = {}
+
+        embedding = parsed.get("embedding") if isinstance(parsed, dict) else None
+        if isinstance(embedding, list):
+            try:
+                return True, [float(v) for v in embedding], None
+            except (TypeError, ValueError):
+                pass
+        return True, None, None
     detail = resp.text
     try:
         parsed = resp.json()
@@ -247,7 +258,7 @@ def _sync_face_embedding_to_edge(
             detail = str(parsed.get("detail"))
     except Exception:
         pass
-    return False, f"Edge embedding service returned {resp.status_code}: {detail}"
+    return False, None, f"Edge embedding service returned {resp.status_code}: {detail}"
 
 
 @router.put("/{person_id}", response_model=AuthorizedUserResponse)
@@ -554,7 +565,7 @@ async def register_authorized_user_with_face(
 
     if not embedding_vector:
         if edge_embedding_url:
-            ok, edge_err = _sync_face_embedding_to_edge(
+            ok, edge_embedding, edge_err = _sync_face_embedding_to_edge(
                 edge_embedding_url=edge_embedding_url,
                 edge_embedding_token=edge_embedding_token,
                 person_id=person_id,
@@ -567,6 +578,9 @@ async def register_authorized_user_with_face(
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=edge_err or "Edge embedding sync failed.")
+            if not edge_embedding:
+                raise HTTPException(status_code=503, detail="Edge embedding response missing embedding vector.")
+            embedding_vector = edge_embedding
             edge_sync_done = True
             logger.info("Local embedding unavailable; used edge embedding service for person_id=%s", person_id)
         else:
@@ -596,7 +610,7 @@ async def register_authorized_user_with_face(
 
     # Optional best-effort edge sync (do not fail DB create if edge is unreachable).
     if edge_embedding_url and not edge_sync_done:
-        ok, edge_err = _sync_face_embedding_to_edge(
+        ok, _, edge_err = _sync_face_embedding_to_edge(
             edge_embedding_url=edge_embedding_url,
             edge_embedding_token=edge_embedding_token,
             person_id=person_id,
