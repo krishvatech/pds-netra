@@ -7,7 +7,6 @@ godown facilities. Includes sync functionality with edge known_faces.json.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -368,8 +367,7 @@ def sync_from_edge(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     """
-    Import authorized users from edge known_faces.json for a specific godown.
-    This reads the edge config and creates/updates users in the database.
+    Import authorized users from embedding service known-faces API for a specific godown.
     """
     # Validate godown exists
     godown = db.get(Godown, godown_id)
@@ -378,126 +376,146 @@ def sync_from_edge(
     if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
         raise HTTPException(status_code=403, detail="Forbidden")
     
-    # Find the edge config file
-    # Assuming edge config is at: pds-netra-edge/config/known_faces.json
-    edge_config_path = _get_edge_config_path()
-    
-    if not edge_config_path.exists():
+    edge_embedding_url = os.getenv("EDGE_EMBEDDING_URL", "").strip()
+    edge_embedding_token = os.getenv("EDGE_EMBEDDING_TOKEN")
+    if not edge_embedding_url:
         raise HTTPException(
-            status_code=404,
-            detail=f"Edge config file not found at {edge_config_path}"
+            status_code=503,
+            detail="EDGE_EMBEDDING_URL is not configured. Cannot sync authorized users from embedding service.",
         )
-    
+
+    known_faces_url = edge_embedding_url.rstrip("/") + "/api/v1/known-faces"
+    headers: dict[str, str] = {}
+    if edge_embedding_token:
+        headers["Authorization"] = f"Bearer {edge_embedding_token}"
+
     try:
-        with open(edge_config_path, "r") as f:
-            known_faces = json.load(f)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to read edge config: {str(e)}"
+        resp = requests.get(
+            known_faces_url,
+            params={"godown_id": godown_id},
+            headers=headers,
+            timeout=20,
         )
-    
-    # Track statistics
-    created = 0
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Embedding service unreachable at {known_faces_url}: {exc}",
+        )
+
+    if resp.status_code != 200:
+        detail = resp.text
+        try:
+            parsed = resp.json()
+            if isinstance(parsed, dict) and parsed.get("detail"):
+                detail = str(parsed.get("detail"))
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to sync from embedding service: {detail}",
+        )
+
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Invalid embedding service response: {exc}",
+        )
+
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    known_faces = rows if isinstance(rows, list) else []
+
+    imported = 0
     updated = 0
-    deleted = 0
-    
-    # Get all person_ids from the edge config VALID FOR THIS GODOWN
-    edge_person_ids = set()
-    valid_faces_for_this_godown = []
-    
-    for face_data in known_faces:
-        if not face_data.get("person_id") or not face_data.get("name"):
-            continue
-            
-        # FILTERING LOGIC:
-        # 1. If JSON has 'godown_id', strict match.
-        # 2. If JSON has NO 'godown_id', assume global/unassigned -> optionally allow or strict skip?
-        #    Decision: To solve the user's issue ("show surat godown's people in GDN_002"), 
-        #    we MUST enforce segregation.
-        #    If godown_id is MISSING, we'll tentatively allow it ONLY if the user isn't already assigned to another godown in DB?
-        #    NO, cleaner logic: If NO `godown_id` in JSON, we can't be sure.
-        #    However, to handle migration, maybe we only associate if it matches.
-        
-        json_godown_id = face_data.get("godown_id")
-        
-        if json_godown_id:
-            # Strict filtering: if assigned to specific godown, only sync there
-            if json_godown_id == godown_id:
-                edge_person_ids.add(face_data["person_id"])
-                valid_faces_for_this_godown.append(face_data)
-        else:
-            # Legacy/Unassigned entry.
-            # Behavior: Check if user exists in DB and belongs to THIS godown.
-            # If yes, keep them. If they belong to ANOTHER godown, skip.
-            # If new, maybe add them? But this causes the "duplicate" issue in lists.
-            # The user wants segregation. 
-            # Strategy: If Unassigned, we treat it as Global/Available. 
-            # BUT, to fix the specific complaint, we prefer explicit ownership.
-            # Let's import them, but if the user has manually moved them to another godown in the dashboard (and we wrote back),
-            # then json_godown_id would exist.
-            # So, empty json_godown_id means "Legacy/All". 
-            # We will include them for now to ensure we don't delete everyone before migration.
-            edge_person_ids.add(face_data["person_id"])
-            valid_faces_for_this_godown.append(face_data)
-            
-    # Get all existing users for this godown
-    existing_users = db.query(AuthorizedUser).filter(AuthorizedUser.godown_id == godown_id).all()
-    existing_map = {u.person_id: u for u in existing_users}
-    
-    # Handle updates and creations
-    for face_data in valid_faces_for_this_godown:
-        person_id = face_data.get("person_id")
-        name = face_data.get("name")
-        role = face_data.get("role")
-        
-        if person_id in existing_map:
-            # Update existing user
-            user = existing_map[person_id]
-            user.name = name
-            user.role = role
-            # godown_id is already correct per filter
-            updated += 1
-        else:
-            # Create new user
-            # Check if user exists but under a different godown
-            existing = db.get(AuthorizedUser, person_id)
-            if existing:
-                # User exists in DB but not linked to this godown in our query
-                # If the JSON record specifically says THIS godown, we should move them.
-                if face_data.get("godown_id") == godown_id:
-                    existing.name = name
-                    existing.role = role
-                    existing.godown_id = godown_id
-                    updated += 1
-                # Else: They belong to another godown, and JSON didn't force them here. Do nothing.
+
+    try:
+        for face_data in known_faces:
+            if not isinstance(face_data, dict):
+                continue
+            person_id_raw = face_data.get("person_id")
+            name_raw = face_data.get("name")
+            if not person_id_raw or not name_raw:
+                continue
+
+            person_id = str(person_id_raw).strip()
+            name = str(name_raw).strip()
+            if not person_id or not name:
+                continue
+
+            row_godown_id = face_data.get("godown_id")
+            target_godown_id = str(row_godown_id).strip() if row_godown_id else godown_id
+            role = face_data.get("role")
+            is_active = bool(face_data.get("is_active", True))
+
+            embedding_raw = face_data.get("embedding")
+            embedding_vec: list[float] | None = None
+            if isinstance(embedding_raw, list):
+                try:
+                    embedding_vec = [float(v) for v in embedding_raw]
+                except (TypeError, ValueError):
+                    embedding_vec = None
+
+            record = (
+                db.query(AuthorizedUser)
+                .filter(
+                    AuthorizedUser.person_id == person_id,
+                    AuthorizedUser.godown_id == target_godown_id,
+                )
+                .first()
+            )
+            if not record:
+                record = db.get(AuthorizedUser, person_id)
+            if record:
+                record.name = name
+                record.role = str(role).strip() if role else None
+                record.godown_id = target_godown_id
+                record.is_active = is_active
+                if embedding_vec:
+                    record.embedding = embedding_vec
+                    record.embedding_version = str(face_data.get("embedding_version") or "v1")
+                    record.embedding_hash = str(face_data.get("embedding_hash") or _hash_embedding_vector(embedding_vec))
+                    record.embedding_generated_at = datetime.utcnow()
+                updated += 1
             else:
-                # Brand new user
                 new_user = AuthorizedUser(
                     person_id=person_id,
                     name=name,
-                    role=role,
-                    godown_id=godown_id,
-                    is_active=True,
+                    role=str(role).strip() if role else None,
+                    godown_id=target_godown_id,
+                    is_active=is_active,
+                    embedding=embedding_vec,
+                    embedding_version=(str(face_data.get("embedding_version") or "v1") if embedding_vec else None),
+                    embedding_hash=(
+                        str(face_data.get("embedding_hash") or _hash_embedding_vector(embedding_vec))
+                        if embedding_vec
+                        else None
+                    ),
+                    embedding_generated_at=(datetime.utcnow() if embedding_vec else None),
                 )
                 db.add(new_user)
-                created += 1
-                
-    # Handle deletions (users in DB for this godown but not in (valid) edge config)
-    for person_id, user in existing_map.items():
-        if person_id not in edge_person_ids:
-            db.delete(user)
-            deleted += 1
-    
-    db.commit()
-    
+                imported += 1
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    logger.info(
+        "Authorized users synced from embedding service godown_id=%s imported=%d updated=%d received=%d",
+        godown_id,
+        imported,
+        updated,
+        len(known_faces),
+    )
+
     return {
-        "status": "success",
-        "message": f"Synced from edge config",
-        "created": created,
+        "status": "ok",
+        "message": "Synced from embedding service",
+        "imported": imported,
+        "created": imported,
         "updated": updated,
-        "deleted": deleted,
-        "total": created + updated
+        "total": imported + updated,
     }
 
 

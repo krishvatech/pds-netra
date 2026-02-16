@@ -27,6 +27,10 @@ app = FastAPI(title="PDS Netra Embedding API", version="1.2")
 logger = logging.getLogger("embedding_api")
 
 
+def _known_faces_config_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "config" / "known_faces.json"
+
+
 def _verify_auth(authorization: str | None) -> None:
     token = os.getenv("EDGE_EMBEDDING_TOKEN")
     if not token:
@@ -43,6 +47,32 @@ def _verify_auth(authorization: str | None) -> None:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/v1/known-faces")
+def known_faces(
+    godown_id: str | None = None,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    _verify_auth(authorization)
+
+    config_path = _known_faces_config_path()
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail=f"Known faces config not found at {config_path}")
+
+    data = load_known_faces(str(config_path))
+    items = data if isinstance(data, list) else []
+    if godown_id:
+        filtered: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_godown_id = item.get("godown_id")
+            if not item_godown_id or str(item_godown_id) == godown_id:
+                filtered.append(item)
+        items = filtered
+
+    return {"status": "ok", "count": len(items), "data": items}
 
 
 @app.post("/api/v1/face-embedding")
@@ -75,7 +105,7 @@ async def face_embedding(
         # - bad image
         embedding = compute_embedding(str(temp_path))
 
-        config_path = Path(__file__).resolve().parents[1] / "config" / "known_faces.json"
+        config_path = _known_faces_config_path()
         data = load_known_faces(str(config_path))
 
         updated = False

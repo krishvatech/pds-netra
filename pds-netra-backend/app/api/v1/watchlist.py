@@ -107,6 +107,19 @@ def deactivate_person(
     return WatchlistPersonOut.model_validate(person).model_dump()
 
 
+@router.delete("/persons/{person_id}")
+def delete_person(
+    person_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("STATE_ADMIN", "HQ_ADMIN", "USER")),
+) -> dict:
+    person = watchlist_service.get_person(db, person_id)
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    watchlist_service.delete_person(db, person)
+    return {"status": "ok", "person_id": person_id}
+
+
 @router.post("/persons/{person_id}/images")
 def add_images(
     person_id: str,

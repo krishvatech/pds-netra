@@ -75,6 +75,19 @@ def deactivate_person(db: Session, person: WatchlistPerson) -> WatchlistPerson:
     return person
 
 
+def delete_person(db: Session, person: WatchlistPerson) -> None:
+    # Preserve event history while allowing hard delete of watchlist profile.
+    db.query(FaceMatchEvent).filter(
+        FaceMatchEvent.blacklist_person_id == person.id
+    ).update(
+        {FaceMatchEvent.blacklist_person_id: None},
+        synchronize_session=False,
+    )
+    db.delete(person)
+    db.commit()
+    publish_watchlist_sync()
+
+
 def add_person_images(
     db: Session,
     *,
