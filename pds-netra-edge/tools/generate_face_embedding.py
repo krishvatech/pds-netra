@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.core.errors import safe_json_dump_atomic, safe_json_load
@@ -35,11 +37,78 @@ logger = logging.getLogger("generate_face_embedding")
 
 _FACE_APP: Optional[FaceAnalysis] = None
 _FACE_LOCK = threading.Lock()
+_INSIGHTFACE_MODEL_NAME = os.getenv("INSIGHTFACE_MODEL_NAME", "antelopev2")
+_INSIGHTFACE_MODELS_DIR = Path("/root/.insightface/models")
+
+
+def _is_model_dir_incomplete(model_dir: Path) -> bool:
+    if not model_dir.exists():
+        return False
+    if not model_dir.is_dir():
+        return True
+
+    onnx_files = list(model_dir.glob("*.onnx"))
+    if not onnx_files:
+        return True
+
+    for onnx_file in onnx_files:
+        try:
+            if onnx_file.stat().st_size <= 0:
+                return True
+        except OSError:
+            return True
+
+    has_detection = any("det" in p.name.lower() or "scrfd" in p.name.lower() for p in onnx_files)
+    has_recognition = any("glint" in p.name.lower() or "r100" in p.name.lower() for p in onnx_files)
+    return not (has_detection and has_recognition)
+
+
+def _fix_nested_model_dir(model_name: str) -> bool:
+    model_dir = _INSIGHTFACE_MODELS_DIR / model_name
+    nested_dir = model_dir / model_name
+    if not nested_dir.exists() or not nested_dir.is_dir():
+        return False
+
+    moved_any = False
+    for child in nested_dir.iterdir():
+        target = model_dir / child.name
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        shutil.move(str(child), str(target))
+        moved_any = True
+
+    nested_dir.rmdir()
+    if moved_any:
+        logger.warning("Fixed nested InsightFace model directory: %s", nested_dir)
+    return moved_any
+
+
+def _delete_model_dir(model_name: str) -> bool:
+    model_dir = _INSIGHTFACE_MODELS_DIR / model_name
+    if not model_dir.exists():
+        return False
+    if model_dir.is_dir():
+        shutil.rmtree(model_dir)
+    else:
+        model_dir.unlink()
+    logger.warning("Deleted incomplete/corrupt InsightFace model directory: %s", model_dir)
+    return True
+
+
+def _init_face_app(model_name: str) -> FaceAnalysis:
+    logger.info("Initializing InsightFace FaceAnalysis(name=%s, provider=CPU)...", model_name)
+    app = FaceAnalysis(name=model_name, providers=["CPUExecutionProvider"])
+    app.prepare(ctx_id=-1, det_size=(640, 640))
+    logger.info("InsightFace initialized OK.")
+    return app
 
 
 def _get_face_app() -> FaceAnalysis:
     """
-    Initialize InsightFace once per process.
+    Initialize InsightFace once per process and cache globally.
     Prevents repeated model download/unzip/load on every request.
     """
     global _FACE_APP
@@ -50,19 +119,36 @@ def _get_face_app() -> FaceAnalysis:
         if _FACE_APP is not None:
             return _FACE_APP
 
-        # InsightFace model cache (persist via docker volume in prod)
-        os.makedirs("/root/.insightface/models", exist_ok=True)
+        _INSIGHTFACE_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-        model_name = os.getenv("INSIGHTFACE_MODEL_NAME", "antelopev2")
-        det_size = (640, 640)
+        try:
+            _FACE_APP = _init_face_app(_INSIGHTFACE_MODEL_NAME)
+            return _FACE_APP
+        except AssertionError:
+            logger.exception("InsightFace init assertion failed. Attempting model cache self-heal.")
 
-        logger.info("Initializing InsightFace FaceAnalysis(name=%s) ...", model_name)
-        fa = FaceAnalysis(name=model_name)
-        # DO server CPU
-        fa.prepare(ctx_id=-1, det_size=det_size)
-        _FACE_APP = fa
-        logger.info("InsightFace initialized OK.")
-        return _FACE_APP
+            nested_fixed = _fix_nested_model_dir(_INSIGHTFACE_MODEL_NAME)
+            model_dir = _INSIGHTFACE_MODELS_DIR / _INSIGHTFACE_MODEL_NAME
+            deleted_corrupt = False
+            if _is_model_dir_incomplete(model_dir):
+                deleted_corrupt = _delete_model_dir(_INSIGHTFACE_MODEL_NAME)
+
+            logger.warning(
+                "Retrying InsightFace init after self-heal (nested_fixed=%s, deleted_corrupt=%s).",
+                nested_fixed,
+                deleted_corrupt,
+            )
+            try:
+                _FACE_APP = _init_face_app(_INSIGHTFACE_MODEL_NAME)
+                return _FACE_APP
+            except Exception as second_exc:
+                raise RuntimeError(
+                    f"InsightFace detection model is missing for '{_INSIGHTFACE_MODEL_NAME}'. "
+                    f"Model cache path: {_INSIGHTFACE_MODELS_DIR / _INSIGHTFACE_MODEL_NAME}. "
+                    "Clean model cache and allow model download to complete."
+                ) from second_exc
+        except Exception as exc:
+            raise RuntimeError(f"InsightFace initialization failed: {exc}") from exc
 
 
 def load_known_faces(path: str) -> List[Dict[str, Any]]:

@@ -112,6 +112,22 @@ async def face_embedding(
         # ✅ Clean user error (no 500)
         raise HTTPException(status_code=400, detail=str(ve))
 
+    except (AssertionError, RuntimeError) as svc_exc:
+        log_exception(
+            logger,
+            "Embedding model/service failure",
+            extra={
+                "person_id": person_id,
+                "name": name,
+                "filename": file.filename,
+            },
+            exc=svc_exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=f"Embedding service unavailable: {str(svc_exc) or svc_exc.__class__.__name__}",
+        )
+
     except Exception as exc:
         # ✅ Log full traceback properly
         log_exception(

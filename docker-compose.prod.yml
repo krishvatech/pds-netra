@@ -47,8 +47,13 @@ services:
       dockerfile: docker/Dockerfile.embedding.cpu
     restart: unless-stopped
     volumes:
-      - ./deployment/data/embedding_models:/root/.insightface/models
-    command: ["uvicorn", "app.embedding_api:app", "--host", "0.0.0.0", "--port", "19000"]
+      - ./deployment/data/embedding_models:/root/.insightface/models:rw
+    command:
+      [
+        "sh",
+        "-c",
+        "mkdir -p /root/.insightface/models && chmod 0777 /root/.insightface/models && uvicorn app.embedding_api:app --host 0.0.0.0 --port 19000",
+      ]
 
   dashboard:
     build:
