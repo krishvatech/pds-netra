@@ -30,7 +30,7 @@ services:
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
-      - /data/pds-live:/data/pds-live
+      - /data/pds-live:/opt/app/data/live
     command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"]
 
   backend-worker:
@@ -47,7 +47,7 @@ services:
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
-      - /data/pds-live:/data/pds-live
+      - /data/pds-live:/opt/app/data/live
     command: ["python", "-m", "app.worker"]
 
   embedding:
