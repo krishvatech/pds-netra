@@ -28,6 +28,9 @@ logger = logging.getLogger("embedding_api")
 
 
 def _known_faces_config_path() -> Path:
+    env_path = (os.getenv("KNOWN_FACES_FILE") or "").strip()
+    if env_path:
+        return Path(env_path).expanduser()
     return Path(__file__).resolve().parents[1] / "config" / "known_faces.json"
 
 
@@ -58,7 +61,18 @@ def known_faces(
 
     config_path = _known_faces_config_path()
     if not config_path.exists():
-        raise HTTPException(status_code=404, detail=f"Known faces config not found at {config_path}")
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            save_known_faces(str(config_path), [])
+            logger.info("Created missing known faces config at %s", config_path)
+        except Exception as exc:
+            log_exception(
+                logger,
+                "Failed to initialize known faces config",
+                extra={"path": str(config_path)},
+                exc=exc,
+            )
+            raise HTTPException(status_code=503, detail=f"Unable to initialize known faces config at {config_path}")
 
     data = load_known_faces(str(config_path))
     items = data if isinstance(data, list) else []

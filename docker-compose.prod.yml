@@ -57,6 +57,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./deployment/data/embedding_models:/root/.insightface/models:rw
+      - ./deployment/data/embedding_config:/opt/app/config
     command:
       [
         "sh",
