@@ -296,7 +296,7 @@ export default function WatchlistPage() {
         {error && <p className={inlineErrorClass}>{error}</p>}
 
         {activeTab === 'persons' && (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
             <Card className="animate-fade-up hud-card">
               <CardHeader className="space-y-1">
                 <div className="text-lg font-semibold font-display">Add Blacklisted Person</div>
@@ -393,6 +393,9 @@ export default function WatchlistPage() {
                   }}
                   onDelete={(person) => setDeleteTarget(person)}
                 />
+                <div className="text-xs text-slate-500">
+                  Showing {persons.length} person{persons.length !== 1 ? 's' : ''}
+                </div>
               </CardContent>
             </Card>
           </div>
