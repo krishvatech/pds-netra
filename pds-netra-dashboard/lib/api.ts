@@ -764,10 +764,27 @@ export async function updateWatchlistPerson(personId: string, payload: Partial<W
   });
 }
 
+export async function updateBlacklistedPerson(personId: string, payload: Partial<WatchlistPerson>): Promise<WatchlistPerson> {
+  return updateWatchlistPerson(personId, payload);
+}
+
 export async function deactivateWatchlistPerson(personId: string): Promise<WatchlistPerson> {
   return apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}/deactivate`, {
     method: 'POST'
   });
+}
+
+export async function deleteBlacklistedPerson(personId: string): Promise<WatchlistPerson> {
+  try {
+    return await apiFetch(`/api/v1/watchlist/persons/${encodeURIComponent(personId)}`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    if (err instanceof Error && /API 404|API 405/i.test(err.message)) {
+      return deactivateWatchlistPerson(personId);
+    }
+    throw err;
+  }
 }
 
 export async function getWatchlistPerson(personId: string): Promise<WatchlistPerson> {

@@ -746,14 +746,20 @@ def start_camera_loops(
                 modules.anpr_enabled,
                 len(anpr_rules),
             )
-            anpr_processor = _create_anpr_processor_for_camera(
-                camera,
-                zone_polygons,
-                anpr_rules,
-                force_session_heuristic=not modules.gate_entry_exit_enabled,
-            )
-        else:
-            logger.info("ANPR disabled for camera=%s", camera.id)
+
+            try:
+                logger.info("ANPR INIT START camera=%s", camera.id)
+                anpr_processor = _create_anpr_processor_for_camera(
+                    camera,
+                    zone_polygons,
+                    anpr_rules,
+                    force_session_heuristic=not modules.gate_entry_exit_enabled,
+                )
+                logger.info("ANPR INIT DONE camera=%s processor=%s", camera.id, bool(anpr_processor))
+            except Exception as e:
+                logger.exception("ANPR INIT FAILED camera=%s err=%s", camera.id, e)
+                anpr_processor = None
+
 
 
         # Initialise health state for this camera
@@ -1277,7 +1283,7 @@ def start_camera_loops(
                             snapshotter=snapshotter,
                         ) or []
 
-                        # Debug log (safe): shows if ANPR is producing any results
+                        # Debug log: show detection count
                         if anpr_results:
                             logger.info(
                                 "ANPR DETECTED camera=%s count=%d mode=%s",
@@ -1292,31 +1298,27 @@ def start_camera_loops(
                                 current_state["mode"],
                             )
 
-                    except Exception as exc:
-                        logging.getLogger("camera_loop").exception(
-                            "ANPR processing failed for camera %s: %s", camera_obj.id, exc
-                        )
-                        anpr_results = []
-
-
-                        # Debug log: tells you if OCR returned text or got filtered
+                        # OCR debug (optional)
                         if os.getenv("EDGE_ANPR_OCR_DEBUG_LOG", "true").lower() in {"1", "true", "yes"}:
-                            try:
-                                sample = anpr_results[0] if isinstance(anpr_results, list) and anpr_results else None
-                                if sample is not None:
-                                    txt = getattr(sample, "text", getattr(sample, "plate_text", None))
-                                    conf = getattr(sample, "confidence", None)
-                                    logger.info("ANPR OCR sample camera=%s text=%s conf=%s", camera_obj.id, txt, conf)
-                                else:
-                                    logger.info("ANPR OCR sample camera=%s (no results)", camera_obj.id)
-                            except Exception:
-                                pass
+                            sample = anpr_results[0] if isinstance(anpr_results, list) and anpr_results else None
+                            if sample is not None:
+                                txt = getattr(sample, "text", getattr(sample, "plate_text", None))
+                                conf = getattr(sample, "confidence", None)
+                                logger.info(
+                                    "ANPR OCR sample camera=%s text=%s conf=%s",
+                                    camera_obj.id,
+                                    txt,
+                                    conf,
+                                )
 
                     except Exception as exc:
-                        logging.getLogger("camera_loop").exception(
-                            "ANPR processing failed for camera %s: %s", camera_obj.id, exc
+                        logger.exception(
+                            "ANPR processing failed for camera %s: %s",
+                            camera_obj.id,
+                            exc,
                         )
                         anpr_results = []
+
 
                 if frame is not None and (face_processor_local is not None or watchlist_processor_local is not None):
                     try:
