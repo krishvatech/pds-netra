@@ -1,12 +1,12 @@
 [Unit]
-Description=PDS Netra Edge Node (Docker Compose)
+Description=PDS Netra Edge Node (Docker Compose, DeepStream profile)
 After=docker.service network-online.target
 Requires=docker.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/pds-netra-edge
-ExecStart=/usr/bin/docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.gpu.yml up pds-edge mosquitto
+ExecStart=/usr/bin/docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.gpu.yml --profile deepstream up pds-edge-deepstream mosquitto
 ExecStop=/usr/bin/docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.gpu.yml down
 Restart=always
 RestartSec=3

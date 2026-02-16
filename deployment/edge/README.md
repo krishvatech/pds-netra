@@ -17,7 +17,10 @@
 
 ## Enable auto-start on boot (systemd)
 1. Install the service file:
-   - `sudo cp /opt/pds-netra-edge/deployment/edge/systemd/pds-netra-edge.service.example /etc/systemd/system/pds-netra-edge.service`
+   - Standard runtime:
+     - `sudo cp /opt/pds-netra-edge/deployment/edge/systemd/pds-netra-edge.service.example /etc/systemd/system/pds-netra-edge.service`
+   - DeepStream runtime:
+     - `sudo cp /opt/pds-netra-edge/deployment/edge/systemd/pds-netra-edge-deepstream.service.example /etc/systemd/system/pds-netra-edge.service`
 2. Reload systemd and enable:
    - `sudo systemctl daemon-reload`
    - `sudo systemctl enable --now pds-netra-edge`
@@ -27,7 +30,10 @@
 
 ## Manual run (Docker Compose)
 From `/opt/pds-netra-edge`:
-- `docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.yml up --build`
+- Standard GPU runtime:
+  - `docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.gpu.yml up --build -d pds-edge mosquitto`
+- DeepStream runtime profile:
+  - `docker compose -f /opt/pds-netra-edge/pds-netra-edge/docker-compose.jetson.gpu.yml --profile deepstream up --build -d pds-edge-deepstream mosquitto`
 
 ## Outbox Simulation
 Use the helper script to simulate an MQTT outage and verify that the outbox buffers and replays events:
@@ -35,5 +41,6 @@ Use the helper script to simulate an MQTT outage and verify that the outbox buff
 
 ## Notes
 - The compose file uses NVIDIA GPU access and runs with `--device cuda`.
+- The DeepStream profile uses service `pds-edge-deepstream` and image `docker/Dockerfile.deepstream.jp6`.
 - Outbox data and watchdog heartbeat are written to `/opt/pds-netra-edge/data/` so they survive reboots.
 - Restart policy is handled by both Docker (`restart: unless-stopped`) and systemd (`Restart=always`).

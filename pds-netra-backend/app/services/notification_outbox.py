@@ -451,9 +451,14 @@ def enqueue_report_notifications(
     report_id: str,
     *,
     subject: str,
-    message: str,
+    message: Optional[str] = None,
+    message_text: Optional[str] = None,
+    email_html: Optional[str] = None,
+    scopes: Iterable[str] = ("HQ",),
+    godown_id: Optional[str] = None,
 ) -> int:
-    targets = resolve_notification_targets(db, godown_id=None, scopes=("HQ",))
+    targets = resolve_notification_targets(db, godown_id=godown_id, scopes=scopes)
+    payload = email_html or message or message_text or ""
     created = 0
     for channel, target in targets:
         channel_norm = channel.upper()
@@ -466,7 +471,7 @@ def enqueue_report_notifications(
             channel=channel_norm,
             target=target,
             subject=subject,
-            message=message,
+            message=payload,
             media_url=None,
             status="PENDING",
             attempts=0,

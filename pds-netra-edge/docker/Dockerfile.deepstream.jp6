@@ -1,0 +1,81 @@
+#
+# Jetson DeepStream runtime image for PDS Netra Edge.
+# Uses NVIDIA DeepStream L4T base so `pyds`/GStreamer plugins are available.
+#
+
+FROM nvcr.io/nvidia/deepstream-l4t:6.4-samples
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /opt/app
+COPY . /opt/app
+
+# Ensure Python + GStreamer bindings are present.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-opencv \
+    python3-gi \
+    python3-gst-1.0 \
+    ffmpeg \
+    gstreamer1.0-tools \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    libgl1 \
+    libglib2.0-0 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_EXTRA_INDEX_URL=
+ENV PIP_NO_CACHE_DIR=1
+
+# DeepStream python binding path for pyds.
+ENV PYTHONPATH=/opt/nvidia/deepstream/deepstream/lib:${PYTHONPATH}
+
+# Keep dependency set aligned with jp6 image to preserve behavior.
+RUN printf "numpy<2\n" > /tmp/constraints.txt && \
+    python3 -m pip install -U pip setuptools wheel && \
+    (python3 -m pip uninstall -y numpy || true) && \
+    (python3 -m pip uninstall -y paddlepaddle paddlepaddle-gpu paddleocr || true) && \
+    python3 -m pip install -c /tmp/constraints.txt "numpy<2" && \
+    python3 -m pip install -c /tmp/constraints.txt \
+      pydantic==1.10.13 \
+      python-dotenv==1.0.1 \
+      paho-mqtt==1.6.1 \
+      PyYAML==6.0.1 \
+      pillow tqdm psutil matplotlib scipy py-cpuinfo && \
+    python3 -m pip install -c /tmp/constraints.txt ultralytics==8.4.12 --no-deps && \
+    python3 -m pip install -c /tmp/constraints.txt lap==0.5.12 && \
+    python3 -m pip install --ignore-installed -c /tmp/constraints.txt \
+        insightface==0.7.3 faiss-cpu==1.7.4 onnxruntime==1.16.3 \
+        paddleocr==2.7.3 paddlepaddle==2.6.2
+
+# DeepStream defaults for person pipeline mode.
+ENV EDGE_PERSON_PIPELINE=deepstream
+ENV EDGE_DEEPSTREAM_NVINFER_CONFIG=/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_infer_primary.txt
+ENV EDGE_DEEPSTREAM_TRACKER_CONFIG=/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+ENV EDGE_DEEPSTREAM_TRACKER_ENABLED=true
+ENV EDGE_DEEPSTREAM_PERSON_CLASS_IDS=0
+
+RUN python3 - <<'PY'
+import cv2
+print("cv2:", cv2.__version__)
+print("cv2 file:", cv2.__file__)
+try:
+    import gi
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    Gst.init(None)
+    print("GStreamer Python: OK")
+except Exception as e:
+    raise SystemExit(f"GStreamer Python check failed: {e}")
+try:
+    import pyds  # type: ignore
+    print("pyds: OK")
+except Exception as e:
+    raise SystemExit(f"pyds import failed: {e}")
+PY
+
+CMD ["python3", "-m", "app.main", "--config", "config/pds_netra_config.yaml", "--device", "cuda:0"]

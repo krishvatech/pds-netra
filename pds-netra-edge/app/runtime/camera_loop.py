@@ -56,6 +56,7 @@ from ..cv.face_id import (
     detect_faces,
 )
 from ..cv.fire_detection import FireDetectionProcessor
+from ..cv.person_pipeline import PersonPipeline, PersonAnalyticsSignal
 from ..watchlist.manager import WatchlistManager
 from ..watchlist.processor import WatchlistProcessor
 from ..watchlist.sync_subscriber import WatchlistSyncSubscriber
@@ -696,6 +697,14 @@ def start_camera_loops(
             for c in os.getenv("EDGE_DETECT_CLASSES", "").split(",")
             if c.strip()
         }
+        person_pipeline: Optional[PersonPipeline] = None
+        if need_general_detector:
+            try:
+                candidate_person_pipeline = PersonPipeline(camera_id=camera.id, zone_polygons=zone_polygons)
+                if candidate_person_pipeline.is_enabled():
+                    person_pipeline = candidate_person_pipeline
+            except Exception as exc:
+                logger.error("Failed to initialize person pipeline for camera %s: %s", camera.id, exc)
         evaluator: Optional[RulesEvaluator] = None
         if modules.animal_detection_enabled:
             evaluator = RulesEvaluator(
@@ -913,6 +922,7 @@ def start_camera_loops(
             detector_local,
             snapshot_writer_local,
             detect_classes_local: set[str],
+            person_pipeline_local: Optional[PersonPipeline],
             health_enabled_local: bool,
         ) -> None:
             annotated_writer: Optional[AnnotatedVideoWriter] = None
@@ -1109,6 +1119,66 @@ def start_camera_loops(
 
                 if detect_classes_local:
                     objects = [obj for obj in objects if obj.class_name.lower() in detect_classes_local]
+
+                person_analytics_signals: list[PersonAnalyticsSignal] = []
+                if person_pipeline_local is not None:
+                    try:
+                        objects, person_analytics_signals = person_pipeline_local.process(
+                            objects=objects,
+                            frame=frame,
+                            now_utc=now,
+                        )
+                    except Exception as exc:
+                        logging.getLogger("camera_loop").exception(
+                            "Person pipeline processing failed for camera %s: %s",
+                            camera_obj.id,
+                            exc,
+                        )
+
+                if person_analytics_signals:
+                    from ..models.event import EventModel, MetaModel
+
+                    for signal in person_analytics_signals:
+                        event_id = str(uuid.uuid4())
+                        image_url = None
+                        if frame is not None:
+                            try:
+                                image_url = snapshotter(
+                                    frame,
+                                    event_id,
+                                    now,
+                                    bbox=signal.bbox,
+                                    label=signal.event_type,
+                                )
+                            except Exception:
+                                image_url = None
+                        try:
+                            event = EventModel(
+                                godown_id=settings.godown_id,
+                                camera_id=camera_obj.id,
+                                event_id=event_id,
+                                event_type=signal.event_type,
+                                severity=signal.severity,
+                                timestamp_utc=now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                                bbox=signal.bbox,
+                                track_id=signal.track_id,
+                                image_url=image_url,
+                                clip_url=None,
+                                meta=MetaModel(
+                                    zone_id=signal.zone_id,
+                                    rule_id=signal.rule_id,
+                                    confidence=signal.confidence,
+                                    extra={str(k): str(v) for k, v in (signal.extra or {}).items()},
+                                ),
+                            )
+                            mqtt_client.publish_event(event)
+                            state_local.last_event_utc = now
+                        except Exception as exc:
+                            logging.getLogger("camera_loop").exception(
+                                "Failed to publish person analytics event for camera %s: %s",
+                                camera_obj.id,
+                                exc,
+                            )
 
                 # Refresh known authorized users from backend DB at runtime.
                 if face_processor_local is not None:
@@ -1491,7 +1561,7 @@ def start_camera_loops(
             while True:
                 if restart_tokens.get(camera_obj.id, 0) != last_restart_token:
                     logger.info("Camera restart requested: %s", camera_obj.id)
-                    return
+                    break
                 # Handle deactivation
                 if not getattr(camera_obj, "is_active", True):
                     if state_local.is_online:
@@ -1581,7 +1651,7 @@ def start_camera_loops(
                 cycle_elapsed = time.monotonic() - cycle_started
                 if force_restart:
                     logger.info("Camera pipeline stopping for restart: %s", camera_obj.id)
-                    return
+                    break
                 if annotated_writer is not None:
                     annotated_writer.close()
                     if annotated_writer.frames_written() == 0:
@@ -1655,6 +1725,12 @@ def start_camera_loops(
                 time.sleep(retry_delay)
                 continue
 
+            if person_pipeline_local is not None:
+                try:
+                    person_pipeline_local.close()
+                except Exception:
+                    pass
+
         t = threading.Thread(
             target=camera_runner,
             args=(
@@ -1670,6 +1746,7 @@ def start_camera_loops(
                 detector,
                 snapshot_writer,
                 detect_classes,
+                person_pipeline,
                 modules.health_monitoring_enabled,
             ),
             name=f"Pipeline-{camera.id}",

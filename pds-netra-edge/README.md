@@ -24,6 +24,7 @@ pds-netra-edge/
   docker/
     Dockerfile.mac-dev    # Dockerfile for local development (CPU)
     Dockerfile.jetson     # Dockerfile for Jetson deployment (GPU)
+    Dockerfile.deepstream.jp6 # Jetson DeepStream runtime image
     mosquitto.conf        # Mosquitto config used by docker-compose
   docker-compose.yml      # Compose file with edge + Mosquitto services
   requirements.txt        # Python dependencies
@@ -109,8 +110,78 @@ Backend/library notes from scan:
 - `torch`: used in `app/main.py` (startup capability logging) and `app/cv/yolo_detector.py` (CUDA model placement checks)
 - `onnxruntime`: listed in `requirements.txt`; used indirectly by face/embedding stack, not as a direct detection entrypoint in edge runtime
 - `tensorrt`: used through Ultralytics engine export/load path in `app/cv/yolo_detector.py`
-- `deepstream`, `triton`, `cv2.dnn`: no direct runtime inference path found in current edge app code
-- `gstreamer`: present in Jetson Docker dependencies (`docker/Dockerfile.jp6`), not a direct Python inference path
+- `deepstream`: optional person runtime path via `app/cv/person_pipeline.py` (`EDGE_PERSON_PIPELINE=deepstream`)
+- `triton`, `cv2.dnn`: no direct runtime inference path found in current edge app code
+- `gstreamer`: used by optional DeepStream person runtime path
+
+## DeepStream Person Pipeline Option (Jetson, flag-gated)
+
+Edge now includes a person-pipeline abstraction (`app/cv/person_pipeline.py`) with two modes:
+
+- `EDGE_PERSON_PIPELINE=yolo` (default): existing YOLO detections/tracking path.
+- `EDGE_PERSON_PIPELINE=deepstream`: tries DeepStream adapter path and falls back to YOLO automatically if DeepStream runtime is unavailable.
+
+Current DeepStream status:
+- DeepStream `Gst` + `pyds` runtime path is wired into runtime (`app/runtime/camera_loop.py`)
+- path uses `appsrc -> nvstreammux -> nvinfer -> nvtracker -> fakesink` (tracker optional)
+- fallback is automatic and keeps existing behavior if DeepStream path fails
+- output event schema is unchanged (`EventModel` over MQTT)
+
+Required DeepStream env:
+
+```bash
+EDGE_PERSON_PIPELINE=deepstream
+EDGE_DEEPSTREAM_NVINFER_CONFIG=/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_infer_primary.txt
+# Optional
+EDGE_DEEPSTREAM_TRACKER_ENABLED=true
+EDGE_DEEPSTREAM_TRACKER_CONFIG=/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+EDGE_DEEPSTREAM_PERSON_CLASS_IDS=0
+EDGE_DEEPSTREAM_INFER_WIDTH=1280
+EDGE_DEEPSTREAM_INFER_HEIGHT=720
+EDGE_DEEPSTREAM_DETECT_TIMEOUT_SEC=0.2
+```
+
+Note:
+- Use `docker/Dockerfile.deepstream.jp6` (or service `pds-edge-deepstream`) for out-of-box DeepStream runtime.
+- `docker/Dockerfile.jp6` remains the standard non-DeepStream Jetson image.
+
+Optional analytics flags (work with either mode):
+
+```bash
+EDGE_PERSON_ROI_EVENTS_ENABLED=true
+EDGE_PERSON_ROI_ZONE_ID=zone_main
+# or explicit polygon: x,y;x,y;x,y;...
+EDGE_PERSON_ROI_POLYGON=0.10,0.10;0.90,0.10;0.90,0.90;0.10,0.90
+
+EDGE_PERSON_LINE_CROSS_ENABLED=true
+# x1,y1;x2,y2 (pixels or normalized 0..1)
+EDGE_PERSON_LINE=0.50,0.00;0.50,1.00
+EDGE_PERSON_LINE_ID=line_gate_1
+EDGE_PERSON_LINE_COOLDOWN_SEC=8
+EDGE_PERSON_LINE_MIN_MOTION_PX=6
+```
+
+Analytics event types emitted on line/ROI transitions:
+- `PERSON_LINE_CROSS`
+- `PERSON_ROI_ENTER`
+- `PERSON_ROI_EXIT`
+
+All are published through the same existing event envelope (`godown_id`, `camera_id`, `event_type`, `bbox`, `track_id`, `meta`, etc.), so backend schemas do not need changes.
+
+### Jetson smoke test (MQTT)
+
+After enabling line-cross flags and running edge, verify end-to-end MQTT emission:
+
+```bash
+python3 pds-netra-edge/tools/smoke_person_line_cross_mqtt.py \
+  --godown-id GDN_001 \
+  --camera-id CAM_GATE_1 \
+  --broker-host 127.0.0.1 \
+  --broker-port 1883 \
+  --timeout 120
+```
+
+The script passes when at least one `PERSON_LINE_CROSS` event is received on `pds/<godown_id>/events`.
 
 ## Jetson GPU Setup (JetPack 6.2.2 / L4T 36.5.0)
 
@@ -228,19 +299,32 @@ For Jetson GPU deployment (JetPack 6), run:
 
 ```bash
 cd pds-netra-edge
-docker compose -f docker-compose.jetson.gpu.yml up --build -d
+docker compose -f docker-compose.jetson.gpu.yml up --build -d pds-edge mosquitto
 ```
 
 If you run from the repo root, use:
 
 ```bash
-docker compose -f pds-netra-edge/docker-compose.jetson.gpu.yml up --build -d
+docker compose -f pds-netra-edge/docker-compose.jetson.gpu.yml up --build -d pds-edge mosquitto
+```
+
+For DeepStream runtime profile (out-of-box DS container):
+
+```bash
+cd pds-netra-edge
+docker compose -f docker-compose.jetson.gpu.yml --profile deepstream up --build -d pds-edge-deepstream mosquitto
 ```
 
 If you prefer a direct image build, use `docker/Dockerfile.jp6` on the target device:
 
 ```bash
 docker build -f docker/Dockerfile.jp6 -t pds-netra-edge:jetson .
+```
+
+DeepStream direct image build:
+
+```bash
+docker build -f docker/Dockerfile.deepstream.jp6 -t pds-netra-edge:jetson-deepstream .
 ```
 
 ## Next steps
