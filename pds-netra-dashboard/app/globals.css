@@ -14,15 +14,24 @@
   --glow: rgba(245, 158, 11, 0.25);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   font-family: var(--font-sans);
   color: var(--ink);
   background: #0b1324;
+  overflow-x: hidden;
 }
 
 h1,
@@ -39,6 +48,7 @@ a {
 @layer components {
   .app-shell {
     @apply min-h-screen relative overflow-hidden;
+    width: 100%;
   }
 
   .app-bg {
@@ -284,7 +294,7 @@ a {
   }
 
   .table-shell {
-    @apply rounded-2xl overflow-hidden;
+    @apply rounded-2xl overflow-x-auto overflow-y-hidden;
     position: relative;
     border: 1px solid rgba(148, 163, 184, 0.35);
     background: #ffffff;
@@ -292,6 +302,12 @@ a {
       0 24px 48px -36px rgba(2, 6, 23, 0.18),
       inset 0 0 0 1px rgba(148, 163, 184, 0.08);
     backdrop-filter: blur(14px);
+  }
+
+  .hud-card,
+  .surface-card,
+  .table-shell {
+    max-width: 100%;
   }
 
   .table-shell::before {
@@ -485,7 +501,7 @@ a {
   .settings-panel {
     position: absolute;
     right: 16px;
-    top: 72px;
+    top: calc(100% + 10px);
     width: 320px;
     max-width: calc(100vw - 32px);
     padding: 16px;
@@ -542,6 +558,29 @@ a {
     inset: 10%;
     border-radius: 999px;
     border: 1px solid rgba(148, 163, 184, 0.18);
+  }
+}
+
+@media (max-width: 1024px) {
+  .radar-wrap {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .mobile-rail {
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-rail-inner {
+    border-radius: 16px;
+    padding: 10px 12px;
+  }
+
+  .settings-panel {
+    right: 12px;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
   }
 }
 

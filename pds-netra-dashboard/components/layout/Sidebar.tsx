@@ -543,7 +543,7 @@ export function Sidebar() {
   }, []);
 
   return (
-    <aside className="hidden md:flex md:flex-col md:w-72 px-5 py-6 border-r border-white/10 bg-slate-900/70 text-slate-100 backdrop-blur">
+    <aside className="hidden md:flex md:flex-col md:w-64 lg:w-72 px-4 lg:px-5 py-6 border-r border-white/10 bg-slate-900/70 text-slate-100 backdrop-blur">
       <div className="flex items-center gap-3 pb-5 border-b border-white/10">
         <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white flex items-center justify-center text-lg font-semibold shadow-lg">
           PN

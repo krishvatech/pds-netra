@@ -149,85 +149,88 @@ export function Topbar() {
   };
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-white/10 bg-slate-900/70 px-4 py-3 backdrop-blur relative text-slate-100">
-      <div>
-        <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Control Deck</div>
-        <div className="text-xl font-semibold font-display tracking-tight">PDS Netra Dashboard</div>
-        <div className="mt-1 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Live perimeter
-        </div>
-        {quietActive && (
-          <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-            Quiet hours active
+    <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur relative">
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 sm:text-sm">Control Deck</div>
+          <div className="truncate text-lg font-semibold font-display tracking-tight sm:text-xl">PDS Netra Dashboard</div>
+          <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Live perimeter
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-2">
-          <Button
-            variant="ghost"
-            className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
-            onClick={toggleVisual}
-          >
-            Visual
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
-            onClick={toggleSound}
-          >
-            Sound
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
-            onClick={toggleQuiet}
-          >
-            Quiet
-          </Button>
-          <Button
-            variant="ghost"
-            className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
-            onClick={toggleRail}
-          >
-            Rail
-          </Button>
-          <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
-        </div>
-        <Button
-          variant="ghost"
-          className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] btn-outline"
-          onClick={() => setShowSettings((prev) => !prev)}
-        >
-          Settings
-        </Button>
-        {user ? (
-          <>
-            <div className="hidden sm:block text-sm text-slate-200">
-              {user.name ?? user.username}
+          {quietActive && (
+            <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              Quiet hours active
             </div>
-            {mounted && <Badge variant="outline">Profile: {profile}</Badge>}
-            <Badge variant="outline">{user.role}</Badge>
+          )}
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+          <div className="hidden lg:flex items-center gap-2">
             <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  await logout();
-                } catch {
-                  // ignore
-                }
-                clearSession();
-                router.replace('/dashboard/login');
-              }}
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleVisual}
             >
-              Logout
+              Visual
             </Button>
-          </>
-        ) : (
-          <Badge variant="outline">Not signed in</Badge>
-        )}
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleSound}
+            >
+              Sound
+            </Button>
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleQuiet}
+            >
+              Quiet
+            </Button>
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleRail}
+            >
+              Rail
+            </Button>
+            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
+          </div>
+          <Button
+            variant="ghost"
+            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
+            onClick={() => setShowSettings((prev) => !prev)}
+          >
+            Settings
+          </Button>
+          {user ? (
+            <>
+              <div className="hidden md:block text-sm text-slate-200">
+                {user.name ?? user.username}
+              </div>
+              {mounted && <Badge variant="outline" className="hidden md:inline-flex">Profile: {profile}</Badge>}
+              <Badge variant="outline" className="hidden sm:inline-flex">{user.role}</Badge>
+              <Button
+                variant="outline"
+                className="text-xs sm:text-sm"
+                onClick={async () => {
+                  try {
+                    await logout();
+                  } catch {
+                    // ignore
+                  }
+                  clearSession();
+                  router.replace('/dashboard/login');
+                }}
+              >
+                Logout
+              </Button>
+            </>
+          ) : (
+            <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
+          )}
+        </div>
       </div>
       {mounted && showSettings && (
         <div ref={panelRef} className="settings-panel animate-fade-up">

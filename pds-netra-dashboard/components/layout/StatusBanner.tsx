@@ -45,7 +45,7 @@ export function StatusBanner() {
   if (!offline && !mqttDown && !eventsStale) return null;
 
   return (
-    <div className={`w-full text-white text-xs uppercase tracking-[0.3em] px-4 py-2 text-center ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}>
+    <div className={`w-full px-3 py-2 text-center text-[10px] uppercase leading-relaxed tracking-[0.2em] text-white sm:px-4 sm:text-xs sm:tracking-[0.3em] ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}>
       {offline
         ? 'Backend offline — live data is unavailable'
         : mqttDown

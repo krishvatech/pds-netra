@@ -63,13 +63,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="radar-ring" />
         <div className="radar-grid" />
       </div>
-      <div className="flex min-h-screen relative z-10">
+      <div className="relative z-10 flex min-h-screen w-full">
         <Sidebar />
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <StatusBanner />
           <Topbar />
-          <div className="flex">
-            <main className="flex-1 p-6 lg:p-8 pb-24 lg:pb-8 space-y-6 animate-fade-up">{children}</main>
+          <div className="flex min-w-0">
+            <main className="animate-fade-up flex-1 min-w-0 space-y-6 px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8">
+              {children}
+            </main>
             <LiveRail />
           </div>
         </div>
