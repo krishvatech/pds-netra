@@ -56,7 +56,7 @@ tracking:
 face_recognition:
   enabled: true
   known_faces_file: "config/known_faces.json"
-  min_match_confidence: 0.6
+  min_match_confidence: 0.5
   unknown_event_enabled: true
   dedup_interval_seconds: 60
   cameras:

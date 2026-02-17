@@ -33,5 +33,6 @@ services:
       - ./models:/opt/app/models
       - ./cache/ultralytics:/opt/app/.config/Ultralytics
       - ./cache/insightface:/opt/app/.insightface
+      - /data/pds-backend/uploads:/opt/app/data/uploads:ro
     depends_on:
       - mosquitto

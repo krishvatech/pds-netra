@@ -431,7 +431,21 @@ def _ensure_blacklist_alert(
     if existing:
         link = AlertEventLink(alert_id=existing.id, event_id=event.id)
         db.add(link)
-        existing.end_time = event.timestamp_utc
+        if existing.status == "ACK":
+            existing.status = "OPEN"
+            existing.acknowledged_by = None
+            existing.acknowledged_at = None
+            existing.closed_at = None
+            existing.end_time = None
+        else:
+            existing.end_time = event.timestamp_utc
+
+        existing.extra = {
+            **(existing.extra or {}),
+            "match_score": match_score,
+            "snapshot_url": snapshot_url,
+            "correlation_id": correlation_id,
+        }
         touch_detection_timestamp(existing, event.timestamp_utc)
         db.commit()
         return existing, False
