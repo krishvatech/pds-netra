@@ -1,8 +1,11 @@
 import * as React from 'react';
 
-export function Card({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={`surface-card ${className}`} {...props} />;
-}
+export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className = '', ...props }, ref) => {
+    return <div ref={ref} className={`surface-card ${className}`} {...props} />;
+  }
+);
+Card.displayName = 'Card';
 
 export function CardHeader({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={`surface-header p-4 ${className}`} {...props} />;
