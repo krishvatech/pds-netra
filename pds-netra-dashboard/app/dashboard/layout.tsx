@@ -69,7 +69,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <StatusBanner />
           <Topbar />
           <div className="flex min-w-0">
-            <main className="animate-fade-up flex-1 min-w-0 space-y-6 px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8">
+            <main className="animate-fade-up flex-1 min-w-0 space-y-6 px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8 [&>*]:min-w-0">
               {children}
             </main>
             <LiveRail />

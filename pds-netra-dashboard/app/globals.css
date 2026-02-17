@@ -568,6 +568,32 @@ a {
 }
 
 @media (max-width: 640px) {
+  .surface-card,
+  .hud-card {
+    border-radius: 16px;
+  }
+
+  .hud-card::after {
+    inset: 8px;
+    border-radius: 12px;
+  }
+
+  .table-shell {
+    border-radius: 14px;
+  }
+
+  .table-shell thead th {
+    letter-spacing: 0.14em;
+    font-size: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .table-shell tbody td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
   .mobile-rail {
     padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
   }
@@ -581,6 +607,18 @@ a {
     right: 12px;
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
+  }
+
+  .min-w-\[100px\],
+  .min-w-\[120px\],
+  .min-w-\[140px\],
+  .min-w-\[160px\],
+  .min-w-\[170px\],
+  .min-w-\[180px\],
+  .min-w-\[220px\],
+  .min-w-\[240px\],
+  .min-w-\[360px\] {
+    min-width: 0 !important;
   }
 }
 

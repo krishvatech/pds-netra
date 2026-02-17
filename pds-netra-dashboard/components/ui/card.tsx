@@ -8,7 +8,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 Card.displayName = 'Card';
 
 export function CardHeader({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={`surface-header p-4 ${className}`} {...props} />;
+  return <div className={`surface-header p-3 sm:p-4 ${className}`} {...props} />;
 }
 
 export function CardTitle({ className = '', ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
@@ -16,5 +16,5 @@ export function CardTitle({ className = '', ...props }: React.HTMLAttributes<HTM
 }
 
 export function CardContent({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={`p-4 ${className}`} {...props} />;
+  return <div className={`p-3 sm:p-4 ${className}`} {...props} />;
 }

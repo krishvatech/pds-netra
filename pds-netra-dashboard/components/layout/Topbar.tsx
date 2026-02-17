@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Badge } from '../ui/badge';
@@ -25,6 +25,7 @@ export function Topbar() {
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuQuery, setMenuQuery] = useState('');
   const [profile, setProfile] = useState(() => getAlertProfile());
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -79,6 +80,12 @@ export function Topbar() {
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      setMenuQuery('');
+    }
+  }, [mobileMenuOpen]);
 
   const toggleVisual = () => {
     setAlertCues({ ...cues, visual: !cues.visual });
@@ -157,12 +164,38 @@ export function Topbar() {
     setAlertProfile(value);
   };
 
+  const filteredNav = useMemo(() => {
+    const query = menuQuery.trim().toLowerCase();
+    if (!query) return dashboardNav;
+    return dashboardNav.filter((item) => {
+      return item.label.toLowerCase().includes(query) || item.href.toLowerCase().includes(query);
+    });
+  }, [menuQuery]);
+
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur relative">
       <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 sm:text-sm">Control Deck</div>
-          <div className="truncate text-lg font-semibold font-display tracking-tight sm:text-xl">PDS Netra Dashboard</div>
+          <div className="mb-1 flex items-center gap-2 md:hidden">
+            <Button
+              variant="ghost"
+              className="rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] btn-outline"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+            >
+              <span className="mr-1 inline-flex h-3.5 w-3.5 items-center justify-center">
+                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" aria-hidden>
+                  <path d="M3 5.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <path d="M3 10H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <path d="M3 14.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </span>
+              Menu
+            </Button>
+            <div className="truncate text-base font-semibold font-display tracking-tight">PDS Netra</div>
+          </div>
+          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 md:block sm:text-sm">Control Deck</div>
+          <div className="hidden truncate text-lg font-semibold font-display tracking-tight md:block sm:text-xl">PDS Netra Dashboard</div>
           <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
             Live perimeter
@@ -206,14 +239,6 @@ export function Topbar() {
             </Button>
             <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
           </div>
-          <Button
-            variant="ghost"
-            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline md:hidden"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Open navigation menu"
-          >
-            Menu
-          </Button>
           <Button
             variant="ghost"
             className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
@@ -316,35 +341,92 @@ export function Topbar() {
         </div>
       )}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="max-w-[86vw] overflow-y-auto">
-          <SheetHeader>
+        <SheetContent side="left" className="w-[92vw] max-w-[360px] overflow-y-auto border-r border-white/15 bg-slate-950/98">
+          <SheetHeader className="space-y-2 bg-gradient-to-r from-slate-950 to-slate-900/80">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.28em] text-slate-300">
+              PDS Netra
+            </div>
             <SheetTitle>Navigation</SheetTitle>
-            <SheetDescription>Open any dashboard module</SheetDescription>
+            <SheetDescription>Switch modules quickly on mobile</SheetDescription>
+            {user ? (
+              <div className="flex items-center gap-2 pt-1 text-xs text-slate-300">
+                <span className="truncate">{user.name ?? user.username}</span>
+                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-slate-300">
+                  {user.role}
+                </span>
+              </div>
+            ) : null}
           </SheetHeader>
-          <nav className="space-y-1 p-4">
-            {dashboardNav.map((item) => {
+          <div className="p-3">
+            <Input
+              value={menuQuery}
+              onChange={(e) => setMenuQuery(e.target.value)}
+              placeholder="Search module..."
+              className="h-10 rounded-lg border-white/20 bg-white/5 text-slate-100 placeholder:text-slate-500 shadow-none"
+            />
+          </div>
+          <nav className="space-y-1 p-3 pt-0">
+            {filteredNav.map((item) => {
               const active = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
+                  className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
                     active
-                      ? 'bg-white/10 border border-white/15 font-semibold text-white'
+                      ? 'border border-white/20 bg-white/10 text-white shadow-sm'
                       : 'text-slate-300 hover:bg-white/5'
                   }`}
                 >
-                  <span>{item.label}</span>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <item.icon active={active} />
+                    <span className="truncate">{item.label}</span>
+                  </span>
                   <span
                     className={`h-2 w-2 rounded-full ${
-                      active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600'
+                      active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600 group-hover:bg-slate-400'
                     }`}
                   />
                 </Link>
               );
             })}
+            {filteredNav.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-center text-xs uppercase tracking-[0.2em] text-slate-400">
+                No matching module
+              </div>
+            ) : null}
           </nav>
+          <div className="p-3 pb-6">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="ghost"
+                className="rounded-xl border border-white/15 bg-white/5 text-xs uppercase tracking-[0.2em] text-slate-200 hover:bg-white/10"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setShowSettings(true);
+                }}
+              >
+                Settings
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-xl text-xs uppercase tracking-[0.2em]"
+                onClick={async () => {
+                  setMobileMenuOpen(false);
+                  try {
+                    await logout();
+                  } catch {
+                    // ignore
+                  }
+                  clearSession();
+                  router.replace('/dashboard/login');
+                }}
+              >
+                Logout
+              </Button>
+            </div>
+          </div>
         </SheetContent>
       </Sheet>
     </header>
