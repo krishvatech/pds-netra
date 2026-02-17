@@ -912,9 +912,17 @@ def start_camera_loops(
             # Lazy ANPR init state (prevents blocking camera startup)
             anpr_init_done = False
             anpr_init_lock = threading.Lock()
+            anpr_init_started = False
+            anpr_init_last_attempt = 0.0
+            anpr_init_retry_sec = max(5.0, _read_float_env("EDGE_ANPR_INIT_RETRY_SEC", 30.0))
 
             # Keep last-known ANPR rules for this camera (rules sync can update later)
             anpr_rules_cache: List[BaseRule] = list(initial_anpr_rules or [])
+            if modules_local.anpr_enabled and not anpr_rules_cache:
+                logger.warning(
+                    "ANPR disabled for camera=%s: no ANPR rules from backend (ANPR_MONITOR/WHITELIST/BLACKLIST).",
+                    camera_obj.id,
+                )
             last_zone_sync = 0.0
             zone_sync_interval = float(os.getenv("EDGE_ZONES_SYNC_INTERVAL_SEC", "15"))
             backend_url = os.getenv(
@@ -1086,6 +1094,48 @@ def start_camera_loops(
                     logging.getLogger("camera_loop").exception(
                         "Bag movement processing failed for camera %s: %s", camera_obj.id, exc
                     )
+
+            def _kickoff_anpr_init() -> None:
+                nonlocal anpr_init_done, anpr_init_started, anpr_init_last_attempt
+                if anpr_init_done or anpr_init_started:
+                    return
+                now_ts = time.monotonic()
+                if (now_ts - anpr_init_last_attempt) < anpr_init_retry_sec:
+                    return
+                anpr_init_last_attempt = now_ts
+                anpr_init_started = True
+
+                def _do_init() -> None:
+                    nonlocal anpr_init_done, anpr_init_started
+                    try:
+                        logger.info(
+                            "ANPR LAZY INIT START camera=%s module_enabled=%s rule_count=%d (async)",
+                            camera_obj.id,
+                            modules_local.anpr_enabled,
+                            len(anpr_rules_cache),
+                        )
+                        processors_local.anpr_processor = _create_anpr_processor_for_camera(
+                            camera_obj,
+                            zone_polygons,
+                            anpr_rules_cache,  # can be empty
+                            force_session_heuristic=not modules_local.gate_entry_exit_enabled,
+                        )
+                        logger.info(
+                            "ANPR LAZY INIT DONE camera=%s ok=%s",
+                            camera_obj.id,
+                            bool(processors_local.anpr_processor),
+                        )
+                        if processors_local.anpr_processor is not None:
+                            anpr_init_done = True
+                    except Exception as exc:
+                        logger.exception("ANPR LAZY INIT FAILED camera=%s err=%s", camera_obj.id, exc)
+                    finally:
+                        anpr_init_started = False
+                        if processors_local.anpr_processor is None:
+                            anpr_init_done = False
+
+                t_init = threading.Thread(target=_do_init, name=f"ANPRInit-{camera_obj.id}", daemon=True)
+                t_init.start()
 
             def callback(
                 objects: list[DetectedObject],
@@ -1337,28 +1387,7 @@ def start_camera_loops(
                 if frame is not None and (not anpr_init_done) and (modules_local.anpr_enabled or len(anpr_rules_cache) > 0):
                     with anpr_init_lock:
                         if frame is not None and (not anpr_init_done) and (processors_local.anpr_processor is None):
-                            try:
-                                logger.info(
-                                    "ANPR LAZY INIT START camera=%s module_enabled=%s rule_count=%d",
-                                    camera_obj.id,
-                                    modules_local.anpr_enabled,
-                                    len(anpr_rules_cache),
-                                )
-                                processors_local.anpr_processor = _create_anpr_processor_for_camera(
-                                    camera_obj,
-                                    zone_polygons,
-                                    anpr_rules_cache,  # can be empty
-                                    force_session_heuristic=not modules_local.gate_entry_exit_enabled,
-                                )
-                                logger.info(
-                                    "ANPR LAZY INIT DONE camera=%s ok=%s",
-                                    camera_obj.id,
-                                    bool(processors_local.anpr_processor),
-                                )
-                            except Exception as e:
-                                logger.exception("ANPR LAZY INIT FAILED camera=%s err=%s", camera_obj.id, e)
-                            finally:
-                                anpr_init_done = True
+                            _kickoff_anpr_init()
                 # ----------------------------------------------------
 
                 if processors_local.anpr_processor is not None and frame is not None:

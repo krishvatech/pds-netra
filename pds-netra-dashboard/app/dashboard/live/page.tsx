@@ -200,6 +200,7 @@ export default function LiveCamerasPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [fullscreenCameraId, setFullscreenCameraId] = useState<string | null>(null);
+  const [deleteCameraId, setDeleteCameraId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -517,8 +518,6 @@ export default function LiveCamerasPage() {
 
   const handleDeleteCamera = async (cameraId: string) => {
     if (!selectedGodown) return;
-    const ok = window.confirm(`Delete camera ${cameraId}? This cannot be undone.`);
-    if (!ok) return;
     setEditLoading(true);
     setEditError(null);
     try {
@@ -689,7 +688,7 @@ export default function LiveCamerasPage() {
                             </Button>
                             <Button
                               variant="outline"
-                              onClick={() => handleDeleteCamera(camera.camera_id)}
+                              onClick={() => setDeleteCameraId(camera.camera_id)}
                               aria-label={`Delete ${camera.camera_id}`}
                               title="Delete"
                             >
@@ -977,6 +976,43 @@ export default function LiveCamerasPage() {
         )
         : null}
 
+      {deleteCameraId && (
+        <div className="fixed inset-0 z-[9998] flex items-start justify-center p-4">
+          <button
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setDeleteCameraId(null)}
+            aria-label="Close delete confirm"
+          />
+          <div
+            className="relative mt-8 w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold font-display text-white">Delete Camera</div>
+            <div className="mt-2 text-sm text-slate-300">
+              Are you sure you want to delete camera {deleteCameraId}?
+              <span className="text-slate-400"> This cannot be undone.</span>
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteCameraId(null)} disabled={editLoading}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const id = deleteCameraId;
+                  setDeleteCameraId(null);
+                  if (id) handleDeleteCamera(id);
+                }}
+                disabled={editLoading}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

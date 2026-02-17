@@ -69,7 +69,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <StatusBanner />
           <Topbar />
           <div className="flex">
-            <main className="flex-1 p-6 lg:p-8 pb-24 lg:pb-8 space-y-6 animate-fade-up">{children}</main>
+            <main className="min-w-0 flex-1 p-6 lg:p-8 pb-24 lg:pb-8 space-y-6 animate-fade-up">
+              {children}
+            </main>
             <LiveRail />
           </div>
         </div>

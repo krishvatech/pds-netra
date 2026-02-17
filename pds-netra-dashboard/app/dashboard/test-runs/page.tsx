@@ -47,6 +47,7 @@ export default function TestRunsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -222,8 +223,6 @@ export default function TestRunsPage() {
   };
 
   const handleDelete = async (runId: string) => {
-    const ok = window.confirm('Delete this test run and its files?');
-    if (!ok) return;
     setLoading(true);
     setError(null);
     try {
@@ -387,7 +386,7 @@ export default function TestRunsPage() {
                             Activate
                           </Button>
                         )}
-                        <Button variant="danger" onClick={() => handleDelete(run.run_id)} disabled={loading}>
+                        <Button variant="danger" onClick={() => setDeleteTargetId(run.run_id)} disabled={loading}>
                           Delete
                         </Button>
                       </div>
@@ -406,6 +405,43 @@ export default function TestRunsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setDeleteTargetId(null)}
+            aria-label="Close delete confirm"
+          />
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold font-display text-white">Delete Test Run</div>
+            <div className="mt-2 text-sm text-slate-300">
+              Are you sure you want to delete this test run and its files?
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteTargetId(null)} disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const id = deleteTargetId;
+                  setDeleteTargetId(null);
+                  if (id) handleDelete(id);
+                }}
+                disabled={loading}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import {
   addAnprDailyPlanItem,
@@ -146,6 +146,8 @@ export default function AnprDailyPlanPage() {
   const [importResult, setImportResult] = useState<CsvImportSummary | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const plannedRef = useRef<HTMLDivElement | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const godownOptions = useMemo(() => {
     const opts = godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }));
@@ -210,20 +212,6 @@ export default function AnprDailyPlanPage() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [godownId, dateLocal, timezoneName]);
-
-  useEffect(() => {
-    if (!importOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setImportOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [importOpen]);
 
   const planId = data?.plan?.id || '';
   const items: AnprDailyPlanItem[] = data?.items || [];
@@ -318,7 +306,6 @@ export default function AnprDailyPlanPage() {
   }
 
   async function onDelete(itemId: string) {
-    if (!window.confirm('Delete this plan item?')) return;
     try {
       setBusy(true);
       setError(null);
@@ -358,6 +345,10 @@ export default function AnprDailyPlanPage() {
       });
       setImportResult(resp);
       await load();
+      setImportOpen(false);
+      setTimeout(() => {
+        plannedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
     } catch (e: any) {
       setImportError(e?.message || 'Failed to import CSV');
     } finally {
@@ -383,8 +374,7 @@ export default function AnprDailyPlanPage() {
               <div className="text-xs text-slate-500">Date: {dateLocal || 'N/A'}</div>
             </div>
             <Button
-              variant="outline"
-              className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]"
+              className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em] bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => setImportOpen(true)}
             >
               Bulk Import
@@ -394,7 +384,91 @@ export default function AnprDailyPlanPage() {
 
         {error && <ErrorBanner message={error} />}
 
-        <Card className="hud-card">
+        {importOpen && (
+          <Card className="hud-card">
+            <CardHeader className="flex items-center justify-between">
+              <div>
+                <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
+                <div className="text-xs text-slate-400">Bulk load planned vehicles for a date.</div>
+              </div>
+              <Button variant="outline" onClick={() => setImportOpen(false)}>
+                Close
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {importError && <ErrorBanner message={importError} />}
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <Label>CSV File</Label>
+                  <Input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <div>
+                  <Label>Godown</Label>
+                  <Select
+                    value={godownId}
+                    onChange={(e) => setGodownId(e.target.value)}
+                    options={godownOptions}
+                    placeholder="Select godown..."
+                  />
+                </div>
+                <div>
+                  <Label>Date</Label>
+                  <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
+                </div>
+                <div className="self-end">
+                  <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId || !dateLocal}>
+                    {importBusy ? 'Importing...' : 'Import CSV'}
+                  </Button>
+                </div>
+              </div>
+
+              {importRows.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-300">
+                    Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
+                  </div>
+                  <div className="table-shell overflow-auto">
+                    <Table>
+                      <THead>
+                        <TR>
+                          <TH>Plate</TH>
+                          <TH>Expected By</TH>
+                          <TH>Status</TH>
+                          <TH>Notes</TH>
+                          <TH>Issue</TH>
+                        </TR>
+                      </THead>
+                      <TBody>
+                        {importRows.map((r, idx) => (
+                          <TR key={`${r.plate_text}-${idx}`}>
+                            <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
+                            <TD>{r.expected_by_local || 'N/A'}</TD>
+                            <TD>{r.status || 'N/A'}</TD>
+                            <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
+                            <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
+                          </TR>
+                        ))}
+                      </TBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {importResult && (
+                <div className="text-xs text-slate-300">
+                  Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="hud-card" ref={plannedRef}>
           <CardHeader>
             <div className="text-lg font-semibold font-display">Plan Settings</div>
           </CardHeader>
@@ -533,7 +607,12 @@ export default function AnprDailyPlanPage() {
                           {it.arrived_at_utc ? formatIstDateTime(it.arrived_at_utc) : 'N/A'}
                         </TD>
                         <TD>
-                          <Button variant="danger" className="px-3 py-1.5 text-xs" onClick={() => onDelete(it.id)} disabled={busy}>
+                          <Button
+                            variant="danger"
+                            className="px-3 py-1.5 text-xs"
+                            onClick={() => setDeleteTargetId(it.id)}
+                            disabled={busy}
+                          >
                             Delete
                           </Button>
                         </TD>
@@ -547,100 +626,36 @@ export default function AnprDailyPlanPage() {
         </Card>
       </div>
 
-      {importOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="min-h-full px-4 py-8">
-            <button
-              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
-              onClick={() => setImportOpen(false)}
-              aria-label="Close import"
-            />
-            <div
-              className="relative mx-auto w-full max-w-3xl hud-card animate-fade-up border border-white/10 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xl font-semibold font-display text-white">Import Plan Items (CSV)</div>
-                    <div className="text-xs text-slate-400">Bulk load planned vehicles for a date.</div>
-                  </div>
-                  <Button variant="outline" onClick={() => setImportOpen(false)}>
-                    Close
-                  </Button>
-                </div>
-
-                {importError && <ErrorBanner message={importError} />}
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div>
-                    <Label>CSV File</Label>
-                    <Input
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={(e) => onImportFileChange(e.target.files?.[0] || null)}
-                    />
-                  </div>
-                  <div>
-                    <Label>Godown</Label>
-                    <Select
-                      value={godownId}
-                      onChange={(e) => setGodownId(e.target.value)}
-                      options={godownOptions}
-                      placeholder="Select godown..."
-                    />
-                  </div>
-                  <div>
-                    <Label>Date</Label>
-                    <Input type="date" value={dateLocal} onChange={(e) => setDateLocal(e.target.value)} />
-                  </div>
-                  <div className="self-end">
-                    <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId || !dateLocal}>
-                      {importBusy ? 'Importing...' : 'Import CSV'}
-                    </Button>
-                  </div>
-                </div>
-
-                {importRows.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs text-slate-300">
-                      Preview rows: {importRows.length} (errors: {importRows.filter((r) => r.error).length})
-                    </div>
-                    <div className="table-shell overflow-auto">
-                      <Table>
-                        <THead>
-                          <TR>
-                            <TH>Plate</TH>
-                            <TH>Expected By</TH>
-                            <TH>Status</TH>
-                            <TH>Notes</TH>
-                            <TH>Issue</TH>
-                          </TR>
-                        </THead>
-                        <TBody>
-                          {importRows.map((r, idx) => (
-                            <TR key={`${r.plate_text}-${idx}`}>
-                              <TD className="font-semibold">{r.plate_text || 'N/A'}</TD>
-                              <TD>{r.expected_by_local || 'N/A'}</TD>
-                              <TD>{r.status || 'N/A'}</TD>
-                              <TD className="max-w-[360px] truncate">{r.notes || 'N/A'}</TD>
-                              <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
-                            </TR>
-                          ))}
-                        </TBody>
-                      </Table>
-                    </div>
-                  </div>
-                )}
-
-                {importResult && (
-                  <div className="text-xs text-slate-300">
-                    Imported: {importResult.total} | Created: {importResult.created} | Updated: {importResult.updated} | Failed: {importResult.failed}
-                  </div>
-                )}
-              </div>
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setDeleteTargetId(null)}
+            aria-label="Close delete confirm"
+          />
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold font-display text-white">Delete Plan Item</div>
+            <div className="mt-2 text-sm text-slate-300">Are you sure you want to delete this plan item?</div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteTargetId(null)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const id = deleteTargetId;
+                  setDeleteTargetId(null);
+                  if (id) onDelete(id);
+                }}
+                disabled={busy}
+              >
+                Delete
+              </Button>
             </div>
           </div>
         </div>

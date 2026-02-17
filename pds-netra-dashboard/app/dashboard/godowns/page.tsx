@@ -7,6 +7,7 @@ import { GodownsTable } from '@/components/tables/GodownsTable';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { Button } from '@/components/ui/button';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const statusOptions = [
@@ -47,6 +48,9 @@ export default function GodownsPage() {
 
   // Edit mode
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
 
   const activeFilters = useMemo(() => {
     const chips: string[] = [];
@@ -128,23 +132,6 @@ export default function GodownsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    const confirmMessage = `⚠️ DELETE GODOWN: ${id}
-
-This will permanently delete:
-✗ The godown record
-✗ All cameras
-✗ All events and alerts
-✗ All rules
-✗ All test runs
-✗ All media files (live feeds, recordings, snapshots)
-
-This action CANNOT be undone!
-
-Type the godown ID to confirm: ${id}`;
-
-    const userInput = window.prompt(confirmMessage);
-    if (userInput !== id) return;
-
     try {
       const result = await deleteGodown(id);
       await loadGodowns();
@@ -152,7 +139,7 @@ Type the godown ID to confirm: ${id}`;
       // Show what was deleted
       if (result.deleted) {
         const summary = `Deleted: ${result.deleted.events || 0} events, ${result.deleted.alerts || 0} alerts, ${result.deleted.test_runs || 0} test runs, ${result.deleted.media_directories?.length || 0} media directories`;
-        alert(`✓ ${result.message}\n\n${summary}`);
+        setDeleteSummary(`${result.message}. ${summary}`);
       }
     } catch (e) {
       setError(
@@ -199,6 +186,12 @@ Type the godown ID to confirm: ${id}`;
           {showAddForm ? 'Cancel' : 'Add Godown'}
         </button>
       </div>
+
+      {deleteSummary && (
+        <div className="text-sm text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 rounded px-3 py-2">
+          {deleteSummary}
+        </div>
+      )}
 
       {showAddForm && (
         <Card className="animate-fade-up hud-card border-blue-500/30">
@@ -306,18 +299,75 @@ Type the godown ID to confirm: ${id}`;
 
           <div className="mt-4">
             {error && <ErrorBanner message={error} onRetry={() => loadGodowns()} />}
-            {loading ? (
-              <div className="text-sm text-slate-600">Loading…</div>
-            ) : (
-              <GodownsTable
-                items={items}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            )}
+              {loading ? (
+                <div className="text-sm text-slate-600">Loading…</div>
+              ) : (
+                <GodownsTable
+                  items={items}
+                  onEdit={handleEdit}
+                  onDelete={(id) => {
+                    setDeleteTargetId(id);
+                    setDeleteConfirmText('');
+                  }}
+                />
+              )}
           </div>
         </CardContent>
       </Card>
+
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center p-4">
+          <button
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setDeleteTargetId(null)}
+            aria-label="Close delete confirm"
+          />
+          <div
+            className="relative mt-8 w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold font-display text-white">Delete Godown: {deleteTargetId}</div>
+            <div className="mt-2 text-sm text-slate-300">
+              This will permanently delete:
+              <div className="mt-2 space-y-1 text-xs text-slate-400">
+                <div>• The godown record</div>
+                <div>• All cameras</div>
+                <div>• All events and alerts</div>
+                <div>• All rules</div>
+                <div>• All test runs</div>
+                <div>• All media files (live feeds, recordings, snapshots)</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="text-xs text-slate-400">Type the godown ID to confirm</label>
+              <input
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={deleteTargetId}
+              />
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteTargetId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                disabled={deleteConfirmText.trim() !== deleteTargetId}
+                onClick={() => {
+                  const id = deleteTargetId;
+                  setDeleteTargetId(null);
+                  if (id) handleDelete(id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
