@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
@@ -66,7 +67,7 @@ def verify_meta_whatsapp_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
     hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
     hub_challenge: str | None = Query(None, alias="hub.challenge"),
-) -> str:
+) -> PlainTextResponse:
     expected = (os.getenv("META_WA_WEBHOOK_VERIFY_TOKEN") or "").strip()
     if not expected:
         raise HTTPException(status_code=503, detail="Webhook verify token not configured")
@@ -74,7 +75,7 @@ def verify_meta_whatsapp_webhook(
         raise HTTPException(status_code=400, detail="Invalid webhook verify request")
     if hub_verify_token != expected:
         raise HTTPException(status_code=403, detail="Invalid verify token")
-    return hub_challenge
+    return PlainTextResponse(content=hub_challenge)
 
 
 @router.post("/webhook/whatsapp")
@@ -149,4 +150,3 @@ async def receive_meta_whatsapp_webhook(
         db.commit()
 
     return {"updates": updates, "matched": matched}
-
