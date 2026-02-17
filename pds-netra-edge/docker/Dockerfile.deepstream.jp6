@@ -1,9 +1,10 @@
 #
 # Jetson DeepStream runtime image for PDS Netra Edge.
-# Uses NVIDIA DeepStream L4T base so `pyds`/GStreamer plugins are available.
+# DS 6.4 Jetson container is published as multiarch image on nvcr.io.
 #
 
-FROM nvcr.io/nvidia/deepstream-l4t:6.4-samples
+ARG DEEPSTREAM_IMAGE=nvcr.io/nvidia/deepstream:6.4-samples-multiarch
+FROM ${DEEPSTREAM_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /opt/app
@@ -11,6 +12,8 @@ COPY . /opt/app
 
 # Ensure Python + GStreamer bindings are present.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3-dev \
     python3-pip \
     python3-opencv \
     python3-gi \
