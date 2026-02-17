@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getAlertProfile, onAlertCuesChange } from '@/lib/alertCues';
 
-const nav = [
+export const dashboardNav = [
   { href: '/dashboard/command-center', label: 'Command Center', icon: CommandIcon },
   { href: '/dashboard/overview', label: 'Overview', icon: OverviewIcon },
   { href: '/dashboard/godowns', label: 'Godowns', icon: WarehouseIcon },
@@ -554,7 +554,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="mt-6 space-y-1">
-        {nav.map((item) => {
+        {dashboardNav.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
             <Link

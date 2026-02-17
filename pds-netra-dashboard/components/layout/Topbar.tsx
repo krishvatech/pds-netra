@@ -1,25 +1,30 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Label } from '../ui/label';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
 import { clearSession, getUser } from '@/lib/auth';
 import { logout } from '@/lib/api';
 import type { LoginResponse } from '@/lib/types';
 import { getAlertCues, getAlertProfile, onAlertCuesChange, setAlertCues, setAlertProfile } from '@/lib/alertCues';
 import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
+import { dashboardNav } from './Sidebar';
 
 export function Topbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<LoginResponse['user'] | null>(null);
   const [cues, setCues] = useState(() => getAlertCues());
   const [alertPulse, setAlertPulse] = useState(false);
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [showSettings, setShowSettings] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profile, setProfile] = useState(() => getAlertProfile());
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -70,6 +75,10 @@ export function Topbar() {
     window.addEventListener('pdsnetra-alert-new', handler);
     return () => window.removeEventListener('pdsnetra-alert-new', handler);
   }, [cues.visual]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const toggleVisual = () => {
     setAlertCues({ ...cues, visual: !cues.visual });
@@ -199,6 +208,14 @@ export function Topbar() {
           </div>
           <Button
             variant="ghost"
+            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline md:hidden"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            Menu
+          </Button>
+          <Button
+            variant="ghost"
             className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
             onClick={() => setShowSettings((prev) => !prev)}
           >
@@ -298,6 +315,38 @@ export function Topbar() {
           </div>
         </div>
       )}
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="max-w-[86vw] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Navigation</SheetTitle>
+            <SheetDescription>Open any dashboard module</SheetDescription>
+          </SheetHeader>
+          <nav className="space-y-1 p-4">
+            {dashboardNav.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
+                    active
+                      ? 'bg-white/10 border border-white/15 font-semibold text-white'
+                      : 'text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600'
+                    }`}
+                  />
+                </Link>
+              );
+            })}
+          </nav>
+        </SheetContent>
+      </Sheet>
     </header>
   );
 }
