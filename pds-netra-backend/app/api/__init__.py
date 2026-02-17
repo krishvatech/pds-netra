@@ -22,6 +22,7 @@ from .v1.edge_events import router as edge_events_router
 from .v1.after_hours import router as after_hours_router
 from .v1.vehicle_gate_sessions import router as vehicle_gate_sessions_router
 from .v1.notifications import router as notifications_router
+from .v1.meta_webhooks import router as meta_webhooks_router
 from .v1.authorized_users import router as authorized_users_router
 from .v1.anpr_sessions import router as anpr_sessions
 from .v1.anpr_events import router as anpr_events_router
@@ -33,6 +34,7 @@ api_router = APIRouter()
 protected = [Depends(get_current_user), Depends(rate_limit_dependency)]
 api_router.include_router(events_router, dependencies=protected)
 api_router.include_router(events_public_router, dependencies=[Depends(rate_limit_dependency)])
+api_router.include_router(meta_webhooks_router, dependencies=[Depends(rate_limit_dependency)])
 api_router.include_router(reports_router, dependencies=protected)
 api_router.include_router(auth_router, dependencies=[Depends(rate_limit_dependency)])
 api_router.include_router(godowns_router, dependencies=protected)
