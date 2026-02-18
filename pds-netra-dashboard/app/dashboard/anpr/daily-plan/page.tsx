@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { ErrorBanner } from '@/components/ui/error-banner';
 
@@ -147,7 +148,6 @@ export default function AnprDailyPlanPage() {
   const [importBusy, setImportBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const plannedRef = useRef<HTMLDivElement | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const godownOptions = useMemo(() => {
     const opts = godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }));
@@ -607,14 +607,17 @@ export default function AnprDailyPlanPage() {
                           {it.arrived_at_utc ? formatIstDateTime(it.arrived_at_utc) : 'N/A'}
                         </TD>
                         <TD>
-                          <Button
-                            variant="danger"
-                            className="px-3 py-1.5 text-xs"
-                            onClick={() => setDeleteTargetId(it.id)}
-                            disabled={busy}
+                          <ConfirmDeletePopover
+                            title="Delete Plan Item"
+                            description="Are you sure you want to delete this plan item? This cannot be undone."
+                            confirmText="Delete"
+                            onConfirm={() => onDelete(it.id)}
+                            isBusy={busy}
                           >
-                            Delete
-                          </Button>
+                            <Button variant="danger" className="px-3 py-1.5 text-xs" disabled={busy}>
+                              Delete
+                            </Button>
+                          </ConfirmDeletePopover>
                         </TD>
                       </TR>
                     ))
@@ -626,40 +629,6 @@ export default function AnprDailyPlanPage() {
         </Card>
       </div>
 
-      {deleteTargetId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <button
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            onClick={() => setDeleteTargetId(null)}
-            aria-label="Close delete confirm"
-          />
-          <div
-            className="modal-shell modal-body relative w-full rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold font-display text-white">Delete Plan Item</div>
-            <div className="mt-2 text-sm text-slate-300">Are you sure you want to delete this plan item?</div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTargetId(null)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const id = deleteTargetId;
-                  setDeleteTargetId(null);
-                  if (id) onDelete(id);
-                }}
-                disabled={busy}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

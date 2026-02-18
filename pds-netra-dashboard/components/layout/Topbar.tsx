@@ -1,8 +1,10 @@
 'use client';
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { LogOut, Settings } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -19,6 +21,10 @@ import { dashboardNav } from './Sidebar';
 export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
+  const iconBtn =
+    'h-11 w-11 rounded-full border border-white/15 bg-white/5 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_16px_rgba(0,0,0,0.25)] hover:bg-white/10 active:bg-white/15 inline-flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20';
+  const iconSize = 'h-6 w-6';
+  const menuIconSize = 'h-7 w-7';
   const [user, setUser] = useState<LoginResponse['user'] | null>(null);
   const [cues, setCues] = useState(() => getAlertCues());
   const [alertPulse, setAlertPulse] = useState(false);
@@ -27,6 +33,7 @@ export function Topbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuQuery, setMenuQuery] = useState('');
   const [profile, setProfile] = useState(() => getAlertProfile());
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -84,6 +91,7 @@ export function Topbar() {
   useEffect(() => {
     if (!mobileMenuOpen) {
       setMenuQuery('');
+      setControlsExpanded(false);
     }
   }, [mobileMenuOpen]);
 
@@ -174,6 +182,87 @@ export function Topbar() {
     setAlertProfile(value);
   };
 
+  const renderControlDeckPanel = (layout: 'compact' | 'full') => {
+    const isCompact = layout === 'compact';
+    return (
+      <div className={`space-y-3 ${isCompact ? '' : 'px-4 pb-6 pt-4'}`}>
+        <div className={`${isCompact ? '' : 'rounded-2xl border border-white/10 bg-white/5 p-3'}`}>
+          <div className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Mode</div>
+          <div className="mt-2 flex w-full rounded-xl bg-slate-900/70 p-1">
+            <button
+              type="button"
+              className={`h-11 flex-1 rounded-lg text-xs uppercase tracking-[0.22em] transition ${cues.visual ? 'bg-white/10 text-white' : 'text-slate-400'}`}
+              onClick={toggleVisual}
+              aria-pressed={cues.visual}
+            >
+              Visual
+            </button>
+            <button
+              type="button"
+              className={`h-11 flex-1 rounded-lg text-xs uppercase tracking-[0.22em] transition ${cues.sound ? 'bg-white/10 text-white' : 'text-slate-400'}`}
+              onClick={toggleSound}
+              aria-pressed={cues.sound}
+            >
+              Sound
+            </button>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[10px] uppercase tracking-[0.24em] text-slate-500">
+            <span>Alert pulse</span>
+            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <div>
+              <div className="text-sm font-semibold text-white">Quiet</div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Quiet hours</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cues.quietHoursEnabled}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border border-white/10 transition ${cues.quietHoursEnabled ? 'bg-emerald-500/60' : 'bg-white/10'}`}
+              onClick={toggleQuiet}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${cues.quietHoursEnabled ? 'translate-x-5' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <div>
+              <div className="text-sm font-semibold text-white">Rail</div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-slate-500">Live feed panel</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={uiPrefs.railOpen}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border border-white/10 transition ${uiPrefs.railOpen ? 'bg-amber-400/70' : 'bg-white/10'}`}
+              onClick={toggleRail}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${uiPrefs.railOpen ? 'translate-x-5' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <Button
+          variant="ghost"
+          className="h-11 w-full rounded-xl text-xs uppercase tracking-[0.24em] btn-outline"
+          onClick={() => {
+            setMobileMenuOpen(false);
+            setShowSettings(true);
+          }}
+        >
+          Settings
+        </Button>
+      </div>
+    );
+  };
+
   const filteredNav = useMemo(() => {
     const query = menuQuery.trim().toLowerCase();
     if (!query) return dashboardNav;
@@ -183,149 +272,116 @@ export function Topbar() {
   }, [menuQuery]);
 
   return (
-    <header className="sticky top-0 z-20 w-full max-w-full border-b border-white/10 bg-slate-900/70 text-slate-100 backdrop-blur relative">
-      <div className="flex w-full max-w-full min-w-0 flex-col gap-3 px-4 py-2 md:px-6 md:py-3 lg:px-8">
-        <div className="flex w-full max-w-full min-w-0 items-center justify-between gap-2 md:hidden">
+    <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur relative">
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2 md:hidden">
+            <Button
+              variant="ghost"
+              className={iconBtn}
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+            >
+              <svg viewBox="0 0 24 24" className={menuIconSize} fill="none" aria-hidden>
+                <path d="M4 7H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+                <path d="M4 12H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+                <path d="M4 17H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+              </svg>
+            </Button>
+            <div className="truncate text-base font-semibold font-display tracking-tight">PDS Netra</div>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                onClick={() => setShowSettings((prev) => !prev)}
+                aria-label="Open settings"
+                title="Open settings"
+              >
+                <Settings className={iconSize} aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                onClick={handleLogout}
+                aria-label="Logout"
+                title="Logout"
+              >
+                <LogOut className={iconSize} aria-hidden />
+              </Button>
+            </div>
+          </div>
+          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 md:block sm:text-sm">Control Deck</div>
+          <div className="hidden truncate text-lg font-semibold font-display tracking-tight md:block sm:text-xl">PDS Netra Dashboard</div>
+          <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Live perimeter
+          </div>
+        {quietActive && (
+          <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+            Quiet hours active
+          </div>
+        )}
+      </div>
+      <div className="hidden md:flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+        <div className="hidden lg:flex items-center gap-2">
+          <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleVisual}
+            >
+              Visual
+            </Button>
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleSound}
+            >
+              Sound
+            </Button>
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleQuiet}
+            >
+              Quiet
+            </Button>
+            <Button
+              variant="ghost"
+              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
+              onClick={toggleRail}
+            >
+              Rail
+            </Button>
+            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
+          </div>
           <Button
             variant="ghost"
-            size="icon"
-            className="rounded-full border border-white/15 bg-white/5 text-slate-100"
-            onClick={() => setMobileMenuOpen(true)}
-            aria-label="Open navigation menu"
+            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
+            onClick={() => setShowSettings((prev) => !prev)}
           >
-            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden>
-              <path d="M3 5.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <path d="M3 10H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <path d="M3 14.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
+            Settings
           </Button>
-          <div className="min-w-0 flex-1 truncate text-center text-sm font-semibold tracking-tight">
-            PDS Netra
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full border border-white/15 bg-white/5 text-slate-100"
-              onClick={() => setShowSettings((prev) => !prev)}
-              aria-label="Open settings"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
-                <path
-                  d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Z"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                />
-                <path
-                  d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2a1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9a1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1a1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6a1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1a1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full border border-white/15 bg-white/5 text-slate-100"
-              onClick={handleLogout}
-              aria-label="Logout"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
-                <path
-                  d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M10 12H21M21 12l-3-3M21 12l-3 3"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Button>
-          </div>
-        </div>
-
-        <div className="hidden w-full max-w-full min-w-0 flex-col gap-3 md:flex md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 sm:text-sm">Control Deck</div>
-            <div className="truncate text-lg font-semibold font-display tracking-tight sm:text-xl">
-              PDS Netra Dashboard
-            </div>
-            <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              Live perimeter
-            </div>
-            {quietActive && (
-              <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                Quiet hours active
+          {user ? (
+            <>
+              <div className="hidden md:block text-sm text-slate-200">
+                {user.name ?? user.username}
               </div>
-            )}
-          </div>
-          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
-            <div className="hidden lg:flex min-w-0 items-center gap-2">
+              {mounted && <Badge variant="outline" className="hidden md:inline-flex">Profile: {profile}</Badge>}
+              <Badge variant="outline" className="hidden sm:inline-flex">{user.role}</Badge>
               <Button
-                variant="ghost"
-                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
-                onClick={toggleVisual}
+                variant="outline"
+                className="text-xs sm:text-sm"
+                onClick={handleLogout}
               >
-                Visual
+                Logout
               </Button>
-              <Button
-                variant="ghost"
-                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
-                onClick={toggleSound}
-              >
-                Sound
-              </Button>
-              <Button
-                variant="ghost"
-                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
-                onClick={toggleQuiet}
-              >
-                Quiet
-              </Button>
-              <Button
-                variant="ghost"
-                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
-                onClick={toggleRail}
-              >
-                Rail
-              </Button>
-              <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
-            </div>
-            <Button
-              variant="ghost"
-              className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
-              onClick={() => setShowSettings((prev) => !prev)}
-            >
-              Settings
-            </Button>
-            {user ? (
-              <>
-                <div className="hidden md:block min-w-0 truncate text-sm text-slate-200">
-                  {user.name ?? user.username}
-                </div>
-                {mounted && <Badge variant="outline" className="hidden md:inline-flex min-w-0">Profile: {profile}</Badge>}
-                <Badge variant="outline" className="hidden sm:inline-flex min-w-0">{user.role}</Badge>
-                <Button
-                  variant="outline"
-                  className="text-xs sm:text-sm"
-                  onClick={handleLogout}
-                >
-                  Logout
-                </Button>
-              </>
-            ) : (
-              <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
-            )}
-          </div>
+            </>
+          ) : (
+            <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
+          )}
         </div>
       </div>
       {mounted && showSettings && (
@@ -372,7 +428,7 @@ export function Topbar() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label>Quiet start</Label>
                 <Input type="time" value={cues.quietHoursStart} onChange={(e) => updateQuietStart(e.target.value)} />
@@ -433,6 +489,36 @@ export function Topbar() {
             />
           </div>
           <nav className="space-y-1 p-3 pt-0">
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/5">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-3 py-2.5 text-sm text-slate-200"
+                onClick={() => setControlsExpanded((prev) => !prev)}
+                aria-expanded={controlsExpanded}
+              >
+                <span className="flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+                    <path d="M4 7H20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    <path d="M4 12H20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    <path d="M4 17H20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                  Controls
+                </span>
+                <svg
+                  viewBox="0 0 20 20"
+                  className={`h-4 w-4 transition ${controlsExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  aria-hidden
+                >
+                  <path d="M5 8L10 13L15 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+              {controlsExpanded && (
+                <div className="border-t border-white/10 px-3 py-3">
+                  {renderControlDeckPanel('compact')}
+                </div>
+              )}
+            </div>
             {filteredNav.map((item) => {
               const active = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
@@ -464,30 +550,7 @@ export function Topbar() {
               </div>
             ) : null}
           </nav>
-          <div className="p-3 pb-6">
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="ghost"
-                className="rounded-xl border border-white/15 bg-white/5 text-xs uppercase tracking-[0.2em] text-slate-200 hover:bg-white/10"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setShowSettings(true);
-                }}
-              >
-                Settings
-              </Button>
-              <Button
-                variant="outline"
-                className="rounded-xl text-xs uppercase tracking-[0.2em]"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleLogout();
-                }}
-              >
-                Logout
-              </Button>
-            </div>
-          </div>
+          <div className="p-3 pb-6" />
         </SheetContent>
       </Sheet>
     </header>

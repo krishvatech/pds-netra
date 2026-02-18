@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import Link from 'next/link';
@@ -47,7 +48,6 @@ export default function TestRunsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -386,9 +386,17 @@ export default function TestRunsPage() {
                             Activate
                           </Button>
                         )}
-                        <Button variant="danger" onClick={() => setDeleteTargetId(run.run_id)} disabled={loading}>
-                          Delete
-                        </Button>
+                        <ConfirmDeletePopover
+                          title="Delete Test Run"
+                          description="Are you sure you want to delete this test run and its files?"
+                          confirmText="Delete"
+                          onConfirm={() => handleDelete(run.run_id)}
+                          isBusy={loading}
+                        >
+                          <Button variant="danger" disabled={loading}>
+                            Delete
+                          </Button>
+                        </ConfirmDeletePopover>
                       </div>
                     </TD>
                   </TR>
@@ -406,42 +414,6 @@ export default function TestRunsPage() {
         </CardContent>
       </Card>
 
-      {deleteTargetId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <button
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            onClick={() => setDeleteTargetId(null)}
-            aria-label="Close delete confirm"
-          />
-          <div
-            className="modal-shell modal-body relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold font-display text-white">Delete Test Run</div>
-            <div className="mt-2 text-sm text-slate-300">
-              Are you sure you want to delete this test run and its files?
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTargetId(null)} disabled={loading}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const id = deleteTargetId;
-                  setDeleteTargetId(null);
-                  if (id) handleDelete(id);
-                }}
-                disabled={loading}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

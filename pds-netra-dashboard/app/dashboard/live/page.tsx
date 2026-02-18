@@ -8,6 +8,8 @@ import { getUser } from '@/lib/auth';
 import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { EventsTable } from '@/components/tables/EventsTable';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
 
@@ -200,7 +202,6 @@ export default function LiveCamerasPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [fullscreenCameraId, setFullscreenCameraId] = useState<string | null>(null);
-  const [deleteCameraId, setDeleteCameraId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -571,17 +572,16 @@ export default function LiveCamerasPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm text-slate-600">
               Godown
-              <select
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={selectedGodown}
-                onChange={(e) => setSelectedGodown(e.target.value)}
-              >
-                {godowns.map((g, idx) => (
-                  <option key={`${g.godown_id}-${idx}`} value={g.godown_id}>
-                    {g.name ?? g.godown_id ?? `Godown ${idx + 1}`}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <Select
+                  value={selectedGodown}
+                  onChange={(e) => setSelectedGodown(e.target.value)}
+                  options={godowns.map((g, idx) => ({
+                    label: g.name ?? g.godown_id ?? `Godown ${idx + 1}`,
+                    value: g.godown_id
+                  }))}
+                />
+              </div>
             </label>
             <div className="flex items-end">
               <Button className="btn-refresh" variant="outline" onClick={() => setStreamNonce((n) => n + 1)}>
@@ -686,20 +686,27 @@ export default function LiveCamerasPage() {
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
                               </svg>
                             </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => setDeleteCameraId(camera.camera_id)}
-                              aria-label={`Delete ${camera.camera_id}`}
-                              title="Delete"
+                            <ConfirmDeletePopover
+                              title="Delete Camera"
+                              description={`Are you sure you want to delete camera ${camera.camera_id}? This cannot be undone.`}
+                              confirmText="Delete"
+                              onConfirm={() => handleDeleteCamera(camera.camera_id)}
+                              isBusy={editLoading}
                             >
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4h8v2" />
-                                <path d="M10 11v6" />
-                                <path d="M14 11v6" />
-                                <path d="M6 6l1 14h10l1-14" />
-                              </svg>
-                            </Button>
+                              <Button
+                                variant="outline"
+                                aria-label={`Delete ${camera.camera_id}`}
+                                title="Delete"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M3 6h18" />
+                                  <path d="M8 6V4h8v2" />
+                                  <path d="M10 11v6" />
+                                  <path d="M14 11v6" />
+                                  <path d="M6 6l1 14h10l1-14" />
+                                </svg>
+                              </Button>
+                            </ConfirmDeletePopover>
                           </>
                         )}
                       </div>
@@ -812,17 +819,16 @@ export default function LiveCamerasPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm text-slate-600">
               Camera
-              <select
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={zoneCameraId}
-                onChange={(e) => setZoneCameraId(e.target.value)}
-              >
-                {cameras.map((c) => (
-                  <option key={c.camera_id} value={c.camera_id}>
-                    {c.label ?? c.camera_id}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <Select
+                  value={zoneCameraId}
+                  onChange={(e) => setZoneCameraId(e.target.value)}
+                  options={cameras.map((c) => ({
+                    label: c.label ?? c.camera_id,
+                    value: c.camera_id
+                  }))}
+                />
+              </div>
             </label>
             <label className="text-sm text-slate-600">
               Zone name
@@ -975,44 +981,6 @@ export default function LiveCamerasPage() {
           document.body
         )
         : null}
-
-      {deleteCameraId && (
-        <div className="fixed inset-0 z-[9998] flex items-start justify-center p-4">
-          <button
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            onClick={() => setDeleteCameraId(null)}
-            aria-label="Close delete confirm"
-          />
-          <div
-            className="modal-shell modal-body relative mt-8 w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold font-display text-white">Delete Camera</div>
-            <div className="mt-2 text-sm text-slate-300">
-              Are you sure you want to delete camera {deleteCameraId}?
-              <span className="text-slate-400"> This cannot be undone.</span>
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteCameraId(null)} disabled={editLoading}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const id = deleteCameraId;
-                  setDeleteCameraId(null);
-                  if (id) handleDeleteCamera(id);
-                }}
-                disabled={editLoading}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

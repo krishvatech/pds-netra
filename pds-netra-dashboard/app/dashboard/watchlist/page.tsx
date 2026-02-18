@@ -20,7 +20,6 @@ import { Separator } from '@/components/ui/separator';
 import { WatchlistPersonsTable } from '@/components/tables/WatchlistPersonsTable';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
-import { ConfirmDialog } from '@/components/ui/dialog';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import {
   EditBlacklistedPersonSheet,
@@ -96,8 +95,7 @@ export default function WatchlistPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditSaving, setIsEditSaving] = useState(false);
 
-  const [deleteTarget, setDeleteTarget] = useState<WatchlistPerson | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   const inlineErrorClass = 'text-xs text-red-400';
   const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -255,19 +253,17 @@ export default function WatchlistPage() {
     }
   }
 
-  async function handleDeleteConfirm() {
-    if (!deleteTarget) return;
-    setDeleteBusy(true);
+  async function handleDeleteConfirm(target: WatchlistPerson) {
+    setDeleteBusyId(target.id);
     try {
-      await deleteBlacklistedPerson(deleteTarget.id);
+      await deleteBlacklistedPerson(target.id);
       await reloadPersons();
-      setDeleteTarget(null);
-      pushToast({ type: 'success', title: 'Blacklisted person removed', message: deleteTarget.name });
+      pushToast({ type: 'success', title: 'Blacklisted person removed', message: target.name });
     } catch (e) {
       setError(friendlyErrorMessage(e, 'Unable to remove this person right now.'));
       pushToast({ type: 'error', title: 'Delete failed', message: 'Could not remove this person.' });
     } finally {
-      setDeleteBusy(false);
+      setDeleteBusyId(null);
     }
   }
 
@@ -391,7 +387,8 @@ export default function WatchlistPage() {
                     setEditError(null);
                     setEditOpen(true);
                   }}
-                  onDelete={(person) => setDeleteTarget(person)}
+                  onDelete={(person) => void handleDeleteConfirm(person)}
+                  deleteBusyId={deleteBusyId}
                 />
                 <div className="text-xs text-slate-500">
                   Showing {persons.length} person{persons.length !== 1 ? 's' : ''}
@@ -516,24 +513,6 @@ export default function WatchlistPage() {
         }}
         onSave={handleEditSave}
         onClearError={() => setEditError(null)}
-      />
-
-      <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        title="Delete blacklisted person?"
-        message={
-          deleteTarget
-            ? `This will remove ${deleteTarget.name} from active watchlist operations. This action cannot be undone.`
-            : ''
-        }
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        confirmVariant="danger"
-        isBusy={deleteBusy}
-        onCancel={() => {
-          if (!deleteBusy) setDeleteTarget(null);
-        }}
-        onConfirm={() => void handleDeleteConfirm()}
       />
 
       <ToastStack items={toasts} onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))} />

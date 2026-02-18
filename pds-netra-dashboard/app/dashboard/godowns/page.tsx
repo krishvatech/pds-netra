@@ -148,6 +148,9 @@ export default function GodownsPage() {
           'Unable to delete the godown right now. Please try again.'
         )
       );
+    } finally {
+      setDeleteTargetId(null);
+      setDeleteConfirmText('');
     }
   };
 
@@ -305,69 +308,21 @@ export default function GodownsPage() {
                 <GodownsTable
                   items={items}
                   onEdit={handleEdit}
-                  onDelete={(id) => {
+                  onDelete={(id) => handleDelete(id)}
+                  onDeleteInit={(id) => {
                     setDeleteTargetId(id);
                     setDeleteConfirmText('');
                   }}
+                  deleteTargetId={deleteTargetId}
+                  deleteConfirmText={deleteConfirmText}
+                  onDeleteConfirmTextChange={setDeleteConfirmText}
+                  deleteBusy={loading}
                 />
               )}
           </div>
         </CardContent>
       </Card>
 
-      {deleteTargetId && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center p-4">
-          <button
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            onClick={() => setDeleteTargetId(null)}
-            aria-label="Close delete confirm"
-          />
-          <div
-            className="modal-shell modal-body relative mt-8 w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold font-display text-white">Delete Godown: {deleteTargetId}</div>
-            <div className="mt-2 text-sm text-slate-300">
-              This will permanently delete:
-              <div className="mt-2 space-y-1 text-xs text-slate-400">
-                <div>• The godown record</div>
-                <div>• All cameras</div>
-                <div>• All events and alerts</div>
-                <div>• All rules</div>
-                <div>• All test runs</div>
-                <div>• All media files (live feeds, recordings, snapshots)</div>
-              </div>
-            </div>
-            <div className="mt-4">
-              <label className="text-xs text-slate-400">Type the godown ID to confirm</label>
-              <input
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                placeholder={deleteTargetId}
-              />
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTargetId(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                disabled={deleteConfirmText.trim() !== deleteTargetId}
-                onClick={() => {
-                  const id = deleteTargetId;
-                  setDeleteTargetId(null);
-                  if (id) handleDelete(id);
-                }}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

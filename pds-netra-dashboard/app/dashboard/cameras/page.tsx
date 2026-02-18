@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
-import { ConfirmDialog } from '@/components/ui/dialog';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
 
 const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
@@ -142,8 +142,6 @@ export default function CamerasPage() {
     modules: defaultModulesForRole('SECURITY')
   }));
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ camera_id: string; godown_id?: string | null } | null>(null);
 
   const roleOptions = useMemo(
     () => [
@@ -280,13 +278,7 @@ export default function CamerasPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function requestDelete(cam: CameraInfo) {
-    setPendingDelete({ camera_id: cam.camera_id, godown_id: cam.godown_id });
-    setConfirmOpen(true);
-  }
-
-  async function confirmDelete() {
-    if (!pendingDelete) return;
+  async function confirmDelete(cam: CameraInfo) {
     setFormLoading(true);
     setFormError(null);
     try {
@@ -294,13 +286,13 @@ export default function CamerasPage() {
         setCameras((items) =>
           items.filter(
             (c) =>
-              makeCameraKey(c.camera_id, c.godown_id) !== makeCameraKey(pendingDelete.camera_id, pendingDelete.godown_id)
+              makeCameraKey(c.camera_id, c.godown_id) !== makeCameraKey(cam.camera_id, cam.godown_id)
           )
         );
-        pushToast({ type: 'info', title: 'Mock delete', message: `Deleted ${pendingDelete.camera_id}` });
+        pushToast({ type: 'info', title: 'Mock delete', message: `Deleted ${cam.camera_id}` });
       } else {
-        await deleteCamera(pendingDelete.camera_id, pendingDelete.godown_id ?? undefined);
-        pushToast({ type: 'success', title: 'Camera deleted', message: `${pendingDelete.camera_id} removed` });
+        await deleteCamera(cam.camera_id, cam.godown_id ?? undefined);
+        pushToast({ type: 'success', title: 'Camera deleted', message: `${cam.camera_id} removed` });
         await loadCameras();
       }
     } catch (e) {
@@ -312,8 +304,6 @@ export default function CamerasPage() {
       );
     } finally {
       setFormLoading(false);
-      setConfirmOpen(false);
-      setPendingDelete(null);
     }
   }
 
@@ -442,27 +432,28 @@ export default function CamerasPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1 min-w-0">
                   <label className="text-xs text-slate-400">Camera ID (Required)</label>
                   <input
                     type="text"
                     required
                     disabled={!!editingKey}
                     placeholder="e.g. CAM_GATE_1"
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className="h-11 w-full rounded-xl bg-slate-900 border border-slate-700 px-3 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                     value={form.camera_id}
                     onChange={(e) => setForm((s) => ({ ...s, camera_id: e.target.value }))}
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <label className="text-xs text-slate-400">Godown (Required)</label>
                   {godownOptions.length > 1 ? (
                     <Select
                       value={form.godown_id}
                       onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
                       options={godownOptions}
+                      className="w-full"
                     />
                   ) : (
                     <input
@@ -470,25 +461,25 @@ export default function CamerasPage() {
                       required
                       disabled={!!editingKey}
                       placeholder="e.g. GDN_001"
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                      className="h-11 w-full rounded-xl bg-slate-900 border border-slate-700 px-3 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                       value={form.godown_id}
                       onChange={(e) => setForm((s) => ({ ...s, godown_id: e.target.value }))}
                     />
                   )}
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <label className="text-xs text-slate-400">Label</label>
                   <input
                     type="text"
                     placeholder="e.g. Gate ANPR"
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    className="h-11 w-full rounded-xl bg-slate-900 border border-slate-700 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
                     value={form.label}
                     onChange={(e) => setForm((s) => ({ ...s, label: e.target.value }))}
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <label className="text-xs text-slate-400">Role</label>
                   <Select
                     value={form.role}
@@ -501,31 +492,32 @@ export default function CamerasPage() {
                       }));
                     }}
                     options={roleOptions.filter((r) => r.value !== '')}
+                    className="w-full"
                   />
                 </div>
 
-                <div className="space-y-1 md:col-span-2 lg:col-span-3">
+                <div className="space-y-1 md:col-span-2">
                   <label className="text-xs text-slate-400">RTSP URL (Required)</label>
                   <input
                     type="text"
                     required
                     placeholder="rtsp://user:pass@ip/stream"
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    className="h-11 w-full rounded-xl bg-slate-900 border border-slate-700 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
                     value={form.rtsp_url}
                     onChange={(e) => setForm((s) => ({ ...s, rtsp_url: e.target.value }))}
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <label className="text-xs text-slate-400">Status</label>
-                  <select
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  <Select
                     value={form.is_active ? 'true' : 'false'}
                     onChange={(e) => setForm((s) => ({ ...s, is_active: e.target.value === 'true' }))}
-                  >
-                    <option value="true">Active</option>
-                    <option value="false">Inactive</option>
-                  </select>
+                    options={[
+                      { label: 'Active', value: 'true' },
+                      { label: 'Inactive', value: 'false' }
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -699,9 +691,17 @@ export default function CamerasPage() {
                             <button onClick={() => startEdit(camera)} className="text-blue-400 hover:text-blue-300 text-xs">
                               Edit
                             </button>
-                            <button onClick={() => requestDelete(camera)} className="text-red-400 hover:text-red-300 text-xs">
-                              Delete
-                            </button>
+                            <ConfirmDeletePopover
+                              title={`Delete camera ${camera.camera_id}?`}
+                              description={`This will remove the camera configuration for godown ${camera.godown_id ?? '—'}. This cannot be undone.`}
+                              confirmText="Delete"
+                              onConfirm={() => confirmDelete(camera)}
+                              isBusy={formLoading}
+                            >
+                              <button className="text-red-400 hover:text-red-300 text-xs">
+                                Delete
+                              </button>
+                            </ConfirmDeletePopover>
                           </div>
                         </td>
                       </tr>
@@ -716,24 +716,6 @@ export default function CamerasPage() {
 
       <ToastStack items={toasts} onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))} />
 
-      <ConfirmDialog
-        open={confirmOpen}
-        title={pendingDelete ? `Delete camera ${pendingDelete.camera_id}?` : 'Delete camera'}
-        message={
-          pendingDelete
-            ? `This will remove the camera configuration for godown ${pendingDelete.godown_id ?? '—'}. This cannot be undone.`
-            : undefined
-        }
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        isBusy={formLoading}
-        onCancel={() => {
-          if (formLoading) return;
-          setConfirmOpen(false);
-          setPendingDelete(null);
-        }}
-        onConfirm={confirmDelete}
-      />
     </div>
   );
 }

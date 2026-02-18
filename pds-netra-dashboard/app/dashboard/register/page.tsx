@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { register } from '@/lib/api';
 import { getSessionUser, setSession } from '@/lib/auth';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
@@ -71,15 +72,15 @@ export default function RegisterPage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="role">Role</Label>
-              <select
+              <Select
                 id="role"
-                className="w-full h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="USER">User</option>
-                <option value="STATE_ADMIN">Admin</option>
-              </select>
+                options={[
+                  { label: 'User', value: 'USER' },
+                  { label: 'Admin', value: 'STATE_ADMIN' }
+                ]}
+              />
               <div className="text-xs text-slate-500">
                 Admin accounts require an existing admin to create.
               </div>

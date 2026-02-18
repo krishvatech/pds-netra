@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Badge } from '../ui/badge';
+import { ConfirmDeletePopover } from '../ui/dialog';
 import type { WatchlistPerson } from '@/lib/types';
 import { formatUtc } from '@/lib/formatters';
 
@@ -7,9 +8,10 @@ type WatchlistPersonsTableProps = {
   persons: WatchlistPerson[];
   onEdit: (person: WatchlistPerson) => void;
   onDelete: (person: WatchlistPerson) => void;
+  deleteBusyId?: string | null;
 };
 
-export function WatchlistPersonsTable({ persons, onEdit, onDelete }: WatchlistPersonsTableProps) {
+export function WatchlistPersonsTable({ persons, onEdit, onDelete, deleteBusyId }: WatchlistPersonsTableProps) {
   return (
     <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
       <table className="w-full text-sm">
@@ -51,9 +53,17 @@ export function WatchlistPersonsTable({ persons, onEdit, onDelete }: WatchlistPe
                   <button onClick={() => onEdit(p)} className="text-blue-400 hover:text-blue-300 text-xs">
                     Edit
                   </button>
-                  <button onClick={() => onDelete(p)} className="text-red-400 hover:text-red-300 text-xs">
-                    Delete
-                  </button>
+                  <ConfirmDeletePopover
+                    title="Delete blacklisted person?"
+                    description={`This will remove ${p.name} from active watchlist operations. This action cannot be undone.`}
+                    confirmText="Delete"
+                    onConfirm={() => onDelete(p)}
+                    isBusy={deleteBusyId === p.id}
+                  >
+                    <button className="text-red-400 hover:text-red-300 text-xs">
+                      Delete
+                    </button>
+                  </ConfirmDeletePopover>
                 </td>
               </tr>
             ))

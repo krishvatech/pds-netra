@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getDispatchTrace, getEvents, getGodowns, getMovementSummary, getMovementTimeline, createDispatchIssue, updateDispatchIssue, deleteDispatchIssue } from '@/lib/api';
-import { ConfirmDialog } from '@/components/ui/dialog';
 import type { DispatchTraceItem, EventItem, MovementSummary, MovementTimelinePoint, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
@@ -74,7 +73,6 @@ export default function DispatchPage() {
   const [issueTime, setIssueTime] = useState('');
   const [createStatus, setCreateStatus] = useState<string | null>(null);
   const [editingIssue, setEditingIssue] = useState<DispatchTraceItem | null>(null);
-  const [deletingIssue, setDeletingIssue] = useState<DispatchTraceItem | null>(null);
   const [editForm, setEditForm] = useState({
     godown_id: '',
     camera_id: '',
@@ -237,12 +235,10 @@ export default function DispatchPage() {
     }
   }
 
-  async function handleDeleteIssue() {
-    if (!deletingIssue) return;
+  async function handleDeleteIssue(issue: DispatchTraceItem) {
     setIsBusy(true);
     try {
-      await deleteDispatchIssue(deletingIssue.issue_id);
-      setDeletingIssue(null);
+      await deleteDispatchIssue(issue.issue_id);
       setRefreshKey((v) => v + 1);
     } catch (_e) {
       alert('Unable to delete the issue right now; please try again.');
@@ -344,7 +340,7 @@ export default function DispatchPage() {
             <div className="text-sm text-slate-400">Loading…</div>
           ) : (
             <div className="[&_tr:hover]:bg-white/[0.03] transition-colors">
-              <DispatchTraceTable items={trace} onEdit={startEdit} onDelete={setDeletingIssue} />
+              <DispatchTraceTable items={trace} onEdit={startEdit} onDelete={handleDeleteIssue} deleteBusy={isBusy} />
             </div>
           )}
         </CardContent>
@@ -422,17 +418,6 @@ export default function DispatchPage() {
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={!!deletingIssue}
-        title="Delete dispatch issue"
-        message={`Are you sure you want to delete issue #${deletingIssue?.issue_id}? This cannot be undone.`}
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        isBusy={isBusy}
-        onConfirm={handleDeleteIssue}
-        onCancel={() => setDeletingIssue(null)}
-      />
 
       <Card className="animate-fade-up hud-card">
         <CardHeader>

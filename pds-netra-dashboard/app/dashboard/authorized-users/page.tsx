@@ -309,29 +309,25 @@ export default function AuthorizedUsersPage() {
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs text-slate-400">Godown</label>
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                    <Select
                                         value={formData.godown_id}
                                         onChange={(e) => setFormData({ ...formData, godown_id: e.target.value })}
-                                    >
-                                        <option value="">None</option>
-                                        {godowns.map(g => (
-                                            <option key={g.godown_id} value={g.godown_id}>
-                                                {g.name || g.godown_id}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        options={[
+                                            { label: 'None', value: '' },
+                                            ...godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }))
+                                        ]}
+                                    />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs text-slate-400">Status</label>
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                    <Select
                                         value={formData.is_active ? 'true' : 'false'}
                                         onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
-                                    >
-                                        <option value="true">Active</option>
-                                        <option value="false">Inactive</option>
-                                    </select>
+                                        options={[
+                                            { label: 'Active', value: 'true' },
+                                            { label: 'Inactive', value: 'false' }
+                                        ]}
+                                    />
                                 </div>
                                 <div className="space-y-1">
                                 <label className="text-xs text-slate-400">Photo (Required for new users)</label>
@@ -398,18 +394,14 @@ export default function AuthorizedUsersPage() {
                     <div className="flex flex-col md:flex-row gap-3 items-end">
                         <div className="flex-1 space-y-1">
                             <label className="text-xs text-slate-400">Select Godown</label>
-                            <select
-                                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+                            <Select
                                 value={syncGodownId}
                                 onChange={(e) => setSyncGodownId(e.target.value)}
-                            >
-                                <option value="">Choose a godown...</option>
-                                {godowns.map(g => (
-                                    <option key={g.godown_id} value={g.godown_id}>
-                                        {g.name || g.godown_id}
-                                    </option>
-                                ))}
-                            </select>
+                                options={[
+                                    { label: 'Choose a godown...', value: '' },
+                                    ...godowns.map((g) => ({ label: g.name || g.godown_id, value: g.godown_id }))
+                                ]}
+                            />
                         </div>
                         <button
                             onClick={handleSync}

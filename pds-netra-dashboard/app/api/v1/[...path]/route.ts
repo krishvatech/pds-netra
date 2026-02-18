@@ -6,7 +6,7 @@ const SESSION_MAX_AGE_SEC = 60 * 60 * 12;
 
 export const dynamic = 'force-dynamic';
 
-type RouteCtx = { params: { path: string[] } };
+type RouteCtx = { params: Promise<{ path?: string[] }> };
 
 function backendBaseUrl(req: NextRequest): string {
   const internal = (process.env.BACKEND_INTERNAL_API_BASE_URL || '').trim();
@@ -92,7 +92,7 @@ function clearSessionCookies(resp: NextResponse): void {
 }
 
 async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
-  const path = ctx.params.path || [];
+  const { path = [] } = await ctx.params;
   const joined = path.join('/');
   const method = req.method.toUpperCase();
 

@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { acknowledgeAlert, getAlerts } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { AlertItem, Severity } from '@/lib/types';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
 import { getAlertCues, onAlertCuesChange } from '@/lib/alertCues';
 import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
+import { ToastStack, type ToastItem } from '@/components/ui/toast';
+import { Select } from '@/components/ui/select';
 
 const POLL_INTERVAL_MS = 15000;
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
@@ -124,10 +126,12 @@ function AlertSnapshot({
   url,
   alt,
   compact = false,
+  onOpen
 }: {
   url: string | null;
   alt: string;
   compact?: boolean;
+  onOpen?: (src: string) => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -173,7 +177,7 @@ function AlertSnapshot({
     };
   }, [url]);
 
-  const frameClass = `w-full rounded-lg border border-white/10 ${compact ? 'h-28' : 'h-20'}`;
+  const frameClass = `w-full rounded-lg border border-white/10 ${compact ? 'h-24 sm:h-28' : 'h-28'}`;
   const placeholder = (
     <div className={`mt-2 flex items-center gap-2 bg-white/5 px-3 ${frameClass}`}>
       <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300">
@@ -201,15 +205,80 @@ function AlertSnapshot({
     return <div className={`mt-2 animate-pulse bg-white/5 ${frameClass}`} />;
   }
 
+  const canOpen = Boolean(onOpen && blobUrl);
+
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="mt-2 block">
+    <button
+      type="button"
+      className={`mt-2 block w-full overflow-hidden bg-white/5 ${frameClass} ${canOpen ? 'cursor-zoom-in' : 'cursor-default'} disabled:opacity-70`}
+      onClick={() => {
+        if (canOpen && onOpen && blobUrl) onOpen(blobUrl);
+      }}
+      disabled={!canOpen}
+      aria-label="Open snapshot preview"
+    >
       <img
         src={blobUrl}
         alt={alt}
-        className={`w-full rounded-lg border border-white/10 object-cover ${compact ? 'h-28' : 'h-20'}`}
+        className="h-full w-full object-cover"
         loading="lazy"
       />
-    </a>
+    </button>
+  );
+}
+
+function SnapshotLightbox({
+  open,
+  src,
+  alt,
+  onClose
+}: {
+  open: boolean;
+  src: string | null;
+  alt: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!open || !src) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="Close preview"
+      />
+      <div className="relative max-h-[80vh] max-w-[95vw]" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <img
+          src={src}
+          alt={alt}
+          className="max-h-[80vh] max-w-[95vw] rounded-lg border border-white/10 object-contain shadow-2xl"
+        />
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-3 -right-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/90 text-slate-200 shadow-lg hover:bg-slate-900"
+          aria-label="Close preview"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -310,6 +379,14 @@ export function LiveRail() {
   const [scopeGodown, setScopeGodown] = useState('');
   const [scopeCamera, setScopeCamera] = useState('');
   const [dismissedIds, setDismissedIds] = useState<Array<string | number>>([]);
+  const [ackingIds, setAckingIds] = useState<Array<string | number>>([]);
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const pushToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((items) => [...items, { id, ...toast }]);
+  }, []);
 
   useEffect(() => {
     setUiPrefsState(getUiPrefs());
@@ -378,117 +455,165 @@ export function LiveRail() {
   }
 
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
-      <div className="hud-card p-4 sticky top-24 z-20">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
-            <div className="text-lg font-semibold font-display text-slate-100">Active Alerts</div>
+    <>
+      <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
+        <div className="hud-card p-4 sticky top-24 z-20">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
+              <div className="text-lg font-semibold font-display text-slate-100">Active Alerts</div>
+            </div>
+            <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
           </div>
-          <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
-          <span className="hud-pill">Threshold: {cues.minSeverity}</span>
-          {quietActive && <span className="hud-pill">Quiet hours</span>}
-        </div>
-        <div className="mt-3 space-y-2 text-[11px] text-slate-400">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">Scope</span>
-            <select
-              className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-200"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as 'ALL' | 'GODOWN' | 'CAMERA')}
-            >
-              <option value="ALL">All</option>
-              <option value="GODOWN">Godown</option>
-              <option value="CAMERA">Camera</option>
-            </select>
-          </div>
-          {scope === 'GODOWN' ? (
-            <select
-              className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-slate-200"
-              value={scopeGodown}
-              onChange={(e) => setScopeGodown(e.target.value)}
-            >
-              {godownOptions.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {scope === 'CAMERA' ? (
-            <select
-              className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-slate-200"
-              value={scopeCamera}
-              onChange={(e) => setScopeCamera(e.target.value)}
-            >
-              {cameraOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </div>
-        <button
-          className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-400"
-          onClick={() => setUiPrefs({ railOpen: false })}
-        >
-          Hide rail
-        </button>
-      </div>
 
-      <div className="hud-card p-4 space-y-3 mt-20 pt-4">
-        {timeline.length === 0 && (
-          <div className="text-sm text-slate-400">No open alerts right now.</div>
-        )}
-        {timeline.map((alert) => {
-          const snapshotUrl = alertSnapshotUrl(alert);
-          return (
-          <div key={alert.id} className="alert-toast p-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Alert</div>
-              <span className={`pulse-dot ${alert.severity_final === 'critical' ? 'pulse-critical' : alert.severity_final === 'warning' ? 'pulse-warning' : 'pulse-info'}`} />
-            </div>
-            <div className="mt-1 text-sm font-semibold text-white">
-              {alertTitle(alert)}
-            </div>
-            <AlertSnapshot url={snapshotUrl} alt={`Snapshot ${alert.id}`} />
-            {alertDetail(alert) ? (
-              <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
-            ) : null}
-            {alert.key_meta?.reason ? (
-              <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
-            ) : null}
-            <div className="mt-1 text-xs text-slate-400">
-              {(alert.camera_id ?? '-') + ' • ' + (alert.godown_name ?? alert.godown_id)} • {timeAgo(alert, clock)}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">Events: {alert.count_events ?? '-'}</div>
-            <button
-              className="mt-2 text-[10px] uppercase tracking-[0.3em] text-slate-400"
-              onClick={async () => {
-                setDismissedIds((prev) => [...prev, alert.id]);
-                try {
-                  await acknowledgeAlert(alert.id);
-                } catch {
-                  // Ignore ack failures; the next poll will rehydrate if still open.
-                }
-              }}
-            >
-              Acknowledge
-            </button>
+          <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+            <span className="hud-pill">Threshold: {cues.minSeverity}</span>
+            {quietActive && <span className="hud-pill">Quiet hours</span>}
           </div>
-        )})}
-      </div>
-    </aside>
+
+          <div className="mt-3 space-y-2 text-[11px] text-slate-400">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Scope</span>
+              <Select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as 'ALL' | 'GODOWN' | 'CAMERA')}
+                options={[
+                  { label: 'All', value: 'ALL' },
+                  { label: 'Godown', value: 'GODOWN' },
+                  { label: 'Camera', value: 'CAMERA' },
+                ]}
+              />
+            </div>
+
+            {scope === 'GODOWN' ? (
+              <Select
+                value={scopeGodown}
+                onChange={(e) => setScopeGodown(e.target.value)}
+                options={godownOptions.map((g) => ({ label: g, value: g }))}
+              />
+            ) : null}
+
+            {scope === 'CAMERA' ? (
+              <Select
+                value={scopeCamera}
+                onChange={(e) => setScopeCamera(e.target.value)}
+                options={cameraOptions.map((c) => ({ label: c, value: c }))}
+              />
+            ) : null}
+          </div>
+
+          <button
+            className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-400"
+            onClick={() => setUiPrefs({ railOpen: false })}
+          >
+            Hide rail
+          </button>
+        </div>
+
+        <div className="hud-card p-4 space-y-3 mt-20 pt-4">
+          {timeline.length === 0 && (
+            <div className="text-sm text-slate-400">No open alerts right now.</div>
+          )}
+
+          {timeline.map((alert) => {
+            const snapshotUrl = alertSnapshotUrl(alert);
+            const isAcking = ackingIds.includes(alert.id);
+            const isClosed = alert.status !== 'OPEN';
+            const ackLabel = isAcking
+              ? 'Acknowledging…'
+              : alert.status === 'ACK'
+                ? 'Acknowledged'
+                : alert.status === 'CLOSED'
+                  ? 'Closed'
+                  : 'Acknowledge';
+
+            return (
+              <div key={alert.id} className="alert-toast p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Alert</div>
+                  <span
+                    className={`pulse-dot ${
+                      alert.severity_final === 'critical'
+                        ? 'pulse-critical'
+                        : alert.severity_final === 'warning'
+                          ? 'pulse-warning'
+                          : 'pulse-info'
+                    }`}
+                  />
+                </div>
+
+                <div className="mt-1 text-sm font-semibold text-white">{alertTitle(alert)}</div>
+
+                <AlertSnapshot
+                  url={snapshotUrl}
+                  alt={`Snapshot ${alert.id}`}
+                  onOpen={(src) => setPreview({ src, alt: `Snapshot ${alert.id}` })}
+                />
+
+                {alertDetail(alert) ? (
+                  <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
+                ) : null}
+
+                {alert.key_meta?.reason ? (
+                  <div className="mt-1 text-xs text-slate-300">Reason: {alert.key_meta.reason}</div>
+                ) : null}
+
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                  <span className="break-words">{alert.camera_id ?? '-'}</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="break-words">{alert.godown_name ?? alert.godown_id}</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="break-words">{timeAgo(alert, clock)}</span>
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">Events: {alert.count_events ?? '-'}</div>
+
+                <button
+                  className="mt-2 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-[0.3em] text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={async () => {
+                    if (isAcking || isClosed) return;
+                    setDismissedIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]));
+                    setAckingIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]));
+                    try {
+                      await acknowledgeAlert(alert.id);
+                      pushToast({ type: 'success', title: 'Alert acknowledged', message: alertTitle(alert) });
+                    } catch {
+                      setDismissedIds((prev) => prev.filter((id) => id !== alert.id));
+                      pushToast({ type: 'error', title: 'Acknowledge failed', message: 'Please try again.' });
+                    } finally {
+                      setAckingIds((prev) => prev.filter((id) => id !== alert.id));
+                    }
+                  }}
+                  disabled={isAcking || isClosed}
+                >
+                  {ackLabel}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      <SnapshotLightbox
+        open={Boolean(preview)}
+        src={preview?.src ?? null}
+        alt={preview?.alt ?? 'Alert snapshot'}
+        onClose={() => setPreview(null)}
+      />
+
+      <ToastStack
+        items={toasts}
+        onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))}
+      />
+    </>
   );
 }
 
 export function MobileRail() {
-  const { alerts, hasNew, quietActive } = useAlertFeed();
+  const { alerts, hasNew, cues, quietActive } = useAlertFeed();
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [mounted, setMounted] = useState(false);
+  const [clock, setClock] = useState<number | null>(null);
 
   useEffect(() => {
     setUiPrefsState(getUiPrefs());
@@ -496,59 +621,76 @@ export function MobileRail() {
     return onUiPrefsChange(setUiPrefsState);
   }, []);
 
-  if (!mounted || !uiPrefs.railOpen) return null;
-  const latest = alerts[0];
-  const latestSnapshot = latest ? alertSnapshotUrl(latest) : null;
+  useEffect(() => {
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  if (!latest) return null;
+  const sortedAlerts = useMemo(() => {
+    const copy = [...alerts];
+    copy.sort((a, b) => {
+      const priDiff = alertPriority(b) - alertPriority(a);
+      if (priDiff !== 0) return priDiff;
+      const sevDiff = severityRank(b.severity_final as Severity) - severityRank(a.severity_final as Severity);
+      if (sevDiff !== 0) return sevDiff;
+      return (alertEpoch(b) ?? 0) - (alertEpoch(a) ?? 0);
+    });
+    return copy;
+  }, [alerts]);
+
+  const timeline = useMemo(() => sortedAlerts.slice(0, 3), [sortedAlerts]);
+
+  if (!mounted || !uiPrefs.railOpen) {
+    return null;
+  }
 
   return (
-    <section className="lg:hidden rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-sm">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={`pulse-dot ${
-              hasNew
-                ? 'pulse-warning'
-                : latest.severity_final === 'critical'
+    <section className="lg:hidden hud-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
+          <div className="text-base font-semibold font-display text-slate-100">Active Alerts</div>
+        </div>
+        <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+        <span className="hud-pill">Threshold: {cues.minSeverity}</span>
+        {quietActive && <span className="hud-pill">Quiet hours</span>}
+      </div>
+
+      {timeline.length === 0 && (
+        <div className="text-sm text-slate-400">No open alerts right now.</div>
+      )}
+
+      {timeline.map((alert) => (
+        <div key={alert.id} className="alert-toast p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Alert</div>
+            <span
+              className={`pulse-dot ${
+                alert.severity_final === 'critical'
                   ? 'pulse-critical'
-                  : latest.severity_final === 'warning'
+                  : alert.severity_final === 'warning'
                     ? 'pulse-warning'
                     : 'pulse-info'
-            }`}
-          />
-          <span className="text-[10px] uppercase tracking-[0.35em] text-slate-300">Live alert</span>
+              }`}
+            />
+          </div>
+          <div className="mt-1 text-sm font-semibold text-white">{alertTitle(alert)}</div>
+          {alertDetail(alert) ? (
+            <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
+          ) : null}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+            <span className="break-words">{alert.camera_id ?? '-'}</span>
+            <span className="text-slate-500">â€¢</span>
+            <span className="break-words">{alert.godown_name ?? alert.godown_id}</span>
+            <span className="text-slate-500">â€¢</span>
+            <span className="break-words">{timeAgo(alert, clock)}</span>
+          </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] ${
-            latest.severity_final === 'critical'
-              ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
-              : latest.severity_final === 'warning'
-                ? 'border-amber-400/50 bg-amber-500/15 text-amber-200'
-                : 'border-sky-400/40 bg-sky-500/10 text-sky-200'
-          }`}
-        >
-          {latest.severity_final ? latest.severity_final.toUpperCase() : 'LIVE'}
-        </span>
-      </div>
-      <div className="mt-2 min-w-0 text-sm font-semibold text-white line-clamp-2 break-words">
-        {alertTitle(latest)}
-      </div>
-      <AlertSnapshot url={latestSnapshot} alt={`Snapshot ${latest.id}`} compact />
-      <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-slate-400">
-        <span className="truncate">{latest.camera_id ?? '-'}</span>
-        <span className="text-slate-500">•</span>
-        <span className="truncate">{latest.godown_name ?? latest.godown_id}</span>
-        <span className="text-slate-500">•</span>
-        <span className="truncate">{formatUtc(latest.end_time ?? latest.start_time)}</span>
-      </div>
-      {quietActive && (
-        <div className="mt-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">Quiet hours</div>
-      )}
+      ))}
     </section>
   );
 }
-
-
-
-

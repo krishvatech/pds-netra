@@ -17,6 +17,7 @@ import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { ErrorBanner } from '@/components/ui/error-banner';
 
@@ -131,6 +132,7 @@ export default function AnprVehiclesPage() {
 
   // IMPORTANT: keep as string, but always store String(v.id)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [deletePopoverId, setDeletePopoverId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     plate_text: string;
@@ -139,7 +141,6 @@ export default function AnprVehiclesPage() {
     notes: string;
     is_active: boolean;
   } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AnprVehicle | null>(null);
 
   // Import preview row menu (still uses "...", separate from main table)
   const [importMenuId, setImportMenuId] = useState<number | null>(null);
@@ -205,10 +206,17 @@ export default function AnprVehiclesPage() {
   // Close row menu when clicking outside
   useEffect(() => {
     if (!openMenuId) return;
-    const onClick = () => setOpenMenuId(null);
+    const onClick = (e: MouseEvent) => {
+      if (deletePopoverId) return;
+      if (e.target instanceof Node) {
+        const el = e.target as HTMLElement;
+        if (el.closest('[data-vehicle-menu="true"]')) return;
+      }
+      setOpenMenuId(null);
+    };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
-  }, [openMenuId]);
+  }, [openMenuId, deletePopoverId]);
 
   useEffect(() => {
     if (importMenuId === null) return;
@@ -624,14 +632,14 @@ export default function AnprVehiclesPage() {
               </div>
               <div>
                 <Label>Active Only</Label>
-                <select
-                  className="w-full rounded-xl px-3 py-2 text-sm border border-white/10 bg-white/5"
+                <Select
                   value={activeOnly ? '1' : '0'}
                   onChange={(e) => setActiveOnly(e.target.value === '1')}
-                >
-                  <option value="0">All</option>
-                  <option value="1">Active</option>
-                </select>
+                  options={[
+                    { label: 'All', value: '0' },
+                    { label: 'Active', value: '1' }
+                  ]}
+                />
               </div>
             </div>
 
@@ -785,6 +793,7 @@ export default function AnprVehiclesPage() {
                                 <div
                                   className="absolute right-0 z-50 mt-2 w-36 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
                                   onClick={(e) => e.stopPropagation()}
+                                  data-vehicle-menu="true"
                                 >
                                   <button
                                     type="button"
@@ -797,16 +806,27 @@ export default function AnprVehiclesPage() {
                                     Edit
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
-                                    onClick={() => {
-                                      setOpenMenuId(null);
-                                      setDeleteTarget(v);
+                                  <ConfirmDeletePopover
+                                    title="Delete Vehicle"
+                                    description={`Are you sure you want to delete vehicle ${v.plate_raw}? This cannot be undone.`}
+                                    confirmText="Delete"
+                                    onOpenChange={(open) => {
+                                      setDeletePopoverId(open ? String(v.id) : null);
+                                      if (!open) setOpenMenuId(null);
                                     }}
+                                    onConfirm={() => {
+                                      setOpenMenuId(null);
+                                      return onDelete(v);
+                                    }}
+                                    isBusy={busy}
                                   >
-                                    Delete
-                                  </button>
+                                    <button
+                                      type="button"
+                                      className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+                                    >
+                                      Delete
+                                    </button>
+                                  </ConfirmDeletePopover>
                                 </div>
                               )}
                             </div>
@@ -905,43 +925,6 @@ export default function AnprVehiclesPage() {
         </div>
       )}
 
-      {deleteTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <button
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            onClick={() => setDeleteTarget(null)}
-            aria-label="Close delete confirm"
-          />
-          <div
-            className="modal-shell modal-body relative w-full rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-lg font-semibold font-display text-white">Delete Vehicle</div>
-            <div className="mt-2 text-sm text-slate-300">
-              Are you sure you want to delete vehicle {deleteTarget.plate_raw}?
-              <span className="text-slate-400"> This cannot be undone.</span>
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const target = deleteTarget;
-                  setDeleteTarget(null);
-                  if (target) onDelete(target);
-                }}
-                disabled={busy}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

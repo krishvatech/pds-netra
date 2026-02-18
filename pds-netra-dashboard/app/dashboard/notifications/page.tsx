@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/dialog';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import { formatUtc } from '@/lib/formatters';
 
@@ -60,14 +60,7 @@ export default function NotificationsPage() {
   const inlineErrorClass = 'text-xs text-red-400';
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmBusy, setConfirmBusy] = useState(false);
-  const [confirmTitle, setConfirmTitle] = useState('');
-  const [confirmMessage, setConfirmMessage] = useState('');
-  const [confirmLabel, setConfirmLabel] = useState('Confirm');
-  const [confirmVariant, setConfirmVariant] = useState<'default' | 'danger'>('default');
-  const [pendingAction, setPendingAction] = useState<'disable' | 'delete' | null>(null);
-  const [pendingEndpoint, setPendingEndpoint] = useState<NotificationEndpoint | null>(null);
+  const [confirmBusyId, setConfirmBusyId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const [filterScope, setFilterScope] = useState('');
@@ -228,13 +221,6 @@ export default function NotificationsPage() {
     setError(null);
     try {
       if (endpoint.is_enabled) {
-        setPendingEndpoint(endpoint);
-        setPendingAction('disable');
-        setConfirmTitle('Disable notification?');
-        setConfirmMessage(`Disable ${endpoint.channel} delivery for ${endpoint.target}?`);
-        setConfirmLabel('Disable');
-        setConfirmVariant('default');
-        setConfirmOpen(true);
         return;
       }
       if (!MOCK_MODE) await updateNotificationEndpoint(endpoint.id, { is_enabled: true });
@@ -266,58 +252,46 @@ export default function NotificationsPage() {
     setEditingId(null);
   }
 
-  function closeConfirm(force = false) {
-    if (confirmBusy && !force) return;
-    setConfirmOpen(false);
-    setPendingAction(null);
-    setPendingEndpoint(null);
-  }
-
-  async function removeEndpoint(endpoint: NotificationEndpoint) {
+  async function disableEndpoint(endpoint: NotificationEndpoint) {
     setError(null);
-    setPendingEndpoint(endpoint);
-    setPendingAction('delete');
-    setConfirmTitle('Delete endpoint?');
-    setConfirmMessage(`Delete ${endpoint.channel} destination for ${endpoint.target}? This cannot be undone.`);
-    setConfirmLabel('Delete');
-    setConfirmVariant('danger');
-    setConfirmOpen(true);
-  }
-
-  async function handleConfirm() {
-    if (!pendingEndpoint || !pendingAction) {
-      closeConfirm(false);
-      return;
-    }
-    setConfirmBusy(true);
+    setConfirmBusyId(endpoint.id);
     try {
-      if (pendingAction === 'disable') {
-        if (!MOCK_MODE) {
-          await updateNotificationEndpoint(pendingEndpoint.id, { is_enabled: false });
-        }
-        pushToast({
-          type: 'info',
-          title: 'Endpoint disabled',
-          message: `${pendingEndpoint.channel} → ${pendingEndpoint.target}`
-        });
-      } else if (pendingAction === 'delete') {
-        if (!MOCK_MODE) {
-          await deleteNotificationEndpoint(pendingEndpoint.id);
-        }
-        if (editingId === pendingEndpoint.id) cancelEdit();
-        pushToast({
-          type: 'success',
-          title: 'Endpoint deleted',
-          message: `${pendingEndpoint.channel} → ${pendingEndpoint.target}`
-        });
+      if (!MOCK_MODE) {
+        await updateNotificationEndpoint(endpoint.id, { is_enabled: false });
       }
+      pushToast({
+        type: 'info',
+        title: 'Endpoint disabled',
+        message: `${endpoint.channel} → ${endpoint.target}`
+      });
       await loadEndpoints();
     } catch (e) {
       console.error('Notification action failed', e);
       setError(notificationErrorMessage('action'));
     } finally {
-      setConfirmBusy(false);
-      closeConfirm(true);
+      setConfirmBusyId(null);
+    }
+  }
+
+  async function removeEndpoint(endpoint: NotificationEndpoint) {
+    setError(null);
+    setConfirmBusyId(endpoint.id);
+    try {
+      if (!MOCK_MODE) {
+        await deleteNotificationEndpoint(endpoint.id);
+      }
+      if (editingId === endpoint.id) cancelEdit();
+      pushToast({
+        type: 'success',
+        title: 'Endpoint deleted',
+        message: `${endpoint.channel} → ${endpoint.target}`
+      });
+      await loadEndpoints();
+    } catch (e) {
+      console.error('Notification action failed', e);
+      setError(notificationErrorMessage('action'));
+    } finally {
+      setConfirmBusyId(null);
     }
   }
 
@@ -437,17 +411,6 @@ export default function NotificationsPage() {
         </CardContent>
       </Card>
 
-      <ConfirmDialog
-        open={confirmOpen}
-        title={confirmTitle}
-        message={confirmMessage}
-        confirmLabel={confirmLabel}
-        confirmVariant={confirmVariant}
-        isBusy={confirmBusy}
-        onCancel={() => closeConfirm(false)}
-        onConfirm={handleConfirm}
-      />
-
       <ToastStack
         items={toasts}
         onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))}
@@ -518,12 +481,36 @@ export default function NotificationsPage() {
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={() => beginEdit(ep)}>Edit</Button>
-                        <Button variant="outline" onClick={() => toggleEndpoint(ep)}>
-                          {ep.is_enabled ? 'Disable' : 'Enable'}
-                        </Button>
-                        <Button variant="danger" onClick={() => removeEndpoint(ep)}>
-                          Delete
-                        </Button>
+                        {ep.is_enabled ? (
+                          <ConfirmDeletePopover
+                            title="Disable notification?"
+                            description={`Disable ${ep.channel} delivery for ${ep.target}?`}
+                            confirmText="Disable"
+                            confirmVariant="default"
+                            onConfirm={() => disableEndpoint(ep)}
+                            isBusy={confirmBusyId === ep.id}
+                          >
+                            <Button variant="outline">
+                              Disable
+                            </Button>
+                          </ConfirmDeletePopover>
+                        ) : (
+                          <Button variant="outline" onClick={() => toggleEndpoint(ep)}>
+                            Enable
+                          </Button>
+                        )}
+                        <ConfirmDeletePopover
+                          title="Delete endpoint?"
+                          description={`Delete ${ep.channel} destination for ${ep.target}? This cannot be undone.`}
+                          confirmText="Delete"
+                          confirmVariant="danger"
+                          onConfirm={() => removeEndpoint(ep)}
+                          isBusy={confirmBusyId === ep.id}
+                        >
+                          <Button variant="danger">
+                            Delete
+                          </Button>
+                        </ConfirmDeletePopover>
                       </div>
                     </td>
                   </tr>

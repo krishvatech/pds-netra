@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { Select } from "@/components/ui/select";
 
 type AlertDetail = {
   id: string;
@@ -119,30 +120,6 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     />
   );
 }
-function Select({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  options: Array<{ label: string; value: string }>;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={onChange}
-      className="w-full rounded-xl bg-black/20 border border-white/10 px-3 py-2 text-sm text-slate-100 outline-none focus:border-white/20"
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-slate-900">
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 export default function AlertDetailPage({ params }: { params: { alertId: string } }) {
   const alertId = params.alertId;
 
