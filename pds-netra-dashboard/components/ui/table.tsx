@@ -1,7 +1,12 @@
 import * as React from 'react';
 
 export function Table({ className = '', ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
-  return <table className={`w-full text-sm border-separate border-spacing-0 ${className}`} {...props} />;
+  return (
+    <table
+      className={`w-full min-w-[720px] md:min-w-0 text-sm border-separate border-spacing-0 ${className}`}
+      {...props}
+    />
+  );
 }
 
 export function THead({ className = '', ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {

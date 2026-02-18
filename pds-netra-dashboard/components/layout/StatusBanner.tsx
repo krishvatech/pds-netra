@@ -7,6 +7,7 @@ export function StatusBanner() {
   const [offline, setOffline] = useState(false);
   const [mqttDown, setMqttDown] = useState(false);
   const [eventsStale, setEventsStale] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -43,14 +44,30 @@ export function StatusBanner() {
   }, []);
 
   if (!offline && !mqttDown && !eventsStale) return null;
+  if (dismissed) return null;
 
   return (
-    <div className={`w-full px-3 py-2 text-center text-[10px] uppercase leading-relaxed tracking-[0.2em] text-white sm:px-4 sm:text-xs sm:tracking-[0.3em] ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}>
-      {offline
-        ? 'Backend offline — live data is unavailable'
-        : mqttDown
-          ? 'MQTT consumer disconnected — edge events not arriving'
-          : 'No events in the last 10 minutes — check edge and broker'}
+    <div
+      className={`w-full ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="mx-auto flex w-full max-w-[1200px] min-w-0 items-center justify-between gap-3 px-4 py-2 text-xs uppercase tracking-[0.2em] text-white/90 md:px-6 lg:px-8">
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-relaxed md:text-xs">
+          {offline
+            ? 'Backend offline — live data is unavailable'
+            : mqttDown
+              ? 'MQTT consumer disconnected — edge events not arriving'
+              : 'No events in the last 10 minutes — check edge and broker'}
+        </span>
+        <button
+          type="button"
+          className="shrink-0 rounded-full border border-white/30 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 hover:text-white"
+          onClick={() => setDismissed(true)}
+        >
+          Dismiss
+        </button>
+      </div>
     </div>
   );
 }

@@ -458,7 +458,7 @@ export default function WatchlistPage() {
               </div>
               {dateNotice && <div className="text-xs text-amber-300 mb-4">{dateNotice}</div>}
               <div className="table-shell overflow-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-[680px] text-sm">
                   <thead>
                     <tr className="text-left text-slate-400">
                       <th className="py-2 pr-3">Time</th>

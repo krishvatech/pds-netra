@@ -54,32 +54,34 @@ export default function OverviewPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="text-3xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+        <div className="min-w-0 space-y-2">
+          <div className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl lg:text-4xl">
             Statewide Command View
           </div>
-          <div className="text-sm text-slate-300">
+          <div className="text-sm text-muted-foreground">
             Live telemetry, alert pressure, and godown readiness at a glance.
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-slate-500">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          Live system
-        </div>
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">
-          Updated {formatUtc(data?.timestamp_utc)}
+        <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-widest opacity-70">
+          <div className="flex items-center gap-2 text-slate-300">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            Live system
+          </div>
+          <div className="text-slate-400">
+            Updated {formatUtc(data?.timestamp_utc)}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
         <HealthStatusCard title="Godowns monitored" value={data?.stats.godowns_monitored ?? '-'} />
         <HealthStatusCard title="Open alerts (Critical / Warning)" value={data ? `${data.stats.open_alerts_critical} / ${data.stats.open_alerts_warning}` : '-'} />
-        <HealthStatusCard title="Cameras with issues" value={data?.stats.cameras_with_issues ?? '-'} />
+        <HealthStatusCard title="Cameras with issues" value={data?.stats.cameras_with_issues ?? '-'} tone="warning" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 stagger">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 stagger">
         <HealthStatusCard
           title="After-hours person alerts (24h / 7d)"
           value={
@@ -125,8 +127,8 @@ export default function OverviewPage() {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-lg font-semibold font-display">Godown readiness</div>
-          <div className="text-sm text-slate-600">Quick status view</div>
+          <div className="text-lg font-semibold">Godown readiness</div>
+          <div className="text-sm text-muted-foreground">Quick status view</div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {(data?.godowns ?? []).map((g) => (

@@ -194,7 +194,7 @@ export default function ReportsPage() {
                 <div className="text-sm text-slate-600">Loading reports...</div>
               ) : (
                 <div className="table-shell overflow-auto">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-[720px] text-sm">
                     <thead>
                       <tr className="text-left text-slate-400">
                         <th className="py-2 pr-3">Generated</th>
@@ -227,7 +227,7 @@ export default function ReportsPage() {
                                   <div className="text-sm text-slate-500">No delivery records.</div>
                                 ) : (
                                   <div className="table-shell overflow-auto">
-                                    <table className="min-w-full text-sm">
+                                    <table className="min-w-[720px] text-sm">
                                       <thead>
                                         <tr className="text-left text-slate-400">
                                           <th className="py-2 pr-3">Channel</th>

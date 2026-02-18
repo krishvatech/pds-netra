@@ -353,7 +353,7 @@ export default function AlertDetailPage({ params }: { params: { alertId: string 
                   <div className="text-sm text-slate-400">No delivery records yet.</div>
                 ) : (
                   <div className="overflow-auto rounded-xl border border-white/10">
-                    <table className="min-w-full text-sm">
+                    <table className="min-w-[720px] text-sm">
                       <thead>
                         <tr className="text-left text-slate-400">
                           <th className="py-2 px-3">Channel</th>

@@ -414,7 +414,7 @@ export default function TestRunsPage() {
             aria-label="Close delete confirm"
           />
           <div
-            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            className="modal-shell modal-body relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}

@@ -173,20 +173,32 @@ function AlertSnapshot({
     };
   }, [url]);
 
-  if (!url) return null;
+  const frameClass = `w-full rounded-lg border border-white/10 ${compact ? 'h-28' : 'h-20'}`;
+  const placeholder = (
+    <div className={`mt-2 flex items-center gap-2 bg-white/5 px-3 ${frameClass}`}>
+      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+          <path
+            d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-11Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          />
+          <path d="M8 14.5l2.6-2.6a1 1 0 0 1 1.4 0l3.5 3.5" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M8.5 9.5h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+      <span className="text-xs text-slate-400">Snapshot unavailable</span>
+    </div>
+  );
+
+  if (!url) return placeholder;
 
   if (failed) {
-    return <div className="mt-2 text-[11px] text-slate-500">Snapshot unavailable</div>;
+    return placeholder;
   }
 
   if (!blobUrl) {
-    return (
-      <div
-        className={`mt-2 w-full rounded-lg border border-white/10 bg-white/5 animate-pulse ${
-          compact ? 'h-14 rounded-md' : 'h-20'
-        }`}
-      />
-    );
+    return <div className={`mt-2 animate-pulse bg-white/5 ${frameClass}`} />;
   }
 
   return (
@@ -194,9 +206,7 @@ function AlertSnapshot({
       <img
         src={blobUrl}
         alt={alt}
-        className={`w-full rounded-lg object-cover border border-white/10 ${
-          compact ? 'h-14 rounded-md' : 'h-20'
-        }`}
+        className={`w-full rounded-lg border border-white/10 object-cover ${compact ? 'h-28' : 'h-20'}`}
         loading="lazy"
       />
     </a>
@@ -368,7 +378,7 @@ export function LiveRail() {
   }
 
   return (
-    <aside className="hidden xl:flex xl:flex-col xl:w-80 px-6 py-6 gap-4">
+    <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4">
       <div className="hud-card p-4 sticky top-24">
         <div className="flex items-center justify-between">
           <div>
@@ -493,27 +503,52 @@ export function MobileRail() {
   if (!latest) return null;
 
   return (
-    <div className="mobile-rail xl:hidden">
-      <div className="mobile-rail-inner">
-        <div className="flex items-center gap-3">
-          <span className={`pulse-dot ${hasNew ? 'pulse-warning' : latest.severity_final === 'critical' ? 'pulse-critical' : latest.severity_final === 'warning' ? 'pulse-warning' : 'pulse-info'}`} />
-          <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Live alert</div>
-          {quietActive && <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Quiet</div>}
+    <section className="lg:hidden rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-sm">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={`pulse-dot ${
+              hasNew
+                ? 'pulse-warning'
+                : latest.severity_final === 'critical'
+                  ? 'pulse-critical'
+                  : latest.severity_final === 'warning'
+                    ? 'pulse-warning'
+                    : 'pulse-info'
+            }`}
+          />
+          <span className="text-[10px] uppercase tracking-[0.35em] text-slate-300">Live alert</span>
         </div>
-        <div className="text-sm font-semibold text-white truncate">
-          {alertTitle(latest)}
-        </div>
-        <AlertSnapshot url={latestSnapshot} alt={`Snapshot ${latest.id}`} compact />
-        {alertDetail(latest) ? (
-          <div className="text-xs text-slate-300 truncate">{alertDetail(latest)}</div>
-        ) : null}
-        {latest.key_meta?.reason ? (
-          <div className="text-xs text-slate-300 truncate">Reason: {latest.key_meta.reason}</div>
-        ) : null}
-        <div className="text-xs text-slate-400 truncate">
-          {(latest.camera_id ?? '-') + ' • ' + (latest.godown_name ?? latest.godown_id)} • {formatUtc(latest.end_time ?? latest.start_time)}
-        </div>
+        <span
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] ${
+            latest.severity_final === 'critical'
+              ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
+              : latest.severity_final === 'warning'
+                ? 'border-amber-400/50 bg-amber-500/15 text-amber-200'
+                : 'border-sky-400/40 bg-sky-500/10 text-sky-200'
+          }`}
+        >
+          {latest.severity_final ? latest.severity_final.toUpperCase() : 'LIVE'}
+        </span>
       </div>
-    </div>
+      <div className="mt-2 min-w-0 text-sm font-semibold text-white line-clamp-2 break-words">
+        {alertTitle(latest)}
+      </div>
+      <AlertSnapshot url={latestSnapshot} alt={`Snapshot ${latest.id}`} compact />
+      <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-slate-400">
+        <span className="truncate">{latest.camera_id ?? '-'}</span>
+        <span className="text-slate-500">•</span>
+        <span className="truncate">{latest.godown_name ?? latest.godown_id}</span>
+        <span className="text-slate-500">•</span>
+        <span className="truncate">{formatUtc(latest.end_time ?? latest.start_time)}</span>
+      </div>
+      {quietActive && (
+        <div className="mt-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">Quiet hours</div>
+      )}
+    </section>
   );
 }
+
+
+
+

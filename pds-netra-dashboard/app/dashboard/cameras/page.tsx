@@ -629,8 +629,8 @@ export default function CamerasPage() {
             </div>
           ) : null}
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="mt-4 table-shell overflow-auto">
+            <table className="min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b border-slate-700">
                   <th className="text-left py-3 px-2 text-slate-400 font-medium">Camera</th>
@@ -694,13 +694,15 @@ export default function CamerasPage() {
                             <span className="px-2 py-1 bg-slate-700 text-slate-400 rounded text-xs">Inactive</span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-right space-x-2">
-                          <button onClick={() => startEdit(camera)} className="text-blue-400 hover:text-blue-300 text-xs">
-                            Edit
-                          </button>
-                          <button onClick={() => requestDelete(camera)} className="text-red-400 hover:text-red-300 text-xs">
-                            Delete
-                          </button>
+                        <td className="py-3 px-2 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button onClick={() => startEdit(camera)} className="text-blue-400 hover:text-blue-300 text-xs">
+                              Edit
+                            </button>
+                            <button onClick={() => requestDelete(camera)} className="text-red-400 hover:text-red-300 text-xs">
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

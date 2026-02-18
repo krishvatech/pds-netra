@@ -394,8 +394,8 @@ export default function AnprVehiclesPage() {
               Maintain lists, import CSVs, and manage plate status per godown.
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div className="hud-card p-4 min-w-[220px]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
+            <div className="hud-card w-full p-4 sm:min-w-[220px]">
               <div className="hud-label">Active / Total</div>
               <div className="hud-value">
                 {stats.active} / {stats.total}
@@ -405,7 +405,7 @@ export default function AnprVehiclesPage() {
               </div>
             </div>
             <Button
-              className="rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em] bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full sm:w-auto rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em] bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => setImportOpen(true)}
             >
               Import CSV
@@ -417,12 +417,12 @@ export default function AnprVehiclesPage() {
 
         {importOpen && (
           <Card className="hud-card">
-            <CardHeader className="flex items-center justify-between">
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="text-xl font-semibold font-display text-white">Import Vehicles (CSV)</div>
                 <div className="text-xs text-slate-400">Bulk load plates into the registry.</div>
               </div>
-              <Button variant="outline" onClick={() => setImportOpen(false)}>
+              <Button variant="outline" className="w-full md:w-auto" onClick={() => setImportOpen(false)}>
                 Close
               </Button>
             </CardHeader>
@@ -449,11 +449,11 @@ export default function AnprVehiclesPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div className="text-xs text-slate-400">
                   Columns: plate_text, list_type, transporter, notes, is_active
                 </div>
-                <Button onClick={onImportCsv} disabled={importBusy || !importFile || !godownId}>
+                <Button className="w-full md:w-auto" onClick={onImportCsv} disabled={importBusy || !importFile || !godownId}>
                   {importBusy ? 'Importing...' : 'Import CSV'}
                 </Button>
               </div>
@@ -736,7 +736,7 @@ export default function AnprVehiclesPage() {
 
                         {/* ✅ FIXED ACTIONS COLUMN (Toggle + visible 3-dot + working dropdown) */}
                         <TD>
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
                             {editId === String(v.id) ? (
                               <>
                                 <Button
@@ -834,7 +834,7 @@ export default function AnprVehiclesPage() {
             aria-label="Close edit"
           />
           <div
-            className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            className="modal-shell modal-body relative w-full rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
@@ -913,7 +913,7 @@ export default function AnprVehiclesPage() {
             aria-label="Close delete confirm"
           />
           <div
-            className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            className="modal-shell modal-body relative w-full rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}

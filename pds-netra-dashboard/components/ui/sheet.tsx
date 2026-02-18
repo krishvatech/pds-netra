@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 
 type SheetContextValue = {
   open: boolean;
@@ -49,17 +50,26 @@ export function SheetContent({
   children: React.ReactNode;
 }) {
   const { open, onOpenChange } = useSheetContext();
-  if (!open) return null;
+  const [mounted, setMounted] = React.useState(false);
 
-  return (
-    <div className="fixed inset-0 z-50">
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!open || !mounted) return null;
+
+  const sheet = (
+    <div className="fixed inset-0 z-[100]">
       <button
+        type="button"
         className="absolute inset-0 bg-slate-950/70 backdrop-blur-[1px]"
         onClick={() => onOpenChange(false)}
         aria-label="Close"
       />
       <div
-        className={`absolute bottom-0 top-0 w-full max-w-xl border-l border-white/10 bg-slate-950/95 shadow-2xl ${
+        role="dialog"
+        aria-modal="true"
+        className={`absolute bottom-0 top-0 w-[95vw] max-w-xl border-l border-white/10 bg-slate-950/95 shadow-2xl ${
           side === 'right' ? 'right-0' : 'left-0 border-l-0 border-r'
         } ${className}`}
       >
@@ -67,6 +77,8 @@ export function SheetContent({
       </div>
     </div>
   );
+
+  return createPortal(sheet, document.body);
 }
 
 export function SheetHeader({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {

@@ -55,13 +55,13 @@ export function ConfirmDialog({
         aria-label="Close dialog"
       />
       <div
-        className="relative w-full max-w-md hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
+        className="relative w-full max-w-[95vw] sm:max-w-md max-h-[85vh] hud-card overflow-hidden animate-fade-up border border-white/10 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
       >
-        <div className="p-6 sm:p-8">
+        <div className="max-h-[85vh] overflow-y-auto p-6 sm:p-8">
           <div className="text-xl font-semibold font-display text-white" id="confirm-dialog-title">
             {title}
           </div>

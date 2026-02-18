@@ -323,7 +323,7 @@ export default function GodownsPage() {
             aria-label="Close delete confirm"
           />
           <div
-            className="relative mt-8 w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+            className="modal-shell modal-body relative mt-8 w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}

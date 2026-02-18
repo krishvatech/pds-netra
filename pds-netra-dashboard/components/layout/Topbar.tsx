@@ -159,6 +159,16 @@ export function Topbar() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // ignore
+    }
+    clearSession();
+    router.replace('/dashboard/login');
+  };
+
   const handleProfileChange = (value: string) => {
     setProfile(value);
     setAlertProfile(value);
@@ -173,105 +183,149 @@ export function Topbar() {
   }, [menuQuery]);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur relative">
-      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2 md:hidden">
-            <Button
-              variant="ghost"
-              className="rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] btn-outline"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open navigation menu"
-            >
-              <span className="mr-1 inline-flex h-3.5 w-3.5 items-center justify-center">
-                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" aria-hidden>
-                  <path d="M3 5.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  <path d="M3 10H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  <path d="M3 14.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              </span>
-              Menu
-            </Button>
-            <div className="truncate text-base font-semibold font-display tracking-tight">PDS Netra</div>
-          </div>
-          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 md:block sm:text-sm">Control Deck</div>
-          <div className="hidden truncate text-lg font-semibold font-display tracking-tight md:block sm:text-xl">PDS Netra Dashboard</div>
-          <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Live perimeter
-          </div>
-          {quietActive && (
-            <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-              Quiet hours active
-            </div>
-          )}
-        </div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
-          <div className="hidden lg:flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleVisual}
-            >
-              Visual
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleSound}
-            >
-              Sound
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleQuiet}
-            >
-              Quiet
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleRail}
-            >
-              Rail
-            </Button>
-            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
-          </div>
+    <header className="sticky top-0 z-20 w-full max-w-full border-b border-white/10 bg-slate-900/70 text-slate-100 backdrop-blur relative">
+      <div className="flex w-full max-w-full min-w-0 flex-col gap-3 px-4 py-2 md:px-6 md:py-3 lg:px-8">
+        <div className="flex w-full max-w-full min-w-0 items-center justify-between gap-2 md:hidden">
           <Button
             variant="ghost"
-            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
-            onClick={() => setShowSettings((prev) => !prev)}
+            size="icon"
+            className="rounded-full border border-white/15 bg-white/5 text-slate-100"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
           >
-            Settings
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden>
+              <path d="M3 5.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <path d="M3 10H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <path d="M3 14.5H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
           </Button>
-          {user ? (
-            <>
-              <div className="hidden md:block text-sm text-slate-200">
-                {user.name ?? user.username}
+          <div className="min-w-0 flex-1 truncate text-center text-sm font-semibold tracking-tight">
+            PDS Netra
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full border border-white/15 bg-white/5 text-slate-100"
+              onClick={() => setShowSettings((prev) => !prev)}
+              aria-label="Open settings"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+                <path
+                  d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2a1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9a1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1a1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6a1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2a1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9a1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1a1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full border border-white/15 bg-white/5 text-slate-100"
+              onClick={handleLogout}
+              aria-label="Logout"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+                <path
+                  d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M10 12H21M21 12l-3-3M21 12l-3 3"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Button>
+          </div>
+        </div>
+
+        <div className="hidden w-full max-w-full min-w-0 flex-col gap-3 md:flex md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400 sm:text-sm">Control Deck</div>
+            <div className="truncate text-lg font-semibold font-display tracking-tight sm:text-xl">
+              PDS Netra Dashboard
+            </div>
+            <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              Live perimeter
+            </div>
+            {quietActive && (
+              <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                Quiet hours active
               </div>
-              {mounted && <Badge variant="outline" className="hidden md:inline-flex">Profile: {profile}</Badge>}
-              <Badge variant="outline" className="hidden sm:inline-flex">{user.role}</Badge>
+            )}
+          </div>
+          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+            <div className="hidden lg:flex min-w-0 items-center gap-2">
               <Button
-                variant="outline"
-                className="text-xs sm:text-sm"
-                onClick={async () => {
-                  try {
-                    await logout();
-                  } catch {
-                    // ignore
-                  }
-                  clearSession();
-                  router.replace('/dashboard/login');
-                }}
+                variant="ghost"
+                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
+                onClick={toggleVisual}
               >
-                Logout
+                Visual
               </Button>
-            </>
-          ) : (
-            <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
-          )}
+              <Button
+                variant="ghost"
+                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
+                onClick={toggleSound}
+              >
+                Sound
+              </Button>
+              <Button
+                variant="ghost"
+                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
+                onClick={toggleQuiet}
+              >
+                Quiet
+              </Button>
+              <Button
+                variant="ghost"
+                className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
+                onClick={toggleRail}
+              >
+                Rail
+              </Button>
+              <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
+            </div>
+            <Button
+              variant="ghost"
+              className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
+              onClick={() => setShowSettings((prev) => !prev)}
+            >
+              Settings
+            </Button>
+            {user ? (
+              <>
+                <div className="hidden md:block min-w-0 truncate text-sm text-slate-200">
+                  {user.name ?? user.username}
+                </div>
+                {mounted && <Badge variant="outline" className="hidden md:inline-flex min-w-0">Profile: {profile}</Badge>}
+                <Badge variant="outline" className="hidden sm:inline-flex min-w-0">{user.role}</Badge>
+                <Button
+                  variant="outline"
+                  className="text-xs sm:text-sm"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
+            )}
+          </div>
         </div>
       </div>
       {mounted && showSettings && (
@@ -343,8 +397,21 @@ export function Topbar() {
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="w-[92vw] max-w-[360px] overflow-y-auto border-r border-white/15 bg-slate-950/98">
           <SheetHeader className="space-y-2 bg-gradient-to-r from-slate-950 to-slate-900/80">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.28em] text-slate-300">
-              PDS Netra
+            <div className="flex items-center justify-between gap-2">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.28em] text-slate-300">
+                PDS Netra
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-300 hover:text-white"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close navigation"
+              >
+                <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden>
+                  <path d="M5 5L15 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
             <SheetTitle>Navigation</SheetTitle>
             <SheetDescription>Switch modules quickly on mobile</SheetDescription>
@@ -412,15 +479,9 @@ export function Topbar() {
               <Button
                 variant="outline"
                 className="rounded-xl text-xs uppercase tracking-[0.2em]"
-                onClick={async () => {
+                onClick={() => {
                   setMobileMenuOpen(false);
-                  try {
-                    await logout();
-                  } catch {
-                    // ignore
-                  }
-                  clearSession();
-                  router.replace('/dashboard/login');
+                  handleLogout();
                 }}
               >
                 Logout

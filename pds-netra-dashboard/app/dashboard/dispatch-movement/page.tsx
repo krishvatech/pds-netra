@@ -247,7 +247,7 @@ export default function DispatchMovementPage() {
           </CardHeader>
           <CardContent>
             <div className="table-shell overflow-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-left text-slate-400">
                     <th className="py-2 pr-3">Plate</th>
@@ -290,7 +290,7 @@ export default function DispatchMovementPage() {
           </CardHeader>
           <CardContent>
             <div className="table-shell overflow-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-left text-slate-400">
                     <th className="py-2 pr-3">Time</th>

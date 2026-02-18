@@ -464,8 +464,8 @@ export default function AuthorizedUsersPage() {
                         {loading ? (
                             <div className="text-sm text-slate-600">Loading…</div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
+                            <div className="table-shell overflow-auto">
+                                <table className="min-w-[720px] text-sm">
                                     <thead>
                                         <tr className="border-b border-slate-700">
                                             <th className="text-left py-3 px-2 text-slate-400 font-medium">Person ID</th>
@@ -513,19 +513,21 @@ export default function AuthorizedUsersPage() {
                                                     <td className="py-3 px-2 text-slate-400 text-xs">
                                                         {formatUtcDate(user.created_at)}
                                                     </td>
-                                                    <td className="py-3 px-2 text-right space-x-2">
-                                                        <button
-                                                            onClick={() => handleEdit(user)}
-                                                            className="text-blue-400 hover:text-blue-300 text-xs"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(user.person_id)}
-                                                            className="text-red-400 hover:text-red-300 text-xs"
-                                                        >
-                                                            Delete
-                                                        </button>
+                                                    <td className="py-3 px-2 text-right">
+                                                        <div className="flex flex-wrap justify-end gap-2">
+                                                            <button
+                                                                onClick={() => handleEdit(user)}
+                                                                className="text-blue-400 hover:text-blue-300 text-xs"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(user.person_id)}
+                                                                className="text-red-400 hover:text-red-300 text-xs"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))

@@ -353,7 +353,7 @@ export default function DispatchPage() {
       {editingIssue && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => !isBusy && setEditingIssue(null)} />
-          <div className="relative w-full max-w-lg hud-card overflow-hidden animate-fade-up">
+          <div className="modal-shell modal-body relative w-full max-w-lg hud-card overflow-hidden animate-fade-up">
             <div className="p-6 sm:p-8">
               <div className="text-2xl font-semibold font-display text-white mb-1">Edit dispatch issue</div>
               <div className="text-sm text-slate-400 mb-8">Update the tracking details for issue #{editingIssue.issue_id}</div>
