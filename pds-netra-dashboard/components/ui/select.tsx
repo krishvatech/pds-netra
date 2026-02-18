@@ -4,12 +4,16 @@ import { Check, ChevronDown } from 'lucide-react';
 
 export type SelectOption = { label: string; value: string };
 
-type Props = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'defaultValue'> & {
+type TriggerProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>;
+type Props = Omit<TriggerProps, 'onChange' | 'value' | 'defaultValue'> & {
   options: SelectOption[];
   placeholder?: string;
   value?: string | number | readonly string[] | undefined;
   defaultValue?: string | number | readonly string[] | undefined;
   onChange?: (event: React.ChangeEvent<HTMLSelectElement>) => void;
+  name?: string;
+  disabled?: boolean;
+  required?: boolean;
 };
 
 function normalizeValue(value?: string | number | readonly string[]) {
