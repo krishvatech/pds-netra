@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!authorized) return null;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell flex min-h-screen flex-col overflow-x-hidden">
       <div className="app-bg" />
       <div className="app-grid" />
       <div className="app-scanlines" />
@@ -63,18 +63,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="radar-ring" />
         <div className="radar-grid" />
       </div>
-      <div className="relative z-10 flex min-h-screen w-full">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-xl border-b border-white/5">
+        <StatusBanner />
+        <Topbar />
+      </div>
+      <div className="relative z-10 flex flex-1 w-full overflow-hidden pt-[140px]">
         <Sidebar />
-        <div className="min-w-0 flex-1">
-          <StatusBanner />
-          <Topbar />
-          <div className="flex min-w-0">
-            <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <main className="animate-fade-up flex-1 min-w-0 space-y-4 md:space-y-6 px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8 [&>*]:min-w-0">
-                <MobileRail />
-                {children}
-              </main>
-              <LiveRail />
+        <div className="min-w-0 flex-1 flex flex-col min-h-0">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <main className="animate-fade-up flex-1 min-w-0 space-y-4 md:space-y-6 px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8 [&>*]:min-w-0">
+                  <MobileRail />
+                  {children}
+                </main>
+                <LiveRail />
+              </div>
             </div>
           </div>
         </div>

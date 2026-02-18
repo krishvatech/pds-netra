@@ -429,7 +429,7 @@ export function Topbar() {
               value={menuQuery}
               onChange={(e) => setMenuQuery(e.target.value)}
               placeholder="Search module..."
-              className="h-10 rounded-lg border-white/20 bg-white/5 text-slate-100 placeholder:text-slate-500 shadow-none"
+              className="h-10 rounded-lg border border-white/20 bg-white/90 text-slate-900 placeholder:text-slate-500 shadow-none transition"
             />
           </div>
           <nav className="space-y-1 p-3 pt-0">

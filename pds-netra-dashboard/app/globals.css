@@ -252,6 +252,51 @@ a {
     outline: none;
   }
 
+  header .input-field,
+  .sheet .input-field {
+    color: #020617;
+    font-weight: 600;
+  }
+
+  header .input-field::placeholder,
+  .sheet .input-field::placeholder {
+    color: rgba(2, 6, 23, 0.8);
+  }
+
+  .sheet-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .sheet-content nav {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    margin-top: 0.35rem;
+  }
+
+  .sheet-content nav a {
+    padding: 0.8rem 0.95rem;
+    border-radius: 14px;
+    transition: background 180ms ease, transform 180ms ease;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .sheet-content nav a:hover,
+  .sheet-content nav a:focus-visible {
+    background: rgba(248, 250, 252, 0.1);
+    transform: translateX(2px);
+  }
+
+  .input-field.text-slate-100 {
+    color: #f8fafc;
+  }
+
+  .input-field.text-slate-100::placeholder {
+    color: rgba(248, 250, 252, 0.7);
+  }
+
   .btn-danger {
     background: linear-gradient(135deg, #f43f5e, #ef4444);
     color: #ffffff;

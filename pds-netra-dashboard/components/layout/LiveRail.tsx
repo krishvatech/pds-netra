@@ -378,8 +378,8 @@ export function LiveRail() {
   }
 
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4">
-      <div className="hud-card p-4 sticky top-24">
+    <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
+      <div className="hud-card p-4 sticky top-24 z-20">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
@@ -439,7 +439,7 @@ export function LiveRail() {
         </button>
       </div>
 
-      <div className="hud-card p-4 space-y-3">
+      <div className="hud-card p-4 space-y-3 mt-20 pt-4">
         {timeline.length === 0 && (
           <div className="text-sm text-slate-400">No open alerts right now.</div>
         )}

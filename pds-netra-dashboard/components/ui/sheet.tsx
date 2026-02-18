@@ -69,7 +69,7 @@ export function SheetContent({
       <div
         role="dialog"
         aria-modal="true"
-        className={`absolute bottom-0 top-0 w-[95vw] max-w-xl border-l border-white/10 bg-slate-950/95 shadow-2xl ${
+        className={`sheet-content absolute bottom-0 top-0 w-[95vw] max-w-xl border-l border-white/10 bg-slate-950/95 shadow-2xl ${
           side === 'right' ? 'right-0' : 'left-0 border-l-0 border-r'
         } ${className}`}
       >
