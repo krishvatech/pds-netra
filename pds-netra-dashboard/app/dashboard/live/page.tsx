@@ -34,7 +34,7 @@ function buildLiveHeaders(): Record<string, string> {
 
 function appendCacheBust(url: string): string {
   const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}_t=${Date.now()}`;
+  return `${url}${sep}t=${Date.now()}`;
 }
 
 function AuthedLiveImage({

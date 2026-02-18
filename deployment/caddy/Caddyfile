@@ -1,6 +1,11 @@
 {$CADDY_DOMAIN} {
     encode gzip
 
+    @latest_live_jpg path_regexp latest_live_jpg ^/media/live/[^/]+/[^/]+_latest\.jpg$
+    header @latest_live_jpg Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    header @latest_live_jpg Pragma "no-cache"
+    header @latest_live_jpg Expires "0"
+
     # Meta webhook must bypass dashboard proxy and hit backend directly.
     reverse_proxy /api/v1/meta/webhook/* backend:8001
 
