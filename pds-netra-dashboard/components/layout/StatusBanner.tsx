@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getEvents, getHealthSummary } from '@/lib/api';
 
-export function StatusBanner() {
+export function StatusBanner({ onHeightChange }: { onHeightChange?: (height: number) => void }) {
   const [offline, setOffline] = useState(false);
   const [mqttDown, setMqttDown] = useState(false);
   const [eventsStale, setEventsStale] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const bannerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -43,11 +44,28 @@ export function StatusBanner() {
     };
   }, []);
 
-  if (!offline && !mqttDown && !eventsStale) return null;
-  if (dismissed) return null;
+  const shouldShow = (offline || mqttDown || eventsStale) && !dismissed;
+
+  useLayoutEffect(() => {
+    if (!onHeightChange) return;
+    if (!shouldShow) {
+      onHeightChange(0);
+      return;
+    }
+    const measure = () => {
+      const height = bannerRef.current ? Math.round(bannerRef.current.getBoundingClientRect().height) : 0;
+      onHeightChange(height);
+    };
+    measure();
+    const raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  }, [onHeightChange, shouldShow]);
+
+  if (!shouldShow) return null;
 
   return (
     <div
+      ref={bannerRef}
       className={`w-full ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}
       role="status"
       aria-live="polite"

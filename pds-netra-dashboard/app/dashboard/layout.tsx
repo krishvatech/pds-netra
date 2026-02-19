@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
@@ -14,6 +14,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isAuthPage = pathname === '/dashboard/login' || pathname === '/dashboard/register';
   const [authChecked, setAuthChecked] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const topbarRef = useRef<HTMLDivElement | null>(null);
+  const bannerHeightRef = useRef(0);
+  const topbarHeightRef = useRef(0);
+  const safetyGapRef = useRef(6);
 
   useEffect(() => {
     let active = true;
@@ -41,6 +46,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [isAuthPage, router]);
 
+  useLayoutEffect(() => {
+    if (!shellRef.current || !topbarRef.current) return;
+    const shell = shellRef.current;
+    const updateStackHeight = () => {
+      const total = bannerHeightRef.current + topbarHeightRef.current + safetyGapRef.current;
+      shell.style.setProperty('--header-stack-h', `${total}px`);
+    };
+    const measureTopbar = () => {
+      topbarHeightRef.current = Math.round(topbarRef.current?.getBoundingClientRect().height || 0);
+      updateStackHeight();
+    };
+    measureTopbar();
+    const observer = new ResizeObserver(measureTopbar);
+    observer.observe(topbarRef.current);
+    window.addEventListener('resize', measureTopbar);
+    const rafIds: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      rafIds.push(requestAnimationFrame(measureTopbar));
+    }
+    const timeoutIds = [
+      window.setTimeout(measureTopbar, 150),
+      window.setTimeout(measureTopbar, 600)
+    ];
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureTopbar);
+      rafIds.forEach((id) => cancelAnimationFrame(id));
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+    };
+  }, []);
+
   if (isAuthPage) return <>{children}</>;
   if (!authChecked) {
     return (
@@ -52,7 +88,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!authorized) return null;
 
   return (
-    <div className="app-shell flex min-h-screen flex-col overflow-x-hidden [--header-stack-h:128px] md:[--header-stack-h:140px]">
+    <div
+      ref={shellRef}
+      className="app-shell flex min-h-screen flex-col overflow-x-hidden [--header-stack-h:128px] md:[--header-stack-h:140px]"
+    >
       <div className="app-bg" />
       <div className="app-grid" />
       <div className="app-scanlines" />
@@ -64,8 +103,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="radar-grid" />
       </div>
       <div className="fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-xl border-b border-white/5">
-        <StatusBanner />
-        <Topbar />
+        <StatusBanner
+          onHeightChange={(height) => {
+            bannerHeightRef.current = height;
+            if (!shellRef.current) return;
+            const total = bannerHeightRef.current + topbarHeightRef.current + safetyGapRef.current;
+            shellRef.current.style.setProperty('--header-stack-h', `${total}px`);
+          }}
+        />
+        <div ref={topbarRef}>
+          <Topbar />
+        </div>
       </div>
       <div className="relative z-10 flex flex-1 w-full overflow-hidden pt-[var(--header-stack-h)]">
         <Sidebar />
@@ -73,7 +121,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto scroll-pt-[var(--header-stack-h)]">
               <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-                <main className="animate-fade-up flex-1 min-w-0 space-y-4 md:space-y-6 px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8 [&>*]:min-w-0">
+                <main className="animate-fade-up flex-1 min-w-0 space-y-4 md:space-y-6 px-4 pb-4 pt-18 md:px-6 md:pb-6 md:pt-20 lg:px-8 lg:pb-8 lg:pt-22 [&>*]:min-w-0">
                   <MobileRail />
                   {children}
                 </main>
