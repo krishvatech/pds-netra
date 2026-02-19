@@ -53,7 +53,13 @@ class MetaWhatsAppError(RuntimeError):
 
 
 class NotificationProvider:
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         raise NotImplementedError
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -64,7 +70,13 @@ class NotificationProvider:
 
 
 class WhatsAppLogProvider(NotificationProvider):
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         logging.getLogger("notifications").info("Log WhatsApp to=%s message=%s media=%s", to, message, media_url)
         return None
 
@@ -199,9 +211,26 @@ class WhatsAppMetaProvider(NotificationProvider):
             "template": template,
         }
 
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         target = _normalize_meta_whatsapp_target(to)
         msg = (message or "").strip() or "PDS Netra alert."
+        if force_template:
+            if not self.template_name:
+                raise RuntimeError("Template fallback requested but META_WA_TEMPLATE_NAME is not configured")
+            logger.info(
+                "Meta WhatsApp force-template send to=%s template=%s lang=%s",
+                target,
+                self.template_name,
+                self.template_language,
+            )
+            template_payload = self._build_template_payload(target, msg)
+            return self._send_payload(target, template_payload)
         use_image = bool(media_url and str(media_url).startswith("https://"))
         payload: dict
         if use_image:
@@ -249,7 +278,13 @@ class WhatsAppUnavailableProvider(NotificationProvider):
     def __init__(self, reason: str) -> None:
         self.reason = reason
 
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         raise RuntimeError(self.reason)
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -259,7 +294,13 @@ class WhatsAppUnavailableProvider(NotificationProvider):
         return None
 
 class EmailLogProvider(NotificationProvider):
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -272,7 +313,13 @@ class EmailLogProvider(NotificationProvider):
 
 
 class CallLogProvider(NotificationProvider):
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -315,7 +362,13 @@ class TwilioCallProvider(NotificationProvider):
 
         self.client = get_twilio_voice_client()
 
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -381,7 +434,13 @@ class EmailSMTPProvider(NotificationProvider):
             self.starttls,
         )
 
-    def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
+    def send_whatsapp(
+        self,
+        to: str,
+        message: str,
+        media_url: Optional[str] = None,
+        force_template: bool = False,
+    ) -> Optional[str]:
         return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
@@ -448,7 +507,18 @@ class ProviderSet:
     def send(self, outbox: NotificationOutbox) -> Optional[str]:
         if outbox.channel == "WHATSAPP":
             media_url = _normalize_media_url(outbox.media_url)
-            return self.whatsapp.send_whatsapp(outbox.target, outbox.message, media_url)
+            last_error = (outbox.last_error or "").lower()
+            force_template = "retry_with_template=true" in last_error or "code=131047" in last_error
+            try:
+                return self.whatsapp.send_whatsapp(
+                    outbox.target,
+                    outbox.message,
+                    media_url,
+                    force_template=force_template,
+                )
+            except TypeError:
+                # Backward compatibility for custom/mock providers in tests.
+                return self.whatsapp.send_whatsapp(outbox.target, outbox.message, media_url)
         if outbox.channel == "EMAIL":
             subject = outbox.subject or "PDS Netra Alert"
             return self.email.send_email(outbox.target, subject, outbox.message)

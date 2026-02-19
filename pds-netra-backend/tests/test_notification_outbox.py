@@ -219,6 +219,61 @@ def test_worker_retries_on_failure():
     assert row.next_retry_at is not None
 
 
+def test_worker_forces_template_after_131047_marker():
+    db = _make_session()
+    alert = _create_alert(db)
+    outbox = NotificationOutbox(
+        kind="ALERT",
+        alert_id=alert.public_id,
+        report_id=None,
+        channel="WHATSAPP",
+        target="+910000000003",
+        subject=None,
+        message="Template retry message",
+        media_url=None,
+        status="RETRYING",
+        attempts=1,
+        last_error="Meta delivery failed: code=131047 retry_with_template=true",
+        next_retry_at=None,
+    )
+    db.add(outbox)
+    db.commit()
+
+    calls: list[dict] = []
+
+    class WhatsAppProvider(NotificationProvider):
+        def send_whatsapp(self, to: str, message: str, media_url=None, force_template: bool = False):
+            calls.append(
+                {
+                    "to": to,
+                    "message": message,
+                    "media_url": media_url,
+                    "force_template": force_template,
+                }
+            )
+            return "wamid-template-retry"
+
+        def send_email(self, to: str, subject: str, html: str):
+            raise RuntimeError("unexpected email")
+
+        def send_call(self, to: str, message: str):
+            raise RuntimeError("unexpected call")
+
+    providers = ProviderSet(
+        whatsapp=WhatsAppProvider(),
+        email=WhatsAppProvider(),
+        call=WhatsAppProvider(),
+    )
+    processed = process_outbox_batch(db, providers=providers, max_attempts=5, batch_size=5)
+    assert processed == 1
+    assert len(calls) == 1
+    assert calls[0]["force_template"] is True
+
+    row = db.query(NotificationOutbox).first()
+    assert row.status == "SENT"
+    assert row.provider_message_id == "wamid-template-retry"
+
+
 def test_hq_report_enqueues_to_hq_only():
     db = _make_session()
     endpoint_hq = NotificationEndpoint(

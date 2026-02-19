@@ -52,6 +52,28 @@ def _status_error_text(item: dict[str, Any]) -> str | None:
     return "Meta delivery failed: " + " | ".join(parts)
 
 
+def _status_error_codes(item: dict[str, Any]) -> list[int]:
+    errors = item.get("errors")
+    if not isinstance(errors, list):
+        return []
+    codes: list[int] = []
+    for err in errors:
+        if not isinstance(err, dict):
+            continue
+        raw = err.get("code")
+        try:
+            if raw is not None:
+                codes.append(int(str(raw)))
+        except Exception:
+            continue
+    return codes
+
+
+def _is_reengagement_failure(item: dict[str, Any]) -> bool:
+    # Meta code 131047 means the 24-hour customer service window is closed.
+    return 131047 in _status_error_codes(item)
+
+
 def _status_timestamp(item: dict[str, Any]) -> datetime.datetime | None:
     ts = item.get("timestamp")
     if ts is None:
@@ -141,8 +163,14 @@ async def receive_meta_whatsapp_webhook(
                         row.last_error = None
                     row.next_retry_at = None
                 else:
-                    row.last_error = _status_error_text(item) or "Meta delivery failed"
-                    row.next_retry_at = None
+                    error_text = _status_error_text(item) or "Meta delivery failed"
+                    if _is_reengagement_failure(item):
+                        row.status = "RETRYING"
+                        row.last_error = f"{error_text} retry_with_template=true"
+                        row.next_retry_at = datetime.datetime.now(datetime.timezone.utc)
+                    else:
+                        row.last_error = error_text
+                        row.next_retry_at = None
 
                 db.add(row)
 
