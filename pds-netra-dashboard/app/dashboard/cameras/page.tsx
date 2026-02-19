@@ -659,7 +659,7 @@ export default function CamerasPage() {
                         </td>
                         <td className="py-3 px-2 text-slate-300 text-xs">{camera.godown_id ?? '—'}</td>
                         <td className="py-3 px-2">
-                          <span className="px-2 py-1 bg-slate-700 rounded text-xs text-slate-200">
+                          <span className="inline-flex items-center whitespace-nowrap px-2 py-1 bg-slate-700 rounded text-xs text-slate-200">
                             {formatRole(camera.role)}
                           </span>
                         </td>

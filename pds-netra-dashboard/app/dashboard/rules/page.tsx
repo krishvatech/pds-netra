@@ -108,7 +108,17 @@ function paramSummary(rule: RuleItem) {
   if (rule.require_active_dispatch_plan !== null && rule.require_active_dispatch_plan !== undefined) {
     parts.push(rule.require_active_dispatch_plan ? 'requires plan' : 'no plan required');
   }
-  return parts.length ? parts.join(' • ') : '—';
+  if (!parts.length) return '—';
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      {parts.map((part, idx) => (
+        <span key={`${part}-${idx}`} className="inline-flex items-center gap-2">
+          {idx > 0 && <span className="text-slate-400">•</span>}
+          <span>{part}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export default function RulesPage() {
@@ -718,7 +728,11 @@ export default function RulesPage() {
                       <TD className="font-medium">#{rule.id}</TD>
                       <TD>
                         <div>{rule.godown_id}</div>
-                        <div className="text-xs text-slate-500">{rule.camera_id} • {rule.zone_id}</div>
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                          <span>{rule.camera_id}</span>
+                          <span className="text-slate-400">•</span>
+                          <span>{rule.zone_id}</span>
+                        </div>
                       </TD>
                       <TD>{rule.type.replaceAll('_', ' ')}</TD>
                       <TD className="text-xs text-slate-500">{paramSummary(rule)}</TD>

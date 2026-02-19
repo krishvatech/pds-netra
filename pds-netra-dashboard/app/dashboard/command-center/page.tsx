@@ -134,8 +134,10 @@ export default function CommandCenterPage() {
           <div className="hud-value mt-2">
             {overview ? overview.stats.open_alerts_critical + overview.stats.open_alerts_warning : '-'}
           </div>
-          <div className="text-xs text-slate-400 mt-2">
-            Critical {overview?.stats.open_alerts_critical ?? '-'} • Warning {overview?.stats.open_alerts_warning ?? '-'}
+          <div className="text-xs text-slate-400 mt-2 flex items-center gap-2">
+            <span>Critical {overview?.stats.open_alerts_critical ?? '-'}</span>
+            <span className="text-slate-500">•</span>
+            <span>Warning {overview?.stats.open_alerts_warning ?? '-'}</span>
           </div>
         </div>
         <div className="hud-card p-5 animate-fade-up">
@@ -171,8 +173,10 @@ export default function CommandCenterPage() {
                     <div>
                       <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Alert</div>
                       <div className="text-base font-semibold text-slate-100">{humanAlertType(a.alert_type)}</div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        {a.godown_name ?? a.godown_id} • {formatUtc(a.start_time)}
+                      <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                        <span>{a.godown_name ?? a.godown_id}</span>
+                        <span className="text-slate-500">•</span>
+                        <span>{formatUtc(a.start_time)}</span>
                       </div>
                       {a.summary && <div className="text-xs text-slate-500 mt-2">{a.summary}</div>}
                     </div>

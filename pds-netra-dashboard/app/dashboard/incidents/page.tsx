@@ -117,8 +117,10 @@ export default function IncidentsPage() {
                       <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Alert</div>
                     </div>
                     <div className="mt-2 text-lg font-semibold text-slate-100">{humanAlertType(a.alert_type)}</div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      {a.godown_name ?? a.godown_id} • {formatUtc(a.start_time)}
+                    <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                      <span>{a.godown_name ?? a.godown_id}</span>
+                      <span className="text-slate-500">•</span>
+                      <span>{formatUtc(a.start_time)}</span>
                     </div>
                     {a.summary && <div className="text-xs text-slate-500 mt-2">{a.summary}</div>}
                   </div>

@@ -578,7 +578,11 @@ export function Sidebar() {
         })}
       </nav>
       <div className="mt-auto pt-5 text-xs text-slate-400 border-t border-white/10">
-        PoC build • GSCSCL
+        <div className="flex flex-wrap items-center gap-2">
+          <span>PoC build</span>
+          <span className="text-slate-500">•</span>
+          <span>GSCSCL</span>
+        </div>
         <div className="mt-2 text-[11px] text-slate-500">AI-powered vigilance for 250+ godowns</div>
         {mounted && (
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-slate-300">

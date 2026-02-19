@@ -665,8 +665,14 @@ export default function LiveCamerasPage() {
                         <div className="text-base font-semibold text-slate-100">
                           {camera.label ?? camera.camera_id}
                         </div>
-                        <div className="text-xs text-slate-400">
-                          {camera.camera_id} {camera.role ? `• ${camera.role}` : ''}
+                        <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2">
+                          <span>{camera.camera_id}</span>
+                          {camera.role ? (
+                            <>
+                              <span className="text-slate-500">•</span>
+                              <span>{camera.role}</span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

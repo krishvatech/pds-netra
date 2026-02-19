@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, Menu, Settings } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -24,7 +24,7 @@ export function Topbar() {
   const iconBtn =
     'h-11 w-11 rounded-full border border-white/15 bg-white/5 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_16px_rgba(0,0,0,0.25)] hover:bg-white/10 active:bg-white/15 inline-flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20';
   const iconSize = 'h-6 w-6';
-  const menuIconSize = 'h-7 w-7';
+  const menuIconSize = 'h-5 w-7';
   const [user, setUser] = useState<LoginResponse['user'] | null>(null);
   const [cues, setCues] = useState(() => getAlertCues());
   const [alertPulse, setAlertPulse] = useState(false);
@@ -272,23 +272,24 @@ export function Topbar() {
   }, [menuQuery]);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur relative">
+    <header className="relative z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur">
       <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2 md:hidden">
-            <Button
-              variant="ghost"
-              className={iconBtn}
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open navigation menu"
-            >
-              <svg viewBox="0 0 24 24" className={menuIconSize} fill="none" aria-hidden>
-                <path d="M4 7H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-                <path d="M4 12H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-                <path d="M4 17H20" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
-              </svg>
-            </Button>
-            <div className="truncate text-base font-semibold font-display tracking-tight">PDS Netra</div>
+          <div className="relative mb-1 flex items-center gap-2 md:hidden">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open navigation menu"
+              >
+                <Menu className={menuIconSize} strokeWidth={2.6} aria-hidden />
+              </Button>
+            </div>
+            <div className="pointer-events-none absolute left-1/2 max-w-[60%] -translate-x-1/2 truncate text-center text-base font-semibold font-display tracking-tight">
+              PDS Netra
+            </div>
             <div className="ml-auto flex items-center gap-2">
               <Button
                 variant="ghost"

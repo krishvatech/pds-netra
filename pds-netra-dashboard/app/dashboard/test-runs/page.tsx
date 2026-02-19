@@ -338,8 +338,10 @@ export default function TestRunsPage() {
             )}
           </div>
           {lastRun && (
-            <div className="report-tile p-3 text-sm text-slate-200">
-              Latest run: <span className="font-semibold">{lastRun.run_id}</span> • Status: {lastRun.status}
+            <div className="report-tile p-3 text-sm text-slate-200 flex flex-wrap items-center gap-2">
+              <span>Latest run: <span className="font-semibold">{lastRun.run_id}</span></span>
+              <span className="text-slate-500">•</span>
+              <span>Status: {lastRun.status}</span>
             </div>
           )}
         </CardContent>

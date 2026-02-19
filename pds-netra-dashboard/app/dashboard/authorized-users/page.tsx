@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
+import { ConfirmDialog } from '@/components/ui/dialog';
 
 export default function AuthorizedUsersPage() {
     const [users, setUsers] = useState<AuthorizedUserItem[]>([]);
@@ -40,6 +41,8 @@ export default function AuthorizedUsersPage() {
     const [formSuccess, setFormSuccess] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [fileSizeError, setFileSizeError] = useState<string | null>(null);
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+    const [deleteBusy, setDeleteBusy] = useState(false);
 
     // Sync state
     const [syncGodownId, setSyncGodownId] = useState('');
@@ -170,11 +173,13 @@ export default function AuthorizedUsersPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleDelete = async (personId: string) => {
-        if (!window.confirm(`Are you sure you want to delete authorized user ${personId}?`)) return;
+    const handleDeleteConfirm = async () => {
+        if (!deleteTargetId || deleteBusy) return;
 
+        setDeleteBusy(true);
         try {
-            await deleteAuthorizedUser(personId);
+            await deleteAuthorizedUser(deleteTargetId);
+            setDeleteTargetId(null);
             await loadUsers();
         } catch (e) {
             setError(
@@ -183,6 +188,8 @@ export default function AuthorizedUsersPage() {
                     'Unable to delete the user right now. Please try again shortly.'
                 )
             );
+        } finally {
+            setDeleteBusy(false);
         }
     };
 
@@ -514,7 +521,7 @@ export default function AuthorizedUsersPage() {
                                                                 Edit
                                                             </button>
                                                             <button
-                                                                onClick={() => handleDelete(user.person_id)}
+                                                                onClick={() => setDeleteTargetId(user.person_id)}
                                                                 className="text-red-400 hover:text-red-300 text-xs"
                                                             >
                                                                 Delete
@@ -534,6 +541,24 @@ export default function AuthorizedUsersPage() {
                     </div>
                 </CardContent>
             </Card>
+            <ConfirmDialog
+                open={!!deleteTargetId}
+                title="Delete Authorized User"
+                message={
+                    deleteTargetId
+                        ? `Are you sure you want to delete authorized user ${deleteTargetId}? This cannot be undone.`
+                        : undefined
+                }
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                confirmVariant="danger"
+                isBusy={deleteBusy}
+                onCancel={() => {
+                    if (deleteBusy) return;
+                    setDeleteTargetId(null);
+                }}
+                onConfirm={handleDeleteConfirm}
+            />
         </div>
     );
 }

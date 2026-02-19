@@ -153,7 +153,9 @@ export default function AlertsPage() {
                 {[...tickerItems, ...tickerItems].map((alert, idx) => (
                   <div key={`${alert.id}-${idx}`} className="ticker-chip">
                     <span className={pulseClass(alert.severity_final as Severity)} />
-                    {alert.godown_name ?? alert.godown_id} • {alert.alert_type.replaceAll('_', ' ')}
+                    <span>{alert.godown_name ?? alert.godown_id}</span>
+                    <span className="text-slate-500">•</span>
+                    <span>{alert.alert_type.replaceAll('_', ' ')}</span>
                   </div>
                 ))}
               </div>

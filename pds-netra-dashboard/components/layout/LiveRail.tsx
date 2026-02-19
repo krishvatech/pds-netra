@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { acknowledgeAlert, getAlerts } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { AlertItem, Severity } from '@/lib/types';
@@ -69,11 +69,28 @@ function formatAnimalLabel(value?: string | null) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-function alertTitle(alert: AlertItem): string {
+function alertTitleParts(alert: AlertItem) {
   const base = humanAlertType(alert.alert_type);
-  if (alert.alert_type !== 'ANIMAL_INTRUSION') return base;
+  if (alert.alert_type !== 'ANIMAL_INTRUSION') return { base, animal: null };
   const animal = formatAnimalLabel(alert.key_meta?.animal_label ?? alert.key_meta?.animal_species ?? null);
-  return animal ? `${base} • ${animal}` : base;
+  return { base, animal };
+}
+
+function alertTitleText(alert: AlertItem): string {
+  const { base, animal } = alertTitleParts(alert);
+  return animal ? `${base} - ${animal}` : base;
+}
+
+function alertTitleNode(alert: AlertItem): ReactNode {
+  const { base, animal } = alertTitleParts(alert);
+  if (!animal) return base;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span>{base}</span>
+      <span className="text-slate-500">•</span>
+      <span>{animal}</span>
+    </span>
+  );
 }
 
 function formatScore(raw?: unknown) {
@@ -542,7 +559,7 @@ export function LiveRail() {
                   />
                 </div>
 
-                <div className="mt-1 text-sm font-semibold text-white">{alertTitle(alert)}</div>
+                <div className="mt-1 text-sm font-semibold text-white">{alertTitleNode(alert)}</div>
 
                 <AlertSnapshot
                   url={snapshotUrl}
@@ -576,7 +593,7 @@ export function LiveRail() {
                     setAckingIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]));
                     try {
                       await acknowledgeAlert(alert.id);
-                      pushToast({ type: 'success', title: 'Alert acknowledged', message: alertTitle(alert) });
+                      pushToast({ type: 'success', title: 'Alert acknowledged', message: alertTitleText(alert) });
                     } catch {
                       setDismissedIds((prev) => prev.filter((id) => id !== alert.id));
                       pushToast({ type: 'error', title: 'Acknowledge failed', message: 'Please try again.' });
@@ -614,6 +631,14 @@ export function MobileRail() {
   const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
   const [mounted, setMounted] = useState(false);
   const [clock, setClock] = useState<number | null>(null);
+  const [dismissedIds, setDismissedIds] = useState<Array<string | number>>([]);
+  const [ackingIds, setAckingIds] = useState<Array<string | number>>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const pushToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((items) => [...items, { id, ...toast }]);
+  }, []);
 
   useEffect(() => {
     setUiPrefsState(getUiPrefs());
@@ -639,58 +664,110 @@ export function MobileRail() {
     return copy;
   }, [alerts]);
 
-  const timeline = useMemo(() => sortedAlerts.slice(0, 3), [sortedAlerts]);
+  const filteredAlerts = useMemo(() => {
+    return sortedAlerts.filter((a) => !dismissedIds.includes(a.id));
+  }, [sortedAlerts, dismissedIds]);
+
+  const timeline = useMemo(() => filteredAlerts.slice(0, 3), [filteredAlerts]);
 
   if (!mounted || !uiPrefs.railOpen) {
     return null;
   }
 
   return (
-    <section className="lg:hidden hud-card p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
-          <div className="text-base font-semibold font-display text-slate-100">Active Alerts</div>
-        </div>
-        <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
-      </div>
-
-      <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
-        <span className="hud-pill">Threshold: {cues.minSeverity}</span>
-        {quietActive && <span className="hud-pill">Quiet hours</span>}
-      </div>
-
-      {timeline.length === 0 && (
-        <div className="text-sm text-slate-400">No open alerts right now.</div>
-      )}
-
-      {timeline.map((alert) => (
-        <div key={alert.id} className="alert-toast p-3">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Alert</div>
-            <span
-              className={`pulse-dot ${
-                alert.severity_final === 'critical'
-                  ? 'pulse-critical'
-                  : alert.severity_final === 'warning'
-                    ? 'pulse-warning'
-                    : 'pulse-info'
-              }`}
-            />
+    <>
+      <section className="lg:hidden hud-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
+            <div className="text-base font-semibold font-display text-slate-100">Active Alerts</div>
           </div>
-          <div className="mt-1 text-sm font-semibold text-white">{alertTitle(alert)}</div>
-          {alertDetail(alert) ? (
-            <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
-          ) : null}
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
-            <span className="break-words">{alert.camera_id ?? '-'}</span>
-            <span className="text-slate-500">â€¢</span>
-            <span className="break-words">{alert.godown_name ?? alert.godown_id}</span>
-            <span className="text-slate-500">â€¢</span>
-            <span className="break-words">{timeAgo(alert, clock)}</span>
-          </div>
+          <span className={`pulse-dot ${hasNew ? 'pulse-warning' : 'pulse-info'}`} />
         </div>
-      ))}
-    </section>
+
+        <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+          <span className="hud-pill">Threshold: {cues.minSeverity}</span>
+          {quietActive && <span className="hud-pill">Quiet hours</span>}
+        </div>
+
+        {timeline.length === 0 && (
+          <div className="text-sm text-slate-400">No open alerts right now.</div>
+        )}
+
+        {timeline.map((alert) => {
+          const snapshotUrl = alertSnapshotUrl(alert);
+          const isAcking = ackingIds.includes(alert.id);
+          const isClosed = alert.status !== 'OPEN';
+          const ackLabel = isAcking
+            ? 'Acknowledging…'
+            : alert.status === 'ACK'
+              ? 'Acknowledged'
+              : alert.status === 'CLOSED'
+                ? 'Closed'
+                : 'Acknowledge';
+
+          return (
+            <div key={alert.id} className="alert-toast p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Alert</div>
+                <span
+                  className={`pulse-dot ${
+                    alert.severity_final === 'critical'
+                      ? 'pulse-critical'
+                      : alert.severity_final === 'warning'
+                        ? 'pulse-warning'
+                        : 'pulse-info'
+                  }`}
+                />
+              </div>
+              <div className="mt-1 text-sm font-semibold text-white">{alertTitleNode(alert)}</div>
+
+              <AlertSnapshot
+                url={snapshotUrl}
+                alt={`Snapshot ${alert.id}`}
+                compact
+              />
+
+              {alertDetail(alert) ? (
+                <div className="mt-1 text-xs text-slate-300">{alertDetail(alert)}</div>
+              ) : null}
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                <span className="break-words">{alert.camera_id ?? '-'}</span>
+                <span className="text-slate-500">•</span>
+                <span className="break-words">{alert.godown_name ?? alert.godown_id}</span>
+                <span className="text-slate-500">•</span>
+                <span className="break-words">{timeAgo(alert, clock)}</span>
+              </div>
+
+              <button
+                className="mt-2 inline-flex min-h-[44px] w-full items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-[0.3em] text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={async () => {
+                  if (isAcking || isClosed) return;
+                  setDismissedIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]));
+                  setAckingIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]));
+                  try {
+                    await acknowledgeAlert(alert.id);
+                    pushToast({ type: 'success', title: 'Alert acknowledged', message: alertTitleText(alert) });
+                  } catch {
+                    setDismissedIds((prev) => prev.filter((id) => id !== alert.id));
+                    pushToast({ type: 'error', title: 'Acknowledge failed', message: 'Please try again.' });
+                  } finally {
+                    setAckingIds((prev) => prev.filter((id) => id !== alert.id));
+                  }
+                }}
+                disabled={isAcking || isClosed}
+              >
+                {ackLabel}
+              </button>
+            </div>
+          );
+        })}
+      </section>
+
+      <ToastStack
+        items={toasts}
+        onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))}
+      />
+    </>
   );
 }
