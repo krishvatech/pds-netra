@@ -182,6 +182,40 @@ def list_matches(
         "page_size": page_size,
     }
 
+@router.get("/active")
+def active_watchlist(
+    godown_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Edge expects: GET /api/v1/watchlist/active?godown_id=GDN_001
+    For compatibility, serve the same payload as /sync.
+    godown_id is currently ignored because watchlist is global in DB.
+    """
+    page_size = clamp_page_size(page_size)
+
+    payload = watchlist_service.build_sync_payload(db)
+
+    # apply same paging logic as /sync (keeps response stable)
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if isinstance(items, list):
+        total = len(items)
+        start = max((page - 1) * page_size, 0)
+        end = start + page_size
+        page_items = items[start:end]
+        payload["items"] = page_items
+        payload["total"] = total
+        payload["page"] = page
+        payload["page_size"] = page_size
+        try:
+            payload["checksum"] = watchlist_service._checksum_payload(page_items)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    return payload
+
 
 @router.get("/sync")
 def sync_watchlist(
