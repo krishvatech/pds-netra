@@ -38,10 +38,16 @@ def create_app() -> FastAPI:
     app = FastAPI(title="PDS Netra Backend", version="0.1.0")
     # Include API routers
     app.include_router(api_router)
-    media_root = Path(__file__).resolve().parents[1] / "data" / "snapshots"
-    annotated_root = Path(__file__).resolve().parents[1] / "data" / "annotated"
-    live_root = Path(os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[1] / "data" / "live"))).expanduser()
-    watchlist_root = Path(__file__).resolve().parents[1] / "data" / "watchlist"
+    default_data_root = Path("/opt/app/data")
+    if default_data_root.exists():
+        fallback_data_root = default_data_root
+    else:
+        fallback_data_root = Path(__file__).resolve().parents[1] / "data"
+    data_root = Path(os.getenv("PDS_DATA_DIR", str(fallback_data_root))).expanduser()
+    media_root = data_root / "snapshots"
+    annotated_root = data_root / "annotated"
+    live_root = Path(os.getenv("PDS_LIVE_DIR", str(data_root / "live"))).expanduser()
+    watchlist_root = data_root / "watchlist"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
     app.mount("/media/live", StaticFiles(directory=live_root, check_dir=False), name="live")
