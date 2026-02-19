@@ -24,9 +24,14 @@ See `docs/notifications-routing.md` for the routing policy (Godown Manager realt
 ## Configuration
 Environment variables:
 ```
-WHATSAPP_PROVIDER=log|http|twilio|meta
-WHATSAPP_HTTP_URL=https://your-gateway.example/send
-WHATSAPP_HTTP_TOKEN=optional-token
+WHATSAPP_PROVIDER=meta
+META_WA_ACCESS_TOKEN=your_meta_access_token
+META_WA_PHONE_NUMBER_ID=your_phone_number_id
+META_WA_API_VERSION=v20.0
+META_WA_TEMPLATE_NAME=netra_alert
+META_WA_TEMPLATE_LANGUAGE=en_US
+META_WA_TEMPLATE_USE_BODY_PARAM=false
+META_WA_TEMPLATE_BODY_MAX_CHARS=700
 
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587

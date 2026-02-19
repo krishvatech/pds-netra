@@ -11,8 +11,10 @@ from app.models.notification_outbox import NotificationOutbox
 from app.services.notification_outbox import enqueue_alert_notifications, enqueue_report_notifications
 from app.services.alert_reports import generate_hq_report
 from app.services.notification_worker import (
+    MetaWhatsAppError,
     NotificationProvider,
     ProviderSet,
+    WhatsAppMetaProvider,
     process_outbox_batch,
 )
 
@@ -241,3 +243,60 @@ def test_hq_report_enqueues_to_hq_only():
     rows = db.query(NotificationOutbox).filter(NotificationOutbox.report_id == report.id).all()
     assert len(rows) == 1
     assert rows[0].channel == "EMAIL"
+
+
+def test_meta_provider_falls_back_to_template_on_24h_window(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "netra_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en_US")
+    monkeypatch.setenv("META_WA_TEMPLATE_USE_BODY_PARAM", "true")
+
+    calls: list[dict] = []
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        calls.append(payload)
+        if len(calls) == 1:
+            raise MetaWhatsAppError(
+                status_code=400,
+                error_type="OAuthException",
+                error_code=131047,
+                error_message="Re-engagement message required",
+            )
+        return {"messages": [{"id": "wamid-template-1"}]}
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    message_id = provider.send_whatsapp("+910000000001", "Fire detected in camera CAM_1")
+
+    assert message_id == "wamid-template-1"
+    assert len(calls) == 2
+    assert calls[0]["type"] == "text"
+    assert calls[1]["type"] == "template"
+    assert calls[1]["template"]["name"] == "netra_alert"
+    assert calls[1]["template"]["language"]["code"] == "en_US"
+    assert calls[1]["template"]["components"][0]["type"] == "body"
+
+
+def test_meta_provider_raises_when_template_not_configured(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.delenv("META_WA_TEMPLATE_NAME", raising=False)
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        raise MetaWhatsAppError(
+            status_code=400,
+            error_type="OAuthException",
+            error_code=131047,
+            error_message="Re-engagement message required",
+        )
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    try:
+        provider.send_whatsapp("+910000000001", "Fire detected")
+        assert False, "Expected MetaWhatsAppError"
+    except MetaWhatsAppError as exc:
+        assert exc.error_code == 131047

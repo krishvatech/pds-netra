@@ -31,6 +31,27 @@ from ..models.event import Alert
 logger = logging.getLogger("notification_worker")
 
 
+class MetaWhatsAppError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        error_type: Optional[str],
+        error_code: Optional[int],
+        error_message: str,
+        raw_detail: Optional[str] = None,
+    ) -> None:
+        self.status_code = status_code
+        self.error_type = error_type
+        self.error_code = error_code
+        self.error_message = error_message
+        self.raw_detail = raw_detail
+        detail = f"type={error_type} code={error_code} message={error_message}"
+        if raw_detail and raw_detail != detail:
+            detail = f"{detail} raw={raw_detail}"
+        super().__init__(f"Meta WhatsApp send failed status={status_code} detail={detail}")
+
+
 class NotificationProvider:
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
         raise NotImplementedError
@@ -87,18 +108,29 @@ def _post_meta_whatsapp_message(
 
     if response.status_code // 100 != 2:
         detail = response.text
+        error_type: Optional[str] = None
+        error_code: Optional[int] = None
+        error_message: str = detail
         try:
             err_json = response.json()
             error_obj = err_json.get("error") if isinstance(err_json, dict) else None
             if isinstance(error_obj, dict):
-                detail = (
-                    f"type={error_obj.get('type')} "
-                    f"code={error_obj.get('code')} "
-                    f"message={error_obj.get('message')}"
-                )
+                error_type = str(error_obj.get("type") or "") or None
+                raw_code = error_obj.get("code")
+                try:
+                    error_code = int(raw_code) if raw_code is not None else None
+                except Exception:
+                    error_code = None
+                error_message = str(error_obj.get("message") or detail)
         except Exception:
             pass
-        raise RuntimeError(f"Meta WhatsApp send failed status={response.status_code} detail={detail}")
+        raise MetaWhatsAppError(
+            status_code=response.status_code,
+            error_type=error_type,
+            error_code=error_code,
+            error_message=error_message,
+            raw_detail=detail,
+        )
 
     try:
         return response.json()
@@ -111,6 +143,16 @@ class WhatsAppMetaProvider(NotificationProvider):
         self.access_token = (os.getenv("META_WA_ACCESS_TOKEN") or "").strip()
         self.phone_number_id = (os.getenv("META_WA_PHONE_NUMBER_ID") or "").strip()
         self.api_version = (os.getenv("META_WA_API_VERSION") or "v20.0").strip() or "v20.0"
+        self.template_name = (os.getenv("META_WA_TEMPLATE_NAME") or "").strip()
+        self.template_language = (os.getenv("META_WA_TEMPLATE_LANGUAGE") or "en_US").strip() or "en_US"
+        self.template_use_body_param = (
+            (os.getenv("META_WA_TEMPLATE_USE_BODY_PARAM") or "false").strip().lower()
+            in {"1", "true", "yes", "y"}
+        )
+        try:
+            self.template_body_max_chars = max(1, int(os.getenv("META_WA_TEMPLATE_BODY_MAX_CHARS", "700")))
+        except Exception:
+            self.template_body_max_chars = 700
         missing = []
         if not self.access_token:
             missing.append("META_WA_ACCESS_TOKEN")
@@ -119,9 +161,47 @@ class WhatsAppMetaProvider(NotificationProvider):
         if missing:
             raise RuntimeError(f"Meta WhatsApp disabled (missing env): {', '.join(missing)}")
 
+    def _extract_message_id(self, data: dict) -> Optional[str]:
+        messages = data.get("messages") if isinstance(data, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                return first.get("id")
+        return None
+
+    def _send_payload(self, target: str, payload: dict) -> Optional[str]:
+        data = _post_meta_whatsapp_message(
+            access_token=self.access_token,
+            api_version=self.api_version,
+            phone_number_id=self.phone_number_id,
+            payload=payload,
+        )
+        return self._extract_message_id(data)
+
+    def _build_template_payload(self, target: str, message: str) -> dict:
+        template: dict = {
+            "name": self.template_name,
+            "language": {"code": self.template_language},
+        }
+        if self.template_use_body_param and message:
+            template["components"] = [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": message[: self.template_body_max_chars]},
+                    ],
+                }
+            ]
+        return {
+            "messaging_product": "whatsapp",
+            "to": target,
+            "type": "template",
+            "template": template,
+        }
+
     def send_whatsapp(self, to: str, message: str, media_url: Optional[str] = None) -> Optional[str]:
         target = _normalize_meta_whatsapp_target(to)
-        msg = (message or "").strip()
+        msg = (message or "").strip() or "PDS Netra alert."
         use_image = bool(media_url and str(media_url).startswith("https://"))
         payload: dict
         if use_image:
@@ -141,22 +221,22 @@ class WhatsAppMetaProvider(NotificationProvider):
 
         logger.info("Meta WhatsApp send attempt to=%s mode=%s", target, "image" if use_image else "text")
         try:
-            data = _post_meta_whatsapp_message(
-                access_token=self.access_token,
-                api_version=self.api_version,
-                phone_number_id=self.phone_number_id,
-                payload=payload,
-            )
+            return self._send_payload(target, payload)
+        except MetaWhatsAppError as exc:
+            if exc.error_code == 131047 and self.template_name:
+                logger.info(
+                    "Meta WhatsApp session window closed for to=%s; retrying with template=%s lang=%s",
+                    target,
+                    self.template_name,
+                    self.template_language,
+                )
+                template_payload = self._build_template_payload(target, msg)
+                return self._send_payload(target, template_payload)
+            logger.warning("Meta WhatsApp send failed to=%s err=%s", target, exc)
+            raise
         except Exception as exc:
             logger.warning("Meta WhatsApp send failed to=%s err=%s", target, exc)
             raise
-
-        messages = data.get("messages") if isinstance(data, dict) else None
-        if isinstance(messages, list) and messages:
-            first = messages[0]
-            if isinstance(first, dict):
-                return first.get("id")
-        return None
 
     def send_email(self, to: str, subject: str, html: str) -> Optional[str]:
         return None
