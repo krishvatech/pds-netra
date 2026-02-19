@@ -5,8 +5,8 @@ import { acknowledgeAlert, getAlerts } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { AlertItem, Severity } from '@/lib/types';
 import { formatUtc, humanAlertType } from '@/lib/formatters';
-import { getAlertCues, onAlertCuesChange } from '@/lib/alertCues';
-import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
+import { getAlertCues, onAlertCuesChange, type AlertCueSettings } from '@/lib/alertCues';
+import { getUiPrefs, onUiPrefsChange, setUiPrefs, type UiPrefs } from '@/lib/uiPrefs';
 import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import { Select } from '@/components/ui/select';
 
@@ -321,17 +321,19 @@ function timeAgo(alert: AlertItem, nowMs?: number | null): string {
   return `${diffDay}d ago`;
 }
 
-function useAlertFeed() {
+function useAlertFeed(initialCues?: AlertCueSettings | null) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [hasNew, setHasNew] = useState(false);
-  const [cues, setCues] = useState(() => getAlertCues());
+  const [cues, setCues] = useState<AlertCueSettings>(() => initialCues ?? getAlertCues());
   const lastSeenRef = useRef<number | null>(null);
   const inflightRef = useRef(false);
 
   useEffect(() => {
-    setCues(getAlertCues());
+    if (initialCues == null) {
+      setCues(getAlertCues());
+    }
     return onAlertCuesChange(setCues);
-  }, []);
+  }, [initialCues]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -387,10 +389,14 @@ function useAlertFeed() {
   return { alerts, hasNew, cues, quietActive };
 }
 
-export function LiveRail() {
-  const { alerts, hasNew, cues, quietActive } = useAlertFeed();
-  const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
-  const [mounted, setMounted] = useState(false);
+type RailProps = {
+  initialUiPrefs?: UiPrefs | null;
+  initialAlertCues?: AlertCueSettings | null;
+};
+
+export function LiveRail({ initialUiPrefs, initialAlertCues }: RailProps) {
+  const { alerts, hasNew, cues, quietActive } = useAlertFeed(initialAlertCues);
+  const [uiPrefs, setUiPrefsState] = useState<UiPrefs>(() => initialUiPrefs ?? getUiPrefs());
   const [clock, setClock] = useState<number | null>(null);
   const [scope, setScope] = useState<'ALL' | 'GODOWN' | 'CAMERA'>('ALL');
   const [scopeGodown, setScopeGodown] = useState('');
@@ -405,11 +411,7 @@ export function LiveRail() {
     setToasts((items) => [...items, { id, ...toast }]);
   }, []);
 
-  useEffect(() => {
-    setUiPrefsState(getUiPrefs());
-    setMounted(true);
-    return onUiPrefsChange(setUiPrefsState);
-  }, []);
+  useEffect(() => onUiPrefsChange(setUiPrefsState), []);
 
   useEffect(() => {
     setClock(Date.now());
@@ -467,14 +469,14 @@ export function LiveRail() {
 
   const timeline = useMemo(() => filteredAlerts.slice(0, 8), [filteredAlerts]);
 
-  if (!mounted || !uiPrefs.railOpen) {
+  if (!uiPrefs.railOpen) {
     return null;
   }
 
   return (
     <>
       <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
-        <div className="hud-card p-4 sticky top-24 z-20">
+        <div className="hud-card p-4 sticky top-28 z-20">
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Live Timeline</div>
@@ -626,10 +628,9 @@ export function LiveRail() {
   );
 }
 
-export function MobileRail() {
-  const { alerts, hasNew, cues, quietActive } = useAlertFeed();
-  const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
-  const [mounted, setMounted] = useState(false);
+export function MobileRail({ initialUiPrefs, initialAlertCues }: RailProps) {
+  const { alerts, hasNew, cues, quietActive } = useAlertFeed(initialAlertCues);
+  const [uiPrefs, setUiPrefsState] = useState<UiPrefs>(() => initialUiPrefs ?? getUiPrefs());
   const [clock, setClock] = useState<number | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Array<string | number>>([]);
   const [ackingIds, setAckingIds] = useState<Array<string | number>>([]);
@@ -640,11 +641,7 @@ export function MobileRail() {
     setToasts((items) => [...items, { id, ...toast }]);
   }, []);
 
-  useEffect(() => {
-    setUiPrefsState(getUiPrefs());
-    setMounted(true);
-    return onUiPrefsChange(setUiPrefsState);
-  }, []);
+  useEffect(() => onUiPrefsChange(setUiPrefsState), []);
 
   useEffect(() => {
     setClock(Date.now());
@@ -670,7 +667,7 @@ export function MobileRail() {
 
   const timeline = useMemo(() => filteredAlerts.slice(0, 3), [filteredAlerts]);
 
-  if (!mounted || !uiPrefs.railOpen) {
+  if (!uiPrefs.railOpen) {
     return null;
   }
 

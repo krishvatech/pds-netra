@@ -75,7 +75,9 @@ function explainWatchlistUploadError(err: unknown, limitMb: string): string | nu
 export default function WatchlistPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('persons');
   const [persons, setPersons] = useState<WatchlistPerson[]>([]);
+  const [personsLoading, setPersonsLoading] = useState(true);
   const [matches, setMatches] = useState<AlertItem[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(true);
   const [status, setStatus] = useState('ACTIVE');
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +143,7 @@ export default function WatchlistPage() {
     let mounted = true;
     (async () => {
       setError(null);
+      setPersonsLoading(true);
       try {
         if (MOCK_MODE) {
           if (mounted) setPersons(mockPersons);
@@ -151,6 +154,8 @@ export default function WatchlistPage() {
       } catch (e) {
         if (mounted)
           setError(friendlyErrorMessage(e, 'Unable to load the watchlist. Check your connection or try again.'));
+      } finally {
+        if (mounted) setPersonsLoading(false);
       }
     })();
     return () => {
@@ -161,6 +166,7 @@ export default function WatchlistPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      setMatchesLoading(true);
       try {
         if (MOCK_MODE) {
           if (mounted) setMatches(mockMatches);
@@ -172,6 +178,8 @@ export default function WatchlistPage() {
       } catch (e) {
         if (mounted)
           setError(friendlyErrorMessage(e, 'Unable to load match data. Please refresh or try again later.'));
+      } finally {
+        if (mounted) setMatchesLoading(false);
       }
     })();
     return () => {
@@ -362,7 +370,7 @@ export default function WatchlistPage() {
               </CardHeader>
               <Separator className="border-white/10" />
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <Label>Status</Label>
                     <Select
@@ -382,6 +390,7 @@ export default function WatchlistPage() {
 
                 <WatchlistPersonsTable
                   persons={persons}
+                  isLoading={personsLoading}
                   onEdit={(person) => {
                     setEditTarget(person);
                     setEditError(null);
@@ -389,6 +398,10 @@ export default function WatchlistPage() {
                   }}
                   onDelete={(person) => void handleDeleteConfirm(person)}
                   deleteBusyId={deleteBusyId}
+                  onEmptyAction={() => {
+                    const el = document.querySelector('input[placeholder="Name"]') as HTMLInputElement | null;
+                    el?.focus();
+                  }}
                 />
                 <div className="text-xs text-slate-500">
                   Showing {persons.length} person{persons.length !== 1 ? 's' : ''}
@@ -405,7 +418,7 @@ export default function WatchlistPage() {
               <div className="text-sm text-slate-300">Latest matches across the network.</div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
                 <div>
                   <Label>Godown</Label>
                   <Input
@@ -467,29 +480,42 @@ export default function WatchlistPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredMatches.map((m) => (
-                      <tr key={m.id} className="border-t border-white/10">
-                        <td className="py-2 pr-3">{formatUtc(m.start_time)}</td>
-                        <td className="py-2 pr-3">{m.godown_name ?? m.godown_id}</td>
-                        <td className="py-2 pr-3">{m.key_meta?.person_name ?? m.key_meta?.person_id ?? '-'}</td>
-                        <td className="py-2 pr-3">{m.key_meta?.match_score ?? '-'}</td>
-                        <td className="py-2 pr-3">
-                          {m.key_meta?.snapshot_url ? (
-                            <a
-                              className="text-amber-300 hover:underline"
-                              href={String(m.key_meta.snapshot_url)}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Snapshot
-                            </a>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="py-2 pr-3">{humanAlertType(m.alert_type)}</td>
-                      </tr>
-                    ))}
+                    {matchesLoading ? (
+                      Array.from({ length: 5 }).map((_, idx) => (
+                        <tr key={`match-skeleton-${idx}`} className="border-t border-white/10">
+                          <td className="py-2 pr-3"><div className="h-4 w-24 animate-pulse rounded bg-white/10" /></td>
+                          <td className="py-2 pr-3"><div className="h-4 w-24 animate-pulse rounded bg-white/10" /></td>
+                          <td className="py-2 pr-3"><div className="h-4 w-24 animate-pulse rounded bg-white/10" /></td>
+                          <td className="py-2 pr-3"><div className="h-4 w-14 animate-pulse rounded bg-white/10" /></td>
+                          <td className="py-2 pr-3"><div className="h-4 w-16 animate-pulse rounded bg-white/10" /></td>
+                          <td className="py-2 pr-3"><div className="h-4 w-28 animate-pulse rounded bg-white/10" /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      filteredMatches.map((m) => (
+                        <tr key={m.id} className="border-t border-white/10">
+                          <td className="py-2 pr-3">{formatUtc(m.start_time)}</td>
+                          <td className="py-2 pr-3">{m.godown_name ?? m.godown_id}</td>
+                          <td className="py-2 pr-3">{m.key_meta?.person_name ?? m.key_meta?.person_id ?? '-'}</td>
+                          <td className="py-2 pr-3">{m.key_meta?.match_score ?? '-'}</td>
+                          <td className="py-2 pr-3">
+                            {m.key_meta?.snapshot_url ? (
+                              <a
+                                className="text-amber-300 hover:underline"
+                                href={String(m.key_meta.snapshot_url)}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Snapshot
+                              </a>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="py-2 pr-3">{humanAlertType(m.alert_type)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

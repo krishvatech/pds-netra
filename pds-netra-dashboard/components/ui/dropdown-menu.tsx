@@ -1,10 +1,13 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
+import { usePathname } from 'next/navigation';
 
 type DropdownContextValue = {
   open: boolean;
   setOpen: (next: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement>;
 };
 
 const DropdownContext = React.createContext<DropdownContextValue | null>(null);
@@ -15,11 +18,21 @@ function useDropdownContext() {
   return ctx;
 }
 
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
+  if (!ref) return;
+  if (typeof ref === 'function') {
+    ref(value);
+  } else {
+    (ref as React.MutableRefObject<T | null>).current = value;
+  }
+}
+
 export function DropdownMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
+  const triggerRef = React.useRef<HTMLElement>(null);
   return (
-    <DropdownContext.Provider value={{ open, setOpen }}>
-      <div className="relative inline-flex">{children}</div>
+    <DropdownContext.Provider value={{ open, setOpen, triggerRef }}>
+      {children}
     </DropdownContext.Provider>
   );
 }
@@ -30,19 +43,34 @@ type TriggerProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export function DropdownMenuTrigger({ asChild = false, children, ...props }: TriggerProps) {
-  const { open, setOpen } = useDropdownContext();
+  const { open, setOpen, triggerRef } = useDropdownContext();
+  const childOnClick = (children as React.ReactElement).props?.onClick as
+    | ((event: React.MouseEvent<HTMLButtonElement>) => void)
+    | undefined;
   const triggerProps = {
     ...props,
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
+      childOnClick?.(e);
       props.onClick?.(e);
       if (!e.defaultPrevented) setOpen(!open);
     }
   };
 
   if (asChild) {
-    return React.cloneElement(children, triggerProps);
+    const child = React.Children.only(children);
+    return React.cloneElement(child, {
+      ...triggerProps,
+      ref: (node: HTMLElement | null) => {
+        triggerRef.current = node ?? null;
+        assignRef((child as any).ref, node);
+      }
+    });
   }
-  return React.createElement('button', triggerProps, children);
+
+  return React.createElement('button', {
+    ...triggerProps,
+    ref: triggerRef
+  }, children);
 }
 
 export function DropdownMenuContent({
@@ -54,14 +82,70 @@ export function DropdownMenuContent({
   align?: 'start' | 'end';
   children: React.ReactNode;
 }) {
-  const { open, setOpen } = useDropdownContext();
+  const { open, setOpen, triggerRef } = useDropdownContext();
   const ref = React.useRef<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = React.useState(false);
+  const [styles, setStyles] = React.useState<React.CSSProperties>({});
+  const pathname = usePathname();
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (open) setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  const updatePosition = React.useCallback(() => {
+    if (!open || !triggerRef.current || !ref.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const contentRect = ref.current.getBoundingClientRect();
+    const padding = 8;
+    const offset = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let left = align === 'end' ? triggerRect.right - contentRect.width : triggerRect.left;
+    left = Math.min(Math.max(left, padding), viewportWidth - contentRect.width - padding);
+
+    let top = triggerRect.bottom + offset;
+    if (top + contentRect.height > viewportHeight - padding) {
+      top = triggerRect.top - contentRect.height - offset;
+    }
+    top = Math.min(Math.max(top, padding), viewportHeight - contentRect.height - padding);
+
+    setStyles({
+      position: 'fixed',
+      top,
+      left,
+      minWidth: Math.max(170, Math.round(triggerRect.width))
+    });
+  }, [align, open, triggerRef]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    const onScroll = () => updatePosition();
+    const onResize = () => updatePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, updatePosition]);
 
   React.useEffect(() => {
     if (!open) return;
     const onDocClick = (e: MouseEvent) => {
-      if (!ref.current) return;
-      if (e.target instanceof Node && !ref.current.contains(e.target)) {
+      if (!ref.current || !triggerRef.current) return;
+      const target = e.target;
+      if (
+        target instanceof Node &&
+        !ref.current.contains(target) &&
+        !triggerRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -74,20 +158,20 @@ export function DropdownMenuContent({
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onEscape);
     };
-  }, [open, setOpen]);
+  }, [open, setOpen, triggerRef]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       ref={ref}
-      className={`absolute z-40 mt-2 min-w-[170px] rounded-xl border border-white/15 bg-slate-950/90 p-1 shadow-xl backdrop-blur ${
-        align === 'end' ? 'right-0' : 'left-0'
-      } ${className}`}
+      style={styles}
+      className={`z-[120] rounded-xl border border-white/15 bg-slate-950/95 p-1 shadow-2xl backdrop-blur ${className}`}
       role="menu"
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -25,6 +25,14 @@ body {
   height: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 body {
@@ -53,7 +61,7 @@ a {
 
 @layer components {
   .app-shell {
-    @apply min-h-screen relative overflow-hidden;
+    @apply min-h-screen relative overflow-x-hidden;
     width: 100%;
   }
 
@@ -731,5 +739,13 @@ a {
 
   .ticker-track {
     animation: none !important;
+  }
+}
+
+@layer utilities {
+  /* Prevent nested vertical scrollbars in table shells */
+  .table-shell.overflow-auto {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
   }
 }

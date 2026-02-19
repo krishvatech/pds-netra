@@ -20,6 +20,11 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Filter, MoreHorizontal, PlusCircle } from 'lucide-react';
 
 type CsvPreviewRow = {
   plate_text: string;
@@ -121,6 +126,7 @@ export default function AnprVehiclesPage() {
   const [items, setItems] = useState<AnprVehicle[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importRows, setImportRows] = useState<CsvPreviewRow[]>([]);
@@ -128,11 +134,9 @@ export default function AnprVehiclesPage() {
   const [importResult, setImportResult] = useState<CsvImportSummary | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const registryRef = useRef<HTMLDivElement | null>(null);
 
-  // IMPORTANT: keep as string, but always store String(v.id)
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [deletePopoverId, setDeletePopoverId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     plate_text: string;
@@ -142,8 +146,6 @@ export default function AnprVehiclesPage() {
     is_active: boolean;
   } | null>(null);
 
-  // Import preview row menu (still uses "...", separate from main table)
-  const [importMenuId, setImportMenuId] = useState<number | null>(null);
   const [editRowIndex, setEditRowIndex] = useState<number | null>(null);
   const [editRowDraft, setEditRowDraft] = useState<CsvPreviewRow | null>(null);
 
@@ -182,6 +184,7 @@ export default function AnprVehiclesPage() {
   async function load() {
     if (!godownId) return;
     try {
+      if (items.length === 0) setLoading(true);
       setError(null);
       const resp = await getAnprVehicles({
         godown_id: godownId,
@@ -193,6 +196,8 @@ export default function AnprVehiclesPage() {
       setItems(resp.items || []);
     } catch (e: any) {
       setError(e?.message || 'Failed to load vehicles');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -202,28 +207,6 @@ export default function AnprVehiclesPage() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [godownId, q, activeOnly]);
-
-  // Close row menu when clicking outside
-  useEffect(() => {
-    if (!openMenuId) return;
-    const onClick = (e: MouseEvent) => {
-      if (deletePopoverId) return;
-      if (e.target instanceof Node) {
-        const el = e.target as HTMLElement;
-        if (el.closest('[data-vehicle-menu="true"]')) return;
-      }
-      setOpenMenuId(null);
-    };
-    document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
-  }, [openMenuId, deletePopoverId]);
-
-  useEffect(() => {
-    if (importMenuId === null) return;
-    const onClick = () => setImportMenuId(null);
-    document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
-  }, [importMenuId]);
 
   function openEditRow(idx: number) {
     const row = importRows[idx];
@@ -495,46 +478,21 @@ export default function AnprVehiclesPage() {
                             <TD className="min-w-[120px]">{r.is_active || 'N/A'}</TD>
                             <TD className="text-xs text-amber-300">{r.error || 'N/A'}</TD>
                             <TD className="w-[70px]">
-                              <div className="relative inline-flex">
-                                <button
-                                  type="button"
-                                  className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100 hover:bg-white/10"
-                                  aria-label="Open row actions"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setImportMenuId((prev) => (prev === idx ? null : idx));
-                                  }}
-                                >
-                                  ...
-                                </button>
-                                {importMenuId === idx && (
-                                  <div
-                                    className="absolute right-0 z-20 mt-2 w-32 rounded-lg border border-white/10 bg-slate-950/95 p-1 shadow-xl"
-                                    onClick={(e) => e.stopPropagation()}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100 hover:bg-white/10"
+                                    aria-label="Open row actions"
                                   >
-                                    <button
-                                      type="button"
-                                      className="block w-full rounded-md px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/10"
-                                      onClick={() => {
-                                        setImportMenuId(null);
-                                        openEditRow(idx);
-                                      }}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="block w-full rounded-md px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-500/20"
-                                      onClick={() => {
-                                        setImportMenuId(null);
-                                        deleteRow(idx);
-                                      }}
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-32">
+                                  <DropdownMenuItem onClick={() => openEditRow(idx)}>Edit</DropdownMenuItem>
+                                  <DropdownMenuItem destructive onClick={() => deleteRow(idx)}>Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </TD>
                           </TR>
                         ))}
@@ -625,7 +583,19 @@ export default function AnprVehiclesPage() {
           </CardHeader>
 
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="flex items-center justify-between gap-3 md:hidden">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Filters</div>
+              <Button
+                variant="outline"
+                className="h-9 px-3 text-xs uppercase tracking-[0.2em]"
+                onClick={() => setFiltersOpen(true)}
+              >
+                <Filter className="h-4 w-4" />
+                Filters
+              </Button>
+            </div>
+
+            <div className="hidden md:grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label>Search</Label>
                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="plate contains..." />
@@ -643,7 +613,7 @@ export default function AnprVehiclesPage() {
               </div>
             </div>
 
-            <div className="table-shell overflow-auto">
+            <div className="table-shell overflow-auto min-h-[280px]">
               <Table>
                 <THead>
                   <TR>
@@ -657,10 +627,29 @@ export default function AnprVehiclesPage() {
                 </THead>
 
                 <TBody>
-                  {items.length === 0 ? (
+                  {loading ? (
+                    Array.from({ length: 6 }).map((_, idx) => (
+                      <TR key={`skeleton-${idx}`}>
+                        <TD><Skeleton className="h-4 w-32" /></TD>
+                        <TD><Skeleton className="h-5 w-20 rounded-full" /></TD>
+                        <TD><Skeleton className="h-5 w-20 rounded-full" /></TD>
+                        <TD><Skeleton className="h-4 w-28" /></TD>
+                        <TD><Skeleton className="h-4 w-40" /></TD>
+                        <TD className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TD>
+                      </TR>
+                    ))
+                  ) : items.length === 0 ? (
                     <TR>
-                      <TD colSpan={6} className="text-sm text-slate-500">
-                        No vehicles
+                      <TD colSpan={6} className="p-4">
+                        <EmptyState
+                          icon={<PlusCircle className="h-5 w-5" />}
+                          title="No vehicles yet"
+                          message="Start by adding a plate or importing a CSV list for this godown."
+                          actionLabel="Add vehicle"
+                          onAction={() => {
+                            registryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }}
+                        />
                       </TD>
                     </TR>
                   ) : (
@@ -743,7 +732,7 @@ export default function AnprVehiclesPage() {
                         </TD>
 
                         {/* ✅ FIXED ACTIONS COLUMN (Toggle + visible 3-dot + working dropdown) */}
-                        <TD>
+                        <TD className="text-right">
                           <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
                             {editId === String(v.id) ? (
                               <>
@@ -774,62 +763,38 @@ export default function AnprVehiclesPage() {
                               </Button>
                             )}
 
-                            <div className="relative">
-                              <button
-                                type="button"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                                aria-label="More actions"
-                                disabled={editId === String(v.id)}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const id = String(v.id);
-                                  setOpenMenuId((prev) => (prev === id ? null : id));
-                                }}
-                              >
-                                <span className="text-xl leading-none">⋮</span>
-                              </button>
-
-                              {openMenuId === String(v.id) && (
-                                <div
-                                  className="absolute right-0 z-50 mt-2 w-36 rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
-                                  onClick={(e) => e.stopPropagation()}
-                                  data-vehicle-menu="true"
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                                  aria-label="More actions"
+                                  disabled={editId === String(v.id)}
                                 >
-                                  <button
-                                    type="button"
-                                    className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-900 hover:bg-slate-100"
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                  <DropdownMenuItem
                                     onClick={() => {
-                                      setOpenMenuId(null);
                                       onQuickEdit(v);
                                     }}
                                   >
                                     Edit
-                                  </button>
-
+                                  </DropdownMenuItem>
                                   <ConfirmDeletePopover
                                     title="Delete Vehicle"
                                     description={`Are you sure you want to delete vehicle ${v.plate_raw}? This cannot be undone.`}
                                     confirmText="Delete"
-                                    onOpenChange={(open) => {
-                                      setDeletePopoverId(open ? String(v.id) : null);
-                                      if (!open) setOpenMenuId(null);
-                                    }}
                                     onConfirm={() => {
-                                      setOpenMenuId(null);
                                       return onDelete(v);
                                     }}
                                     isBusy={busy}
                                   >
-                                    <button
-                                      type="button"
-                                      className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
-                                    >
-                                      Delete
-                                    </button>
+                                    <DropdownMenuItem destructive>Delete</DropdownMenuItem>
                                   </ConfirmDeletePopover>
-                                </div>
-                              )}
-                            </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </TD>
                       </TR>
@@ -925,6 +890,33 @@ export default function AnprVehiclesPage() {
         </div>
       )}
 
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="right" className="w-[92vw] max-w-[380px]">
+          <SheetHeader>
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <div className="p-4 space-y-4">
+            <div>
+              <Label>Search</Label>
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="plate contains..." />
+            </div>
+            <div>
+              <Label>Active Only</Label>
+              <Select
+                value={activeOnly ? '1' : '0'}
+                onChange={(e) => setActiveOnly(e.target.value === '1')}
+                options={[
+                  { label: 'All', value: '0' },
+                  { label: 'Active', value: '1' }
+                ]}
+              />
+            </div>
+            <Button className="w-full" onClick={() => setFiltersOpen(false)}>
+              Apply filters
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

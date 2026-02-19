@@ -13,9 +13,11 @@ import type { AuthorizedUserItem, GodownListItem } from '@/lib/types';
 import { formatUtcDate } from '@/lib/formatters';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
-import { ConfirmDialog } from '@/components/ui/dialog';
+import { ConfirmDeletePopover } from '@/components/ui/dialog';
 
 export default function AuthorizedUsersPage() {
     const [users, setUsers] = useState<AuthorizedUserItem[]>([]);
@@ -41,8 +43,7 @@ export default function AuthorizedUsersPage() {
     const [formSuccess, setFormSuccess] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [fileSizeError, setFileSizeError] = useState<string | null>(null);
-    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-    const [deleteBusy, setDeleteBusy] = useState(false);
+    const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
     // Sync state
     const [syncGodownId, setSyncGodownId] = useState('');
@@ -173,13 +174,12 @@ export default function AuthorizedUsersPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleDeleteConfirm = async () => {
-        if (!deleteTargetId || deleteBusy) return;
+    const handleDeleteConfirm = async (personId: string) => {
+        if (!personId || deleteBusyId) return;
 
-        setDeleteBusy(true);
+        setDeleteBusyId(personId);
         try {
-            await deleteAuthorizedUser(deleteTargetId);
-            setDeleteTargetId(null);
+            await deleteAuthorizedUser(personId);
             await loadUsers();
         } catch (e) {
             setError(
@@ -189,7 +189,7 @@ export default function AuthorizedUsersPage() {
                 )
             );
         } finally {
-            setDeleteBusy(false);
+            setDeleteBusyId(null);
         }
     };
 
@@ -435,15 +435,15 @@ export default function AuthorizedUsersPage() {
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
-                            <div className="text-xs text-slate-600 mb-1">Godown</div>
+                            <Label>Godown</Label>
                             <Select value={godownFilter} onChange={(e) => setGodownFilter(e.target.value)} options={godownOptions} />
                         </div>
                         <div>
-                            <div className="text-xs text-slate-600 mb-1">Role</div>
+                            <Label>Role</Label>
                             <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} options={roleOptions} />
                         </div>
                         <div>
-                            <div className="text-xs text-slate-600 mb-1">Status</div>
+                            <Label>Status</Label>
                             <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={statusOptions} />
                         </div>
                     </div>
@@ -463,11 +463,10 @@ export default function AuthorizedUsersPage() {
                         {loading ? (
                             <div className="text-sm text-slate-600">Loading…</div>
                         ) : (
-                            <div className="table-shell overflow-auto">
-                                <table className="min-w-[720px] text-sm">
+                            <div className="min-h-[260px] overflow-x-auto rounded-xl border border-white/10 bg-slate-950/40">
+                                <table className="min-w-[720px] w-full text-sm">
                                     <thead>
                                         <tr className="border-b border-slate-700">
-                                            <th className="text-left py-3 px-2 text-slate-400 font-medium">Person ID</th>
                                             <th className="text-left py-3 px-2 text-slate-400 font-medium">Name</th>
                                             <th className="text-left py-3 px-2 text-slate-400 font-medium">Role</th>
                                             <th className="text-left py-3 px-2 text-slate-400 font-medium">Godown</th>
@@ -479,15 +478,17 @@ export default function AuthorizedUsersPage() {
                                     <tbody>
                                         {users.length === 0 ? (
                                             <tr>
-                                                <td colSpan={7} className="text-center py-8 text-slate-500">
+                                                <td colSpan={6} className="text-center py-8 text-slate-500">
                                                     No authorized users found
                                                 </td>
                                             </tr>
                                         ) : (
                                             users.map((user) => (
                                                 <tr key={user.person_id} className="border-b border-slate-800 hover:bg-slate-800/50">
-                                                    <td className="py-3 px-2 font-mono text-blue-400">{user.person_id}</td>
-                                                    <td className="py-3 px-2 text-slate-200">{user.name}</td>
+                                                    <td className="py-3 px-2">
+                                                        <div className="font-medium text-slate-200">{user.name}</div>
+                                                        <div className="text-xs text-slate-500">{user.person_id}</div>
+                                                    </td>
                                                     <td className="py-3 px-2 text-slate-300">
                                                         {user.role ? (
                                                             <span className="px-2 py-1 bg-slate-700 rounded text-xs">{user.role}</span>
@@ -504,29 +505,32 @@ export default function AuthorizedUsersPage() {
                                                     </td>
                                                     <td className="py-3 px-2">
                                                         {user.is_active ? (
-                                                            <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs">Active</span>
+                                                            <Badge variant="default">Active</Badge>
                                                         ) : (
-                                                            <span className="px-2 py-1 bg-slate-700 text-slate-400 rounded text-xs">Inactive</span>
+                                                            <Badge variant="outline">Inactive</Badge>
                                                         )}
                                                     </td>
                                                     <td className="py-3 px-2 text-slate-400 text-xs">
                                                         {formatUtcDate(user.created_at)}
                                                     </td>
-                                                    <td className="py-3 px-2 text-right">
-                                                        <div className="flex flex-wrap justify-end gap-2">
-                                                            <button
-                                                                onClick={() => handleEdit(user)}
-                                                                className="text-blue-400 hover:text-blue-300 text-xs"
-                                                            >
-                                                                Edit
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setDeleteTargetId(user.person_id)}
-                                                                className="text-red-400 hover:text-red-300 text-xs"
-                                                            >
+                                                    <td className="py-3 px-2 text-right space-x-2">
+                                                        <button
+                                                            onClick={() => handleEdit(user)}
+                                                            className="text-blue-400 hover:text-blue-300 text-xs"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <ConfirmDeletePopover
+                                                            title="Delete authorized user?"
+                                                            description={`This will remove ${user.name} (${user.person_id}) from the authorized list.`}
+                                                            confirmText="Delete"
+                                                            onConfirm={() => handleDeleteConfirm(user.person_id)}
+                                                            isBusy={deleteBusyId === user.person_id}
+                                                        >
+                                                            <button className="text-red-400 hover:text-red-300 text-xs">
                                                                 Delete
                                                             </button>
-                                                        </div>
+                                                        </ConfirmDeletePopover>
                                                     </td>
                                                 </tr>
                                             ))
@@ -541,24 +545,6 @@ export default function AuthorizedUsersPage() {
                     </div>
                 </CardContent>
             </Card>
-            <ConfirmDialog
-                open={!!deleteTargetId}
-                title="Delete Authorized User"
-                message={
-                    deleteTargetId
-                        ? `Are you sure you want to delete authorized user ${deleteTargetId}? This cannot be undone.`
-                        : undefined
-                }
-                confirmLabel="Delete"
-                cancelLabel="Cancel"
-                confirmVariant="danger"
-                isBusy={deleteBusy}
-                onCancel={() => {
-                    if (deleteBusy) return;
-                    setDeleteTargetId(null);
-                }}
-                onConfirm={handleDeleteConfirm}
-            />
         </div>
     );
 }

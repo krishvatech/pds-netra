@@ -9,8 +9,25 @@ export type AlertCueSettings = {
   quietHoursEnd: string;
 };
 
+export const DEFAULT_ALERT_CUES: AlertCueSettings = {
+  sound: false,
+  visual: true,
+  minSeverity: 'warning',
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '06:00'
+};
+
 const KEY = 'pdsnetra-alert-cues';
 const PROFILE_KEY = 'pdsnetra-alert-profile';
+const CUES_COOKIE = 'pdsnetra_alert_cues';
+const PROFILE_COOKIE = 'pdsnetra_alert_profile';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+function setCookie(name: string, value: string): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}`;
+}
 
 function resolveKey(): string {
   if (typeof window === 'undefined') return KEY;
@@ -29,31 +46,23 @@ export function getAlertProfile(): string {
 export function setAlertProfile(profile: string): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(PROFILE_KEY, profile);
+  setCookie(PROFILE_COOKIE, profile);
+  try {
+    setCookie(CUES_COOKIE, JSON.stringify(getAlertCues()));
+  } catch {
+    // ignore cookie write errors
+  }
   window.dispatchEvent(new CustomEvent('alert-cues-changed', { detail: getAlertCues() }));
 }
 
 export function getAlertCues(): AlertCueSettings {
   if (typeof window === 'undefined') {
-    return {
-      sound: false,
-      visual: true,
-      minSeverity: 'warning',
-      quietHoursEnabled: false,
-      quietHoursStart: '22:00',
-      quietHoursEnd: '06:00'
-    };
+    return DEFAULT_ALERT_CUES;
   }
   try {
     const raw = window.localStorage.getItem(resolveKey());
     if (!raw) {
-      return {
-        sound: false,
-        visual: true,
-        minSeverity: 'warning',
-        quietHoursEnabled: false,
-        quietHoursStart: '22:00',
-        quietHoursEnd: '06:00'
-      };
+      return DEFAULT_ALERT_CUES;
     }
     const parsed = JSON.parse(raw) as Partial<AlertCueSettings>;
     return {
@@ -65,21 +74,28 @@ export function getAlertCues(): AlertCueSettings {
       quietHoursEnd: parsed.quietHoursEnd ?? '06:00'
     };
   } catch {
-    return {
-      sound: false,
-      visual: true,
-      minSeverity: 'warning',
-      quietHoursEnabled: false,
-      quietHoursStart: '22:00',
-      quietHoursEnd: '06:00'
-    };
+    return DEFAULT_ALERT_CUES;
   }
 }
 
 export function setAlertCues(next: AlertCueSettings): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(resolveKey(), JSON.stringify(next));
+  try {
+    setCookie(CUES_COOKIE, JSON.stringify(next));
+  } catch {
+    // ignore cookie write errors
+  }
   window.dispatchEvent(new CustomEvent('alert-cues-changed', { detail: next }));
+}
+
+export function syncAlertCuesCookie(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    setCookie(CUES_COOKIE, JSON.stringify(getAlertCues()));
+  } catch {
+    // ignore cookie write errors
+  }
 }
 
 export function onAlertCuesChange(handler: (next: AlertCueSettings) => void): () => void {

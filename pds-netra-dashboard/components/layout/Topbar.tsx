@@ -1,7 +1,7 @@
 'use client';
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { LogOut, Menu, Settings } from 'lucide-react';
@@ -14,21 +14,37 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { clearSession, getUser } from '@/lib/auth';
 import { logout } from '@/lib/api';
 import type { LoginResponse } from '@/lib/types';
-import { getAlertCues, getAlertProfile, onAlertCuesChange, setAlertCues, setAlertProfile } from '@/lib/alertCues';
-import { getUiPrefs, onUiPrefsChange, setUiPrefs } from '@/lib/uiPrefs';
+import {
+  DEFAULT_ALERT_CUES,
+  getAlertCues,
+  getAlertProfile,
+  onAlertCuesChange,
+  setAlertCues,
+  setAlertProfile,
+  syncAlertCuesCookie
+} from '@/lib/alertCues';
+import { DEFAULT_UI_PREFS, getUiPrefs, onUiPrefsChange, setUiPrefs, syncUiPrefsCookie } from '@/lib/uiPrefs';
 import { dashboardNav } from './Sidebar';
 
-export function Topbar() {
+export function Topbar({
+  user: userProp,
+  initialAlertCues,
+  initialUiPrefs
+}: {
+  user?: LoginResponse['user'] | null;
+  initialAlertCues?: ReturnType<typeof getAlertCues> | null;
+  initialUiPrefs?: ReturnType<typeof getUiPrefs> | null;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const iconBtn =
     'h-11 w-11 rounded-full border border-white/15 bg-white/5 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_16px_rgba(0,0,0,0.25)] hover:bg-white/10 active:bg-white/15 inline-flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20';
   const iconSize = 'h-6 w-6';
   const menuIconSize = 'h-5 w-7';
-  const [user, setUser] = useState<LoginResponse['user'] | null>(null);
-  const [cues, setCues] = useState(() => getAlertCues());
+  const [user, setUser] = useState<LoginResponse['user'] | null>(userProp ?? null);
+  const [cues, setCues] = useState(() => initialAlertCues ?? DEFAULT_ALERT_CUES);
   const [alertPulse, setAlertPulse] = useState(false);
-  const [uiPrefs, setUiPrefsState] = useState(() => getUiPrefs());
+  const [uiPrefs, setUiPrefsState] = useState(() => initialUiPrefs ?? DEFAULT_UI_PREFS);
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuQuery, setMenuQuery] = useState('');
@@ -38,19 +54,39 @@ export function Topbar() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    if (userProp !== undefined) {
+      setUser(userProp);
+      setMounted(true);
+      return;
+    }
     setUser(getUser());
     setMounted(true);
-  }, []);
+  }, [userProp]);
+
+  useLayoutEffect(() => {
+    if (initialAlertCues == null) {
+      setCues(getAlertCues());
+      syncAlertCuesCookie();
+    }
+    if (initialUiPrefs == null) {
+      setUiPrefsState(getUiPrefs());
+      syncUiPrefsCookie();
+    }
+  }, [initialAlertCues, initialUiPrefs]);
 
   useEffect(() => {
-    setCues(getAlertCues());
+    if (initialAlertCues == null) {
+      setCues(getAlertCues());
+    }
     return onAlertCuesChange(setCues);
-  }, []);
+  }, [initialAlertCues]);
 
   useEffect(() => {
-    setUiPrefsState(getUiPrefs());
+    if (initialUiPrefs == null) {
+      setUiPrefsState(getUiPrefs());
+    }
     return onUiPrefsChange(setUiPrefsState);
-  }, []);
+  }, [initialUiPrefs]);
 
   useEffect(() => {
     if (!showSettings) return;

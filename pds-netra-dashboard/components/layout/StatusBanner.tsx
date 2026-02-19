@@ -1,14 +1,21 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getEvents, getHealthSummary } from '@/lib/api';
 
-export function StatusBanner({ onHeightChange }: { onHeightChange?: (height: number) => void }) {
+const DISMISS_COOKIE = 'pds_banner_dismissed';
+const DISMISS_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+function setDismissCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${DISMISS_COOKIE}=1; path=/; max-age=${DISMISS_MAX_AGE}`;
+}
+
+export function StatusBanner({ initialDismissed = false }: { initialDismissed?: boolean }) {
   const [offline, setOffline] = useState(false);
   const [mqttDown, setMqttDown] = useState(false);
   const [eventsStale, setEventsStale] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const bannerRef = useRef<HTMLDivElement | null>(null);
+  const [dismissed, setDismissed] = useState(() => initialDismissed);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -46,26 +53,10 @@ export function StatusBanner({ onHeightChange }: { onHeightChange?: (height: num
 
   const shouldShow = (offline || mqttDown || eventsStale) && !dismissed;
 
-  useLayoutEffect(() => {
-    if (!onHeightChange) return;
-    if (!shouldShow) {
-      onHeightChange(0);
-      return;
-    }
-    const measure = () => {
-      const height = bannerRef.current ? Math.round(bannerRef.current.getBoundingClientRect().height) : 0;
-      onHeightChange(height);
-    };
-    measure();
-    const raf = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(raf);
-  }, [onHeightChange, shouldShow]);
-
   if (!shouldShow) return null;
 
   return (
     <div
-      ref={bannerRef}
       className={`w-full ${offline ? 'bg-rose-600' : 'bg-amber-500/90'}`}
       role="status"
       aria-live="polite"
@@ -81,7 +72,10 @@ export function StatusBanner({ onHeightChange }: { onHeightChange?: (height: num
         <button
           type="button"
           className="shrink-0 rounded-full border border-white/30 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 hover:text-white"
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            setDismissCookie();
+            setDismissed(true);
+          }}
         >
           Dismiss
         </button>

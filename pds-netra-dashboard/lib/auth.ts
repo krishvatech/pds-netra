@@ -2,11 +2,24 @@ import type { LoginResponse } from './types';
 
 const USER_KEY = 'pdsnetra_user';
 const TOKEN_KEY = 'pdsnetra_token';
+const USER_COOKIE = 'pdsnetra_user_snapshot';
+const USER_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+function setUserCookie(user: LoginResponse['user'] | null): void {
+  if (typeof document === 'undefined') return;
+  if (!user) {
+    document.cookie = `${USER_COOKIE}=; path=/; max-age=0`;
+    return;
+  }
+  const encoded = encodeURIComponent(JSON.stringify(user));
+  document.cookie = `${USER_COOKIE}=${encoded}; path=/; max-age=${USER_COOKIE_MAX_AGE}`;
+}
 
 export function setSession(resp: LoginResponse): void {
   if (typeof window === 'undefined') return;
   if (resp?.user) window.localStorage.setItem(USER_KEY, JSON.stringify(resp.user));
   if (resp?.access_token) window.localStorage.setItem(TOKEN_KEY, String(resp.access_token));
+  if (resp?.user) setUserCookie(resp.user);
 }
 
 export function getUser(): LoginResponse['user'] | null {
@@ -30,6 +43,7 @@ export function clearSession(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(USER_KEY);
   window.localStorage.removeItem(TOKEN_KEY);
+  setUserCookie(null);
 }
 
 export async function getSessionUser(): Promise<LoginResponse['user'] | null> {
@@ -47,6 +61,7 @@ export async function getSessionUser(): Promise<LoginResponse['user'] | null> {
     const data = (await resp.json()) as { user?: LoginResponse['user'] | null };
     if (data?.user) {
       window.localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      setUserCookie(data.user);
       return data.user;
     }
     clearSession();

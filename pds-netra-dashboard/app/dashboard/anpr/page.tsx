@@ -64,16 +64,7 @@ export default function AnprDashboardPage() {
   const [cameraId, setCameraId] = useState('');
   const [matchStatus, setMatchStatus] = useState('');
   const [limit, setLimit] = useState(500);
-  const [nowLabel, setNowLabel] = useState(() =>
-    new Intl.DateTimeFormat('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    }).format(new Date())
-  );
+  const [nowLabel, setNowLabel] = useState('');
 
   const [data, setData] = useState<AnprEventsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +182,7 @@ export default function AnprDashboardPage() {
       minute: '2-digit',
       second: '2-digit'
     });
+    setNowLabel(formatter.format(new Date()));
     const t = setInterval(() => {
       setNowLabel(formatter.format(new Date()));
     }, 1000);
@@ -264,7 +256,10 @@ export default function AnprDashboardPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
             <span className="uppercase tracking-[0.18em] text-slate-400">Live</span>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]" />
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-200">
+            <span
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-200"
+              suppressHydrationWarning
+            >
               {nowLabel}
             </span>
           </div>
