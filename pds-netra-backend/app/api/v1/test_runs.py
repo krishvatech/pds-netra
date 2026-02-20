@@ -7,6 +7,7 @@ from __future__ import annotations
 import shutil
 from typing import Optional
 from datetime import datetime
+import os
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Query, Depends
 from fastapi.responses import StreamingResponse
@@ -31,6 +32,27 @@ from ...core.request_limits import enforce_upload_limit, copy_upload_file
 
 router = APIRouter(prefix="/api/v1/test-runs", tags=["test-runs"])
 ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
+
+
+def _stream_poll_interval_sec() -> float:
+    raw = os.getenv("PDS_TEST_STREAM_POLL_SEC", "0.2")
+    try:
+        value = float(raw)
+        if value >= 0.05:
+            return value
+    except Exception:
+        pass
+    return 0.2
+
+
+def _mjpeg_frame(data: bytes) -> bytes:
+    return (
+        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+        + str(len(data)).encode()
+        + b"\r\n\r\n"
+        + data
+        + b"\r\n"
+    )
 
 
 def _is_admin(user: UserContext) -> bool:
@@ -346,20 +368,22 @@ def stream_annotated(
     latest_path = annotated_root / godown_id / run_id / f"{camera_id}_latest.jpg"
 
     def _frame_iter():
+        poll_sec = _stream_poll_interval_sec()
+        last_sig: tuple[int, int] | None = None
         while True:
-            if latest_path.exists():
-                try:
+            try:
+                stat = latest_path.stat()
+                sig = (stat.st_mtime_ns, stat.st_size)
+                if sig != last_sig:
                     data = latest_path.read_bytes()
-                    yield (
-                        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(data)).encode()
-                        + b"\r\n\r\n"
-                        + data
-                        + b"\r\n"
-                    )
-                except Exception:
-                    pass
-            time.sleep(0.2)
+                    if data:
+                        yield _mjpeg_frame(data)
+                    last_sig = sig
+            except FileNotFoundError:
+                pass
+            except Exception:
+                pass
+            time.sleep(poll_sec)
 
     return StreamingResponse(
         _frame_iter(),

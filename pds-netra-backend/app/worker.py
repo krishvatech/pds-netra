@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 def _load_env_file(env_path: Path) -> None:
@@ -58,8 +59,49 @@ def close_stale_incidents(db: Session, *, now: datetime.datetime | None = None) 
     now = now or datetime.datetime.now(datetime.timezone.utc)
     closed = 0
 
-    rows = db.query(Alert).filter(Alert.status.in_(["OPEN", "ACK"])).all()
-    for alert in rows:
+    candidates: dict[str, Alert] = {}
+
+    def _due_filter(cutoff: datetime.datetime):
+        return or_(
+            and_(
+                Alert.last_detection_at.isnot(None),
+                Alert.last_detection_at <= cutoff,
+            ),
+            and_(
+                Alert.last_detection_at.is_(None),
+                Alert.start_time <= cutoff,
+            ),
+        )
+
+    if ALERT_AUTO_CLOSE_DEFAULT_SEC > 0:
+        default_cutoff = now - datetime.timedelta(seconds=ALERT_AUTO_CLOSE_DEFAULT_SEC)
+        default_rows = (
+            db.query(Alert)
+            .filter(
+                Alert.status.in_(["OPEN", "ACK"]),
+                ~Alert.alert_type.in_(tuple(FIRE_ALERT_TYPES)),
+                _due_filter(default_cutoff),
+            )
+            .all()
+        )
+        for alert in default_rows:
+            candidates[str(alert.id)] = alert
+
+    if ALERT_AUTO_CLOSE_FIRE_SEC > 0:
+        fire_cutoff = now - datetime.timedelta(seconds=ALERT_AUTO_CLOSE_FIRE_SEC)
+        fire_rows = (
+            db.query(Alert)
+            .filter(
+                Alert.status.in_(["OPEN", "ACK"]),
+                Alert.alert_type.in_(tuple(FIRE_ALERT_TYPES)),
+                _due_filter(fire_cutoff),
+            )
+            .all()
+        )
+        for alert in fire_rows:
+            candidates[str(alert.id)] = alert
+
+    for alert in candidates.values():
         last_seen = alert.last_detection_at or alert.start_time
         if not last_seen:
             continue

@@ -24,6 +24,7 @@ logger = logging.getLogger("live")
 _stale_log_lock = threading.Lock()
 _stale_log_last: dict[tuple[str, str], float] = {}
 
+
 def _live_root() -> Path:
     return Path(os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[3] / "data" / "live"))).expanduser()
 
@@ -75,6 +76,27 @@ def _is_stale(age_seconds: float | None, threshold_seconds: float) -> bool:
     if age_seconds is None:
         return False
     return age_seconds >= threshold_seconds
+
+
+def _stream_poll_interval_sec() -> float:
+    raw = os.getenv("PDS_LIVE_STREAM_POLL_SEC", "0.2")
+    try:
+        value = float(raw)
+        if value >= 0.05:
+            return value
+    except Exception:
+        pass
+    return 0.2
+
+
+def _mjpeg_frame(data: bytes) -> bytes:
+    return (
+        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+        + str(len(data)).encode()
+        + b"\r\n\r\n"
+        + data
+        + b"\r\n"
+    )
 
 
 def _maybe_log_stale_frame(godown_id: str, camera_id: str, *, age_seconds: float, threshold_seconds: float) -> None:
@@ -133,20 +155,22 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Live feed not available")
 
     def _frame_iter():
+        poll_sec = _stream_poll_interval_sec()
+        last_sig: tuple[int, int] | None = None
         while True:
-            if latest_path.exists():
-                try:
+            try:
+                stat = latest_path.stat()
+                sig = (stat.st_mtime_ns, stat.st_size)
+                if sig != last_sig:
                     data = latest_path.read_bytes()
-                    yield (
-                        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(data)).encode()
-                        + b"\r\n\r\n"
-                        + data
-                        + b"\r\n"
-                    )
-                except Exception:
-                    pass
-            time.sleep(0.2)
+                    if data:
+                        yield _mjpeg_frame(data)
+                    last_sig = sig
+            except FileNotFoundError:
+                pass
+            except Exception:
+                pass
+            time.sleep(poll_sec)
 
     return StreamingResponse(
         _frame_iter(),
