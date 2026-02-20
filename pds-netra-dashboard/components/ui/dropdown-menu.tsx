@@ -61,7 +61,7 @@ export function DropdownMenuTrigger({ asChild = false, children, ...props }: Tri
     return React.cloneElement(child, {
       ...triggerProps,
       ref: (node: HTMLElement | null) => {
-        triggerRef.current = node ?? null;
+        assignRef(triggerRef as React.Ref<HTMLElement>, node);
         assignRef((child as any).ref, node);
       }
     });
