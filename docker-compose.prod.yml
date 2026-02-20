@@ -26,11 +26,9 @@ services:
       - ./deployment/env/backend.env
     depends_on:
       - mosquitto
-      - embedding
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
-      - /data/pds-live:/opt/app/data/live
     command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"]
 
   backend-worker:
@@ -43,29 +41,10 @@ services:
     depends_on:
       - backend
       - mosquitto
-      - embedding
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
-      - /data/pds-live:/opt/app/data/live
     command: ["python", "-m", "app.worker"]
-
-  embedding:
-    build:
-      context: ./pds-netra-edge
-      dockerfile: docker/Dockerfile.embedding.cpu
-    restart: unless-stopped
-    volumes:
-      - ./deployment/data/embedding_models:/root/.insightface/models:rw
-      - ./deployment/data/embedding_config:/opt/app/config
-    command:
-      [
-        "sh",
-        "-c",
-        "mkdir -p /root/.insightface/models && chmod 0777 /root/.insightface/models && uvicorn app.embedding_api:app --host 0.0.0.0 --port 19000",
-      ]
-    environment:
-      INSIGHTFACE_MODEL_NAME: buffalo_l
 
   dashboard:
     build:
