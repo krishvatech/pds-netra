@@ -1,15 +1,4 @@
 services:
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./deployment/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf
-      - ./deployment/mosquitto/pwfile:/mosquitto/config/pwfile
-      - ./deployment/mosquitto/data:/mosquitto/data
-      - ./deployment/mosquitto/log:/mosquitto/log
-
   mailhog:
     image: mailhog/mailhog:latest
     restart: unless-stopped
@@ -25,7 +14,6 @@ services:
     env_file:
       - ./deployment/env/backend.env
     depends_on:
-      - mosquitto
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
@@ -40,7 +28,6 @@ services:
       - ./deployment/env/backend.env
     depends_on:
       - backend
-      - mosquitto
       - mailhog
     volumes:
       - ./deployment/data/backend:/opt/app/data
