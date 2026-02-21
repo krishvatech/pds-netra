@@ -9,6 +9,9 @@
     # Meta webhook must bypass dashboard proxy and hit backend directly.
     reverse_proxy /api/v1/meta/webhook/* backend:8001
 
+    # Auth endpoints go directly to backend to avoid extra proxy hop/header growth.
+    reverse_proxy /api/v1/auth/* backend:8001
+
     # Route all v1 API calls through Next.js API proxy.
     # This allows cookie session -> Authorization header translation.
     reverse_proxy /api/v1/* dashboard:3000

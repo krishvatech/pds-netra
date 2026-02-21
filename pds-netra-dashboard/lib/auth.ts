@@ -5,13 +5,25 @@ const TOKEN_KEY = 'pdsnetra_token';
 const USER_COOKIE = 'pdsnetra_user_snapshot';
 const USER_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
+function sanitizeUserCookiePayload(user: LoginResponse['user']): LoginResponse['user'] {
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    district: user.district ?? null,
+    godown_id: user.godown_id ?? null
+  };
+}
+
 function setUserCookie(user: LoginResponse['user'] | null): void {
   if (typeof document === 'undefined') return;
   if (!user) {
     document.cookie = `${USER_COOKIE}=; path=/; max-age=0`;
     return;
   }
-  const encoded = encodeURIComponent(JSON.stringify(user));
+  const compact = sanitizeUserCookiePayload(user);
+  const encoded = encodeURIComponent(JSON.stringify(compact));
   document.cookie = `${USER_COOKIE}=${encoded}; path=/; max-age=${USER_COOKIE_MAX_AGE}`;
 }
 

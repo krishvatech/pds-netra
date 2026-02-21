@@ -8,6 +8,21 @@ export const dynamic = 'force-dynamic';
 
 type RouteCtx = { params: Promise<{ path?: string[] }> };
 
+function sanitizeUserCookiePayload(raw: any): any | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const role = typeof raw.role === 'string' ? raw.role : undefined;
+  const username = typeof raw.username === 'string' ? raw.username : undefined;
+  if (!role || !username) return null;
+  return {
+    id: typeof raw.id === 'string' ? raw.id : undefined,
+    username,
+    name: typeof raw.name === 'string' ? raw.name : undefined,
+    role,
+    district: typeof raw.district === 'string' || raw.district === null ? raw.district : null,
+    godown_id: typeof raw.godown_id === 'string' || raw.godown_id === null ? raw.godown_id : null
+  };
+}
+
 function backendBaseUrl(req: NextRequest): string {
   const internal = (process.env.BACKEND_INTERNAL_API_BASE_URL || '').trim();
   if (internal) return internal.replace(/\/+$/, '');
@@ -31,7 +46,7 @@ function backendBaseUrl(req: NextRequest): string {
 function decodeUserCookie(raw: string | undefined): any | null {
   if (!raw) return null;
   try {
-    return JSON.parse(decodeURIComponent(raw));
+    return sanitizeUserCookiePayload(JSON.parse(decodeURIComponent(raw)));
   } catch {
     return null;
   }
@@ -65,6 +80,7 @@ function buildForwardHeaders(req: NextRequest): Headers {
 
 function applySessionCookies(resp: NextResponse, token: string, user: any): void {
   const secure = process.env.NODE_ENV === 'production';
+  const compactUser = sanitizeUserCookiePayload(user) ?? {};
   resp.cookies.set({
     name: SESSION_COOKIE,
     value: token,
@@ -76,7 +92,7 @@ function applySessionCookies(resp: NextResponse, token: string, user: any): void
   });
   resp.cookies.set({
     name: USER_COOKIE,
-    value: encodeURIComponent(JSON.stringify(user || {})),
+    value: encodeURIComponent(JSON.stringify(compactUser)),
     httpOnly: false,
     secure,
     sameSite: 'lax',
