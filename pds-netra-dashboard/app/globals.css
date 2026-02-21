@@ -355,11 +355,11 @@ a {
   .table-shell {
     @apply rounded-2xl overflow-x-auto overflow-y-hidden;
     position: relative;
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    background: rgba(11, 19, 36, 0.85);
     box-shadow:
-      0 24px 48px -36px rgba(2, 6, 23, 0.18),
-      inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+      0 24px 48px -36px rgba(2, 6, 23, 0.5),
+      inset 0 0 0 1px rgba(148, 163, 184, 0.06);
     backdrop-filter: blur(14px);
   }
 
@@ -400,41 +400,41 @@ a {
   }
 
   .table-shell table {
-    color: #0f172a;
+    color: #e2e8f0;
   }
 
   .table-shell thead {
-    color: #0f172a;
-    background: #f1f5f9;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, 0.92);
   }
 
   .table-shell thead th {
     font-size: 11px;
     letter-spacing: 0.28em;
     text-transform: uppercase;
-    color: rgba(15, 23, 42, 0.7);
+    color: rgba(148, 163, 184, 0.75);
     padding-top: 14px;
     padding-bottom: 14px;
   }
 
   .table-shell tbody tr {
-    border-top: 1px solid rgba(148, 163, 184, 0.2);
-    background: #ffffff;
+    border-top: 1px solid rgba(148, 163, 184, 0.08);
+    background: transparent;
     transition: background 150ms ease, transform 150ms ease;
   }
 
   .table-shell tbody tr:nth-child(even) {
-    background: #f8fafc;
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .table-shell tbody tr:hover {
-    background: rgba(14, 165, 233, 0.08);
+    background: rgba(14, 165, 233, 0.06);
   }
 
   .table-shell tbody td {
     padding-top: 14px;
     padding-bottom: 14px;
-    color: rgba(15, 23, 42, 0.95);
+    color: rgba(226, 232, 240, 0.9);
   }
 
   .stagger > * {
@@ -459,23 +459,23 @@ a {
 
   .sev-critical {
     background: rgba(244, 63, 94, 0.15);
-    color: #9f1239;
-    border: 1px solid rgba(244, 63, 94, 0.25);
-    box-shadow: 0 0 18px rgba(244, 63, 94, 0.25);
+    color: #fda4af;
+    border: 1px solid rgba(244, 63, 94, 0.35);
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
   }
 
   .sev-warning {
-    background: rgba(245, 158, 11, 0.18);
-    color: #92400e;
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    box-shadow: 0 0 18px rgba(245, 158, 11, 0.25);
+    background: rgba(245, 158, 11, 0.15);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
   }
 
   .sev-info {
-    background: rgba(14, 165, 233, 0.15);
-    color: #075985;
-    border: 1px solid rgba(14, 165, 233, 0.25);
-    box-shadow: 0 0 18px rgba(14, 165, 233, 0.2);
+    background: rgba(14, 165, 233, 0.12);
+    color: #7dd3fc;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.15);
   }
 
   .pulse-dot {

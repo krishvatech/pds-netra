@@ -203,6 +203,7 @@ export default function LiveCamerasPage() {
   const [newCameraRtsp, setNewCameraRtsp] = useState('');
   const [addCameraError, setAddCameraError] = useState<string | null>(null);
   const [addCameraLoading, setAddCameraLoading] = useState(false);
+  const [showAddCameraDialog, setShowAddCameraDialog] = useState(false);
   const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editRole, setEditRole] = useState('');
@@ -470,6 +471,7 @@ export default function LiveCamerasPage() {
       setNewCameraLabel('');
       setNewCameraRole('');
       setNewCameraRtsp('');
+      setShowAddCameraDialog(false);
     } catch (_e) {
       setAddCameraError('Unable to add camera; verify details and try again.');
     } finally {
@@ -555,99 +557,46 @@ export default function LiveCamerasPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-5 pt-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
+          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">Live Cameras</div>
+          <div className="text-sm text-slate-300">Annotated live frames from edge.</div>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <div className="intel-banner">Streaming {selectedGodown || 'selected godown'}</div>
           <div className="hud-pill">
             <span className="pulse-dot pulse-info" />
             Live stream
           </div>
-          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">Live Cameras</div>
-          <div className="text-sm text-slate-300">Annotated live frames from edge.</div>
         </div>
-        <div className="intel-banner">Streaming {selectedGodown || 'selected godown'}</div>
       </div>
-
-      <Card className="animate-fade-up hud-card">
-        <CardHeader>
-          <div className="text-lg font-semibold font-display">Stream controls</div>
-          <div className="text-sm text-slate-600">Select godown, refresh streams, and add cameras.</div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && <p className={inlineErrorClass}>{error}</p>}
-          {addCameraError && <p className={inlineErrorClass}>{addCameraError}</p>}
-          {editError && <p className={inlineErrorClass}>{editError}</p>}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-sm text-slate-600">
-              Godown
-              <div className="mt-2">
-                <Select
-                  value={selectedGodown}
-                  onChange={(e) => setSelectedGodown(e.target.value)}
-                  options={godowns.map((g, idx) => ({
-                    label: g.name ?? g.godown_id ?? `Godown ${idx + 1}`,
-                    value: g.godown_id
-                  }))}
-                />
-              </div>
-            </label>
-            <div className="flex items-end">
-              <Button className="btn-refresh" variant="outline" onClick={() => setStreamNonce((n) => n + 1)}>
-                Refresh stream
-              </Button>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <label className="text-sm text-slate-600">
-              Camera ID
-              <input
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={newCameraId}
-                onChange={(e) => setNewCameraId(e.target.value)}
-                placeholder="CAM_GATE_2"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              Label
-              <input
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={newCameraLabel}
-                onChange={(e) => setNewCameraLabel(e.target.value)}
-                placeholder="Gate 2"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              Role
-              <input
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={newCameraRole}
-                onChange={(e) => setNewCameraRole(e.target.value)}
-                placeholder="GATE"
-              />
-            </label>
-            <label className="text-sm text-slate-600">
-              RTSP URL
-              <input
-                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
-                value={newCameraRtsp}
-                onChange={(e) => setNewCameraRtsp(e.target.value)}
-                placeholder="rtsp://user:pass@ip/stream"
-              />
-            </label>
-          </div>
-          <div className="flex items-center">
-            <Button onClick={handleAddCamera} disabled={addCameraLoading}>
-              {addCameraLoading ? 'Adding…' : 'Add camera'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card className="hud-card">
         <CardHeader>
-          <div className="text-lg font-semibold font-display">Live annotated feeds</div>
-          <div className="text-sm text-slate-600">
-            Live view for {selectedGodown || 'selected godown'} cameras.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-semibold font-display">Live annotated feeds</div>
+              <div className="text-sm text-slate-600">
+                Live view for {selectedGodown || 'selected godown'} cameras.
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedGodown}
+                onChange={(e) => setSelectedGodown(e.target.value)}
+                options={godowns.map((g, idx) => ({
+                  label: g.name ?? g.godown_id ?? `Godown ${idx + 1}`,
+                  value: g.godown_id
+                }))}
+              />
+              <Button className="btn-refresh" variant="outline" onClick={() => setStreamNonce((n) => n + 1)}>
+                Refresh stream
+              </Button>
+              <Button onClick={() => { setAddCameraError(null); setShowAddCameraDialog(true); }}>
+                + Add camera
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -689,17 +638,18 @@ export default function LiveCamerasPage() {
                         </span>
                         {!isEditing && (
                           <>
-                            <Button
-                              variant="outline"
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/20 bg-white/10 transition hover:bg-white/20 hover:border-white/40"
                               onClick={() => handleStartEdit(camera.camera_id)}
                               aria-label={`Edit ${camera.camera_id}`}
                               title="Edit"
                             >
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#ffffff" strokeWidth="2">
                                 <path d="M12 20h9" />
                                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
                               </svg>
-                            </Button>
+                            </button>
                             <ConfirmDeletePopover
                               title="Delete Camera"
                               description={`Are you sure you want to delete camera ${camera.camera_id}? This cannot be undone.`}
@@ -707,19 +657,20 @@ export default function LiveCamerasPage() {
                               onConfirm={() => handleDeleteCamera(camera.camera_id)}
                               isBusy={editLoading}
                             >
-                              <Button
-                                variant="outline"
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-rose-500/40 bg-rose-500/10 transition hover:bg-rose-500/25 hover:border-rose-400/60"
                                 aria-label={`Delete ${camera.camera_id}`}
                                 title="Delete"
                               >
-                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#fda4af" strokeWidth="2">
                                   <path d="M3 6h18" />
                                   <path d="M8 6V4h8v2" />
                                   <path d="M10 11v6" />
                                   <path d="M14 11v6" />
                                   <path d="M6 6l1 14h10l1-14" />
                                 </svg>
-                              </Button>
+                              </button>
                             </ConfirmDeletePopover>
                           </>
                         )}
@@ -824,15 +775,15 @@ export default function LiveCamerasPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="hud-card">
         <CardHeader>
-          <div className="text-lg font-semibold font-display">Zone editor</div>
-          <div className="text-sm text-slate-600">Click to add polygon points, then save.</div>
+          <div className="text-lg font-semibold font-display text-slate-100">Zone editor</div>
+          <div className="text-sm text-slate-400">Click to add polygon points, then save.</div>
         </CardHeader>
         <CardContent className="space-y-4">
           {zonesError && <p className={inlineErrorClass}>{zonesError}</p>}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-sm text-slate-600">
+            <label className="text-sm text-slate-400">
               Camera
               <div className="mt-2">
                 <Select
@@ -845,7 +796,7 @@ export default function LiveCamerasPage() {
                 />
               </div>
             </label>
-            <label className="text-sm text-slate-600">
+            <label className="text-sm text-slate-400">
               Zone name
               <input
                 className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
@@ -855,10 +806,10 @@ export default function LiveCamerasPage() {
               />
             </label>
             <div className="flex items-end gap-2">
-              <Button variant="outline" onClick={() => setZonePoints((p) => p.slice(0, -1))}>
+              <Button variant="outline" className="text-slate-800 border-slate-300" onClick={() => setZonePoints((p) => p.slice(0, -1))}>
                 Undo
               </Button>
-              <Button variant="outline" onClick={() => setZonePoints([])}>
+              <Button variant="outline" className="text-slate-800 border-slate-300" onClick={() => setZonePoints([])}>
                 Clear
               </Button>
               <Button onClick={handleSaveZone} disabled={zonesLoading}>
@@ -870,14 +821,14 @@ export default function LiveCamerasPage() {
           {zones.length > 0 ? (
             <div className="flex flex-wrap gap-2 text-xs">
               {zones.map((zone) => (
-                <div key={zone.id} className="flex items-center gap-2 rounded-full border border-white/30 bg-white/60 px-3 py-1">
-                  <button type="button" onClick={() => loadZone(zone.id)} className="text-slate-700">
+                <div key={zone.id} className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1">
+                  <button type="button" onClick={() => loadZone(zone.id)} className="text-slate-200 hover:text-white">
                     {zone.id}
                   </button>
                   <button
                     type="button"
                     onClick={() => deleteZone(zone.id)}
-                    className="text-red-500 hover:text-red-600"
+                    className="text-rose-400 hover:text-rose-300"
                   >
                     Delete
                   </button>
@@ -888,7 +839,7 @@ export default function LiveCamerasPage() {
             <div className="text-xs text-slate-500">No zones saved yet.</div>
           )}
 
-          <div className="relative w-full overflow-hidden rounded-2xl border border-white/40 bg-black/80">
+          <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/80">
             {zoneImageUrl ? (
               <div
                 className="relative w-full"
@@ -898,7 +849,7 @@ export default function LiveCamerasPage() {
                 onMouseLeave={() => setDragIndex(null)}
               >
                 {zoneImageError ? (
-                  <div className="text-sm text-slate-600 p-4">No live frame yet. Try Refresh frame.</div>
+                  <div className="text-sm text-slate-400 p-4">No live frame yet. Try Refresh frame.</div>
                 ) : (
                   <AuthedLiveImage
                     requestUrl={zoneImageUrl}
@@ -944,11 +895,11 @@ export default function LiveCamerasPage() {
                 </svg>
               </div>
             ) : (
-              <div className="text-sm text-slate-600 p-4">Live frame not available for this camera.</div>
+              <div className="text-sm text-slate-400 p-4">Live frame not available for this camera.</div>
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-slate-600">
+          <div className="flex items-center gap-3 text-sm text-slate-400">
             <Button className="btn-refresh" variant="outline" onClick={() => setZoneImageNonce((n) => n + 1)}>
               Refresh frame
             </Button>
@@ -956,6 +907,79 @@ export default function LiveCamerasPage() {
           </div>
         </CardContent>
       </Card>
+
+      {showAddCameraDialog && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddCameraDialog(false); }}
+        >
+          <div className="hud-card w-full max-w-lg rounded-2xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-lg font-semibold font-display">Add camera</div>
+                <div className="text-sm text-slate-500">Register a new camera to the selected godown.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddCameraDialog(false)}
+                className="rounded-full p-1 text-slate-400 hover:text-slate-200 transition"
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {addCameraError && <p className={inlineErrorClass}>{addCameraError}</p>}
+            <div className="grid grid-cols-1 gap-3">
+              <label className="text-sm text-slate-600">
+                Camera ID
+                <input
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-sm input-field"
+                  value={newCameraId}
+                  onChange={(e) => setNewCameraId(e.target.value)}
+                  placeholder="CAM_GATE_2"
+                />
+              </label>
+              <label className="text-sm text-slate-600">
+                Label
+                <input
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-sm input-field"
+                  value={newCameraLabel}
+                  onChange={(e) => setNewCameraLabel(e.target.value)}
+                  placeholder="Gate 2"
+                />
+              </label>
+              <label className="text-sm text-slate-600">
+                Role
+                <input
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-sm input-field"
+                  value={newCameraRole}
+                  onChange={(e) => setNewCameraRole(e.target.value)}
+                  placeholder="GATE"
+                />
+              </label>
+              <label className="text-sm text-slate-600">
+                RTSP URL
+                <input
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-sm input-field"
+                  value={newCameraRtsp}
+                  onChange={(e) => setNewCameraRtsp(e.target.value)}
+                  placeholder="rtsp://user:pass@ip/stream"
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setShowAddCameraDialog(false)} disabled={addCameraLoading}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddCamera} disabled={addCameraLoading}>
+                {addCameraLoading ? 'Adding…' : 'Set'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {fullscreenCameraId
         ? createPortal(
@@ -982,17 +1006,17 @@ export default function LiveCamerasPage() {
                 }
               />
             </div>
-              <div className="absolute left-6 top-14 z-10 rounded-md border border-white/30 bg-black/60 px-2 py-1 text-xs text-slate-200">
-                <div className={frameAgeClass(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}>
-                  {formatFrameAge(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}
-                </div>
-                <div>{formatCapturedTime(cameraFrameMeta[fullscreenCameraId]?.capturedAtUtc)}</div>
+            <div className="absolute left-6 top-14 z-10 rounded-md border border-white/30 bg-black/60 px-2 py-1 text-xs text-slate-200">
+              <div className={frameAgeClass(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}>
+                {formatFrameAge(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}
               </div>
-              {isFrameStale(cameraFrameMeta[fullscreenCameraId]?.ageSeconds) ? (
-                <div className="absolute left-6 top-28 z-10 rounded-md border border-rose-300/80 bg-rose-600/90 px-2 py-1 text-xs font-semibold tracking-wide text-white">
-                  STALE
-                </div>
-              ) : null}
+              <div>{formatCapturedTime(cameraFrameMeta[fullscreenCameraId]?.capturedAtUtc)}</div>
+            </div>
+            {isFrameStale(cameraFrameMeta[fullscreenCameraId]?.ageSeconds) ? (
+              <div className="absolute left-6 top-28 z-10 rounded-md border border-rose-300/80 bg-rose-600/90 px-2 py-1 text-xs font-semibold tracking-wide text-white">
+                STALE
+              </div>
+            ) : null}
           </div>,
           document.body
         )

@@ -309,9 +309,9 @@ export function Topbar({
 
   return (
     <header className="relative z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur">
-      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="relative mb-1 flex items-center gap-2 md:hidden">
+      <div className="flex w-full min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 w-full lg:w-auto">
+          <div className="relative mb-1 flex items-center gap-2 lg:hidden">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -349,22 +349,22 @@ export function Topbar({
               </Button>
             </div>
           </div>
-          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 md:block sm:text-sm">Control Deck</div>
-          <div className="hidden truncate text-lg font-semibold font-display tracking-tight md:block sm:text-xl">PDS Netra Dashboard</div>
+          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 lg:block sm:text-sm">Control Deck</div>
+          <div className="hidden truncate text-lg font-semibold font-display tracking-tight lg:block sm:text-xl">PDS Netra Dashboard</div>
           <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
             Live perimeter
           </div>
-        {quietActive && (
-          <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
-            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-            Quiet hours active
-          </div>
-        )}
-      </div>
-      <div className="hidden md:flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
-        <div className="hidden lg:flex items-center gap-2">
-          <Button
+          {quietActive && (
+            <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              Quiet hours active
+            </div>
+          )}
+        </div>
+        <div className="hidden lg:flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
+          <div className="hidden lg:flex items-center gap-2">
+            <Button
               variant="ghost"
               className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
               onClick={toggleVisual}
@@ -403,16 +403,18 @@ export function Topbar({
           </Button>
           {user ? (
             <>
-              <div className="hidden md:block text-sm text-slate-200">
+              <div className="hidden lg:block text-sm text-slate-200">
                 {user.name ?? user.username}
               </div>
-              {mounted && <Badge variant="outline" className="hidden md:inline-flex">Profile: {profile}</Badge>}
+              {mounted && <Badge variant="outline" className="hidden lg:inline-flex">Profile: {profile}</Badge>}
               <Badge variant="outline" className="hidden sm:inline-flex">{user.role}</Badge>
               <Button
                 variant="outline"
-                className="text-xs sm:text-sm"
+                className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.25)] transition hover:border-rose-400 hover:bg-rose-500/20 hover:text-rose-200 hover:shadow-[0_0_14px_rgba(244,63,94,0.4)] active:scale-95 sm:px-4 sm:text-xs"
                 onClick={handleLogout}
+                aria-label="Logout"
               >
+                <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 Logout
               </Button>
             </>
@@ -563,20 +565,18 @@ export function Topbar({
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${
-                    active
-                      ? 'border border-white/20 bg-white/10 text-white shadow-sm'
-                      : 'text-slate-300 hover:bg-white/5'
-                  }`}
+                  className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition ${active
+                    ? 'border border-white/20 bg-white/10 text-white shadow-sm'
+                    : 'text-slate-300 hover:bg-white/5'
+                    }`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <item.icon active={active} />
                     <span className="truncate">{item.label}</span>
                   </span>
                   <span
-                    className={`h-2 w-2 rounded-full ${
-                      active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600 group-hover:bg-slate-400'
-                    }`}
+                    className={`h-2 w-2 rounded-full ${active ? 'bg-gradient-to-r from-amber-400 to-rose-500' : 'bg-slate-600 group-hover:bg-slate-400'
+                      }`}
                   />
                 </Link>
               );

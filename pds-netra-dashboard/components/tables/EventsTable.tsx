@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { Table, THead, TBody, TR, TH, TD } from '../ui/table';
-import { Badge } from '../ui/badge';
 import type { EventItem } from '@/lib/types';
 import { formatUtc, humanEventType, severityBadgeClass } from '@/lib/formatters';
 export function EventsTable({ events, showGodown = false }: { events: EventItem[]; showGodown?: boolean }) {
@@ -28,7 +27,7 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
         if (internal && parsed.pathname.startsWith('/media/')) {
           return `${apiBase}${parsed.pathname}${parsed.search}`;
         }
-      } catch {}
+      } catch { }
       return url;
     }
     if (url.startsWith('/media/')) return `${apiBase}${url}`;
@@ -80,7 +79,9 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
                 ) : null}
               </TD>
               <TD>
-                <Badge className={severityBadgeClass(e.severity)}>{e.severity.toUpperCase()}</Badge>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.12em] ${severityBadgeClass(e.severity)}`}>
+                  {e.severity.toUpperCase()}
+                </span>
               </TD>
               {showGodown ? <TD>{e.godown_id}</TD> : null}
               <TD>{e.camera_id}</TD>

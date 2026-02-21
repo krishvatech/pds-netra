@@ -1,11 +1,12 @@
 'use client';
 
+import { useEffect } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
 import { LiveRail, MobileRail } from '@/components/layout/LiveRail';
 import { StatusBanner } from '@/components/layout/StatusBanner';
-import { DEFAULT_UI_PREFS, type UiPrefs } from '@/lib/uiPrefs';
+import { DEFAULT_UI_PREFS, getUiPrefs, setUiPrefs, type UiPrefs } from '@/lib/uiPrefs';
 import type { AlertCueSettings } from '@/lib/alertCues';
 import type { LoginResponse } from '@/lib/types';
 
@@ -28,6 +29,26 @@ export function AppShell({
   initialAlertCues,
   initialUiPrefs
 }: AppShellProps) {
+  useEffect(() => {
+    const checkWidth = () => {
+      if (window.innerWidth < 1024 && getUiPrefs().railOpen) {
+        setUiPrefs({ railOpen: false });
+      }
+    };
+    checkWidth();
+
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(checkWidth, 100);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      clearTimeout(debounceTimer);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   return (
     <div className="app-shell min-h-screen grid grid-rows-[auto_minmax(0,1fr)]">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
@@ -49,13 +70,12 @@ export function AppShell({
       </header>
 
       <div className="relative z-10 min-h-0 w-full overflow-hidden">
-        <div className="grid min-h-0 w-full grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="grid min-h-0 w-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
           <Sidebar user={initialUser} />
           <div className="min-h-0 min-w-0">
             <div
-              className={`grid min-h-0 w-full ${
-                layoutPrefs.railOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'
-              }`}
+              className={`grid min-h-0 w-full ${layoutPrefs.railOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'
+                }`}
             >
               <main
                 ref={contentRef}

@@ -70,15 +70,15 @@ export function humanAlertType(alertType: string): string {
     FIRE_DETECTED: 'Fire Detected',
     ANPR_PLATE_DETECTED: 'ANPR Plate Detected',
     BLACKLIST_PERSON_MATCH: 'Blacklisted Person Detected'
-    
+
   };
   return map[alertType] ?? alertType.replaceAll('_', ' ');
 }
 
 export function severityBadge(sev: Severity): { label: string; className: string } {
-  if (sev === 'critical') return { label: 'Critical', className: 'bg-red-100 text-red-800 border-red-200' };
-  if (sev === 'warning') return { label: 'Warning', className: 'bg-amber-100 text-amber-800 border-amber-200' };
-  return { label: 'Info', className: 'bg-slate-100 text-slate-800 border-slate-200' };
+  if (sev === 'critical') return { label: 'Critical', className: 'bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-[0_0_6px_rgba(244,63,94,0.25)]' };
+  if (sev === 'warning') return { label: 'Warning', className: 'bg-amber-400/15 text-amber-300 border-amber-400/40 shadow-[0_0_6px_rgba(251,191,36,0.2)]' };
+  return { label: 'Info', className: 'bg-slate-700/60 text-slate-300 border-slate-600/50' };
 }
 
 export function severityBadgeClass(sev: Severity): string {
