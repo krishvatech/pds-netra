@@ -20,10 +20,12 @@ from sqlalchemy import inspect, text
 
 from .core.db import engine, SessionLocal
 from .models import Base
+from .models.godown import Camera
 from .models.dispatch_issue import DispatchIssue
 from .services.seed import seed_godowns, seed_cameras_from_edge_config
 from .services.rule_seed import seed_rules
 from .services.auth_seed import seed_admin_user
+from .services.live_frames import enforce_single_live_frame
 from .services.mqtt_consumer import MQTTConsumer
 from .services.dispatch_watchdog import run_dispatch_watchdog
 from .services.dispatch_plan_sync import run_dispatch_plan_sync
@@ -66,6 +68,27 @@ def create_app() -> FastAPI:
         annotated_root.mkdir(parents=True, exist_ok=True)
         live_root.mkdir(parents=True, exist_ok=True)
         watchlist_root.mkdir(parents=True, exist_ok=True)
+        if os.getenv("PDS_LIVE_STARTUP_CLEANUP", "true").lower() in {"1", "true", "yes"}:
+            try:
+                cleaned = 0
+                with SessionLocal() as db:
+                    camera_rows = (
+                        db.query(Camera.godown_id, Camera.id)
+                        .filter(Camera.is_active.is_(True))
+                        .all()
+                    )
+                for godown_id, camera_id in camera_rows:
+                    enforce_single_live_frame(
+                        live_root,
+                        str(godown_id),
+                        str(camera_id),
+                        cleanup_every_sec=0.0,
+                    )
+                    cleaned += 1
+                logger.info("Live frame startup cleanup checked cameras=%s", cleaned)
+            except Exception as exc:
+                # Cleanup is best-effort; startup must not fail because of this.
+                log_exception(logger, "Live frame startup cleanup failed", exc=exc)
         if os.getenv("AUTO_CREATE_DB", "true").lower() in {"1", "true", "yes"}:
             try:
                 Base.metadata.create_all(bind=engine)
