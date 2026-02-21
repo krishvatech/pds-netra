@@ -6,21 +6,31 @@
     header @latest_live_jpg Pragma "no-cache"
     header @latest_live_jpg Expires "0"
 
-    # Meta webhook must bypass dashboard proxy and hit backend directly.
-    reverse_proxy /api/v1/meta/webhook/* backend:8001
+    # Use ordered handles so auth/webhook endpoints are guaranteed
+    # to bypass dashboard and hit backend directly.
+    handle /api/v1/meta/webhook/* {
+        reverse_proxy backend:8001
+    }
 
-    # Auth endpoints go directly to backend to avoid extra proxy hop/header growth.
-    reverse_proxy /api/v1/auth/* backend:8001
+    handle /api/v1/auth/* {
+        reverse_proxy backend:8001
+    }
 
-    # Route all v1 API calls through Next.js API proxy.
+    # Route all other v1 API calls through Next.js API proxy.
     # This allows cookie session -> Authorization header translation.
-    reverse_proxy /api/v1/* dashboard:3000
+    handle /api/v1/* {
+        reverse_proxy dashboard:3000
+    }
 
-    # Media served by backend
-    reverse_proxy /media/* backend:8001
+    # Media served by backend.
+    handle /media/* {
+        reverse_proxy backend:8001
+    }
 
-    # Everything else to dashboard (Next.js)
-    reverse_proxy /* dashboard:3000
+    # Everything else to dashboard (Next.js).
+    handle {
+        reverse_proxy dashboard:3000
+    }
 
     tls {$CADDY_EMAIL}
 }
