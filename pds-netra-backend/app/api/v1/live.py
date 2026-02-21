@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from ...core.pagination import clamp_page_size
 from ...core.db import get_db
 from ...models.godown import Camera
-from ...services.live_frames import enforce_single_live_frame
+from ...services.live_frames import enforce_single_live_frame, live_latest_path
 from sqlalchemy.orm import Session
 
 
@@ -28,6 +28,17 @@ _stale_log_last: dict[tuple[str, str], float] = {}
 
 def _live_root() -> Path:
     return Path(os.getenv("PDS_LIVE_DIR", str(Path(__file__).resolve().parents[3] / "data" / "live"))).expanduser()
+
+
+def _latest_path(live_root: Path, godown_id: str, camera_id: str) -> Path:
+    """
+    Fast-path live frame lookup.
+    Cleanup/enforcement stays opt-in to avoid extra filesystem scans on each request.
+    """
+    latest = live_latest_path(live_root, godown_id, camera_id)
+    if os.getenv("PDS_LIVE_ENFORCE_ON_READ", "false").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        return enforce_single_live_frame(live_root, godown_id, camera_id)
+    return latest
 
 
 def _frame_meta(frame_path: Path) -> dict:
@@ -151,7 +162,7 @@ def list_live_cameras(
 @router.get("/{godown_id}/{camera_id}")
 def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
     live_root = _live_root()
-    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
+    latest_path = _latest_path(live_root, godown_id, camera_id)
     if not latest_path.parent.exists():
         raise HTTPException(status_code=404, detail="Live feed not available")
 
@@ -183,7 +194,7 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
 @router.get("/frame/{godown_id}/{camera_id}")
 def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
     live_root = _live_root()
-    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
+    latest_path = _latest_path(live_root, godown_id, camera_id)
     if not latest_path.exists():
         raise HTTPException(status_code=404, detail="Live frame not available")
     meta = _frame_meta(latest_path)
@@ -217,7 +228,7 @@ def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
 @router.get("/frame-meta/{godown_id}/{camera_id}")
 def latest_frame_meta(godown_id: str, camera_id: str) -> dict:
     live_root = _live_root()
-    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
+    latest_path = _latest_path(live_root, godown_id, camera_id)
     meta = _frame_meta(latest_path)
     threshold_seconds = _stale_threshold_sec()
     stale = _is_stale(meta["age_seconds"], threshold_seconds)

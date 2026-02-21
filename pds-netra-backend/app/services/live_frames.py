@@ -43,6 +43,13 @@ def _camera_latest_path(live_root: Path, godown_id: str, camera_id: str) -> Path
     return live_root / godown_id / f"{camera_id}_latest.jpg"
 
 
+def live_latest_path(live_root: Path, godown_id: str, camera_id: str) -> Path:
+    """
+    Public helper for the canonical single-frame live image path.
+    """
+    return _camera_latest_path(live_root, godown_id, camera_id)
+
+
 def _is_image_candidate(path: Path) -> bool:
     name = path.name.lower()
     return name.endswith(_IMAGE_SUFFIXES) or name.endswith(".jpg.tmp")

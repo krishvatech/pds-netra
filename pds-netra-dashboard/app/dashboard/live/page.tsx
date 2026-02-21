@@ -18,6 +18,7 @@ type AuthedLiveImageProps = {
   alt: string;
   className?: string;
   pollMs?: number;
+  hiddenPollMs?: number;
   refreshToken?: number;
   onStatusChange?: (ok: boolean) => void;
   onLoad?: (evt: SyntheticEvent<HTMLImageElement, Event>) => void;
@@ -44,6 +45,7 @@ function AuthedLiveImage({
   alt,
   className,
   pollMs = 1000,
+  hiddenPollMs = 5000,
   refreshToken = 0,
   onStatusChange,
   onLoad,
@@ -71,11 +73,17 @@ function AuthedLiveImage({
         return;
       }
 
+      const headers = buildLiveHeaders();
       while (!cancelled) {
+        if (typeof document !== 'undefined' && document.hidden) {
+          if (hiddenPollMs <= 0) return;
+          await sleep(Math.max(hiddenPollMs, pollMs || 0));
+          continue;
+        }
         try {
           activeController = new AbortController();
           const resp = await fetch(appendCacheBust(requestUrl), {
-            headers: buildLiveHeaders(),
+            headers,
             cache: 'no-store',
             signal: activeController.signal
           });
@@ -126,7 +134,7 @@ function AuthedLiveImage({
       cancelled = true;
       if (activeController) activeController.abort();
     };
-  }, [requestUrl, pollMs, refreshToken]);
+  }, [requestUrl, pollMs, hiddenPollMs, refreshToken]);
 
   if (!blobUrl) return null;
   return <img src={blobUrl} alt={alt} className={className} onLoad={onLoad} />;
@@ -273,7 +281,7 @@ export default function LiveCamerasPage() {
       }
     };
     fetchEvents();
-    const timer = window.setInterval(fetchEvents, 5000);
+    const timer = window.setInterval(fetchEvents, 10000);
     return () => {
       mounted = false;
       window.clearInterval(timer);
@@ -346,7 +354,7 @@ export default function LiveCamerasPage() {
       }
     };
     fetchLive();
-    const timer = window.setInterval(fetchLive, 5000);
+    const timer = window.setInterval(fetchLive, 10000);
     return () => {
       mounted = false;
       window.clearInterval(timer);
@@ -773,7 +781,8 @@ export default function LiveCamerasPage() {
                           requestUrl={camUrl}
                           alt={`Live ${camera.camera_id}`}
                           className="h-full w-full object-contain"
-                          pollMs={1000}
+                          pollMs={fullscreenCameraId === camera.camera_id ? 0 : 1500}
+                          hiddenPollMs={8000}
                           refreshToken={streamNonce}
                           onStatusChange={(ok) =>
                             setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
@@ -962,7 +971,8 @@ export default function LiveCamerasPage() {
                 requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}`}
                 alt={`Live ${fullscreenCameraId}`}
                 className="max-h-full w-auto max-w-full object-contain"
-                pollMs={1000}
+                pollMs={1500}
+                hiddenPollMs={8000}
                 refreshToken={streamNonce}
                 onFrameMeta={(meta) =>
                   setCameraFrameMeta((prev) => ({

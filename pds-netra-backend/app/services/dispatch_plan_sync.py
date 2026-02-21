@@ -100,8 +100,8 @@ def run_dispatch_plan_sync(stop_event: threading.Event) -> None:
         plan_path = Path(path_env).expanduser()
     else:
         plan_path = Path(__file__).resolve().parents[3] / "pds-netra-edge" / "data" / "dispatch_plan.json"
-    interval_sec = int(os.getenv("DISPATCH_PLAN_SYNC_INTERVAL_SEC", "30"))
-    interval_sec = max(5, interval_sec)
+    interval_sec = int(os.getenv("DISPATCH_PLAN_SYNC_INTERVAL_SEC", "120"))
+    interval_sec = max(30, interval_sec)
     logger.info("Dispatch plan sync started (path=%s interval=%ss)", plan_path, interval_sec)
     last_mtime = 0.0
     while not stop_event.is_set():

@@ -28,10 +28,12 @@ def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
 
 
 def _find_first_movement(db: Session, issue: DispatchIssue) -> Optional[Event]:
+    deadline = _ensure_utc(issue.issue_time_utc) + datetime.timedelta(hours=24)
     query = db.query(Event).filter(
         Event.godown_id == issue.godown_id,
         Event.event_type == "BAG_MOVEMENT",
         Event.timestamp_utc >= issue.issue_time_utc,
+        Event.timestamp_utc <= deadline,
     )
     if issue.camera_id:
         query = query.filter(Event.camera_id == issue.camera_id)
@@ -47,8 +49,9 @@ def _find_first_movement(db: Session, issue: DispatchIssue) -> Optional[Event]:
 
 def run_dispatch_watchdog(stop_event: threading.Event) -> None:
     logger = logging.getLogger("DispatchWatchdog")
-    interval_sec = int(os.getenv("DISPATCH_WATCHDOG_INTERVAL_SEC", "30"))
-    interval_sec = max(5, interval_sec)
+    # 24h SLA check does not need sub-minute polling by default.
+    interval_sec = int(os.getenv("DISPATCH_WATCHDOG_INTERVAL_SEC", "180"))
+    interval_sec = max(30, interval_sec)
     logger.info("Dispatch watchdog started (interval=%ss)", interval_sec)
     while not stop_event.is_set():
         try:
@@ -76,8 +79,6 @@ def _process_issues(db: Session, logger: logging.Logger) -> None:
             db.add(issue)
             continue
         if now < deadline:
-            continue
-        if first_event and _ensure_utc(first_event.timestamp_utc) <= deadline:
             continue
         alert = Alert(
             godown_id=issue.godown_id,
