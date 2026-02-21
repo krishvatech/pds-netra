@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from ...core.pagination import clamp_page_size
 from ...core.db import get_db
 from ...models.godown import Camera
+from ...services.live_frames import enforce_single_live_frame
 from sqlalchemy.orm import Session
 
 
@@ -150,7 +151,7 @@ def list_live_cameras(
 @router.get("/{godown_id}/{camera_id}")
 def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
     live_root = _live_root()
-    latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
+    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
     if not latest_path.parent.exists():
         raise HTTPException(status_code=404, detail="Live feed not available")
 
@@ -182,7 +183,7 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
 @router.get("/frame/{godown_id}/{camera_id}")
 def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
     live_root = _live_root()
-    latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
+    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
     if not latest_path.exists():
         raise HTTPException(status_code=404, detail="Live frame not available")
     meta = _frame_meta(latest_path)
@@ -216,7 +217,7 @@ def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
 @router.get("/frame-meta/{godown_id}/{camera_id}")
 def latest_frame_meta(godown_id: str, camera_id: str) -> dict:
     live_root = _live_root()
-    latest_path = live_root / godown_id / f"{camera_id}_latest.jpg"
+    latest_path = enforce_single_live_frame(live_root, godown_id, camera_id)
     meta = _frame_meta(latest_path)
     threshold_seconds = _stale_threshold_sec()
     stale = _is_stale(meta["age_seconds"], threshold_seconds)

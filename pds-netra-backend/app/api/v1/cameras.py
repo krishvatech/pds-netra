@@ -17,6 +17,7 @@ import os
 from ...models.godown import Camera, Godown
 from ...core.auth import UserContext, get_current_user
 from ...services.rule_seed import seed_rules_for_camera
+from ...services.live_frames import remove_live_frame_artifacts
 from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
@@ -118,9 +119,14 @@ def _live_root() -> Path:
 
 
 def _remove_live_latest_frame(godown_id: str, camera_id: str) -> None:
-    latest = _live_root() / godown_id / f"{camera_id}_latest.jpg"
     try:
-        latest.unlink(missing_ok=True)
+        remove_live_frame_artifacts(
+            _live_root(),
+            godown_id,
+            camera_id,
+            include_latest=True,
+            include_subdirs=True,
+        )
     except Exception:
         # Best effort cleanup; camera CRUD should not fail if file delete fails.
         pass
