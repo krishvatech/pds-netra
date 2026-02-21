@@ -15,6 +15,7 @@ services:
       - ./deployment/env/backend.env
     depends_on:
       - mailhog
+    mem_limit: 512m
     volumes:
       - ./deployment/data/backend:/opt/app/data
     command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"]
@@ -29,6 +30,7 @@ services:
     depends_on:
       - backend
       - mailhog
+    mem_limit: 384m
     volumes:
       - ./deployment/data/backend:/opt/app/data
     command: ["python", "-m", "app.worker"]
@@ -42,14 +44,18 @@ services:
         NEXT_PUBLIC_MOCK_MODE: "false"
         NEXT_PUBLIC_ALERTS_WS_URL: wss://cv.krishvatech.com/ws/alerts
     restart: unless-stopped
+    mem_limit: 768m
     env_file:
       - ./deployment/env/dashboard.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=384
     depends_on:
       - backend
 
   caddy:
     image: caddy:2
     restart: unless-stopped
+    mem_limit: 384m
     env_file:
       - ./deployment/.env
     ports:

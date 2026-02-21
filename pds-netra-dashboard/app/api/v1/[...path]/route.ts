@@ -27,20 +27,29 @@ function backendBaseUrl(req: NextRequest): string {
   const internal = (process.env.BACKEND_INTERNAL_API_BASE_URL || '').trim();
   if (internal) return internal.replace(/\/+$/, '');
 
+  // Safe default inside docker-compose network. This avoids accidental
+  // public-domain self loops when proxy headers/host differ across hops.
+  const dockerInternal = 'http://backend:8001';
+
   const configured = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim();
-  if (!configured) return 'http://127.0.0.1:8001';
+  if (!configured) return dockerInternal;
 
   // Avoid proxy self-loop when public base points to this same origin.
   try {
     const upstream = new URL(configured);
     const current = req.nextUrl;
+    if (upstream.hostname === 'backend' || upstream.hostname === '127.0.0.1' || upstream.hostname === 'localhost') {
+      return configured.replace(/\/+$/, '');
+    }
     if (upstream.host === current.host) {
-      return 'http://backend:8001';
+      return dockerInternal;
     }
   } catch {
-    // If not a valid absolute URL, use as-is.
+    // Non-absolute values are risky here; keep internal route.
+    return dockerInternal;
   }
-  return configured.replace(/\/+$/, '');
+  // Do not use arbitrary public origins from server-side proxy.
+  return dockerInternal;
 }
 
 function decodeUserCookie(raw: string | undefined): any | null {
