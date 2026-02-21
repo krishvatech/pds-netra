@@ -165,6 +165,12 @@ class WhatsAppMetaProvider(NotificationProvider):
             self.template_body_max_chars = max(1, int(os.getenv("META_WA_TEMPLATE_BODY_MAX_CHARS", "700")))
         except Exception:
             self.template_body_max_chars = 700
+        try:
+            self.template_body_param_count = max(0, int(os.getenv("META_WA_TEMPLATE_BODY_PARAM_COUNT", "0")))
+        except Exception:
+            self.template_body_param_count = 0
+        configured_names = (os.getenv("META_WA_TEMPLATE_BODY_PARAM_NAMES") or "").strip()
+        self.template_body_param_names = [part.strip() for part in configured_names.split(",") if part.strip()]
         missing = []
         if not self.access_token:
             missing.append("META_WA_ACCESS_TOKEN")
@@ -191,17 +197,148 @@ class WhatsAppMetaProvider(NotificationProvider):
         return self._extract_message_id(data)
 
     def _build_template_payload(self, target: str, message: str) -> dict:
-        template: dict = {
-            "name": self.template_name,
-            "language": {"code": self.template_language},
+        return self._build_template_payload_with_language(
+            target,
+            message,
+            self.template_language,
+            self.template_name,
+        )
+
+    def _default_template_param_count(self, template_name: str) -> int:
+        if self.template_body_param_count > 0:
+            return self.template_body_param_count
+        if (template_name or "").strip().lower() == "object_alert":
+            return 7
+        return 1
+
+    def _default_template_param_names(self, template_name: str, count: int) -> list[str]:
+        defaults: list[str] = []
+        if (template_name or "").strip().lower() == "object_alert" and count >= 7:
+            defaults = [
+                "event_type",
+                "godown_name",
+                "camera_name",
+                "detection_time",
+                "summary",
+                "evidence_url",
+                "ack_url",
+            ][:count]
+        if self.template_body_param_names:
+            configured = self.template_body_param_names[:count]
+            if len(configured) >= count or not defaults:
+                return configured
+            merged = list(configured)
+            for name in defaults:
+                if len(merged) >= count:
+                    break
+                if name not in merged:
+                    merged.append(name)
+            return merged[:count]
+        return defaults
+
+    def _parse_alert_message_fields(self, message: str) -> dict[str, str]:
+        msg = (message or "").strip()
+        lines = [ln.strip() for ln in msg.splitlines() if ln.strip()]
+        fields: dict[str, str] = {
+            "event_type": lines[0] if lines else "Alert",
+            "godown_name": "-",
+            "camera_name": "-",
+            "detection_time": "-",
+            "summary": "-",
+            "evidence_url": "",
+            "ack_url": "",
         }
-        if self.template_use_body_param and message:
+        for ln in lines:
+            lower = ln.lower()
+            if lower.startswith("godown:"):
+                fields["godown_name"] = ln.split(":", 1)[1].strip() or "-"
+            elif lower.startswith("camera:"):
+                fields["camera_name"] = ln.split(":", 1)[1].strip() or "-"
+            elif lower.startswith("time:"):
+                fields["detection_time"] = ln.split(":", 1)[1].strip() or "-"
+            elif lower.startswith("details:"):
+                fields["summary"] = ln.split(":", 1)[1].strip() or "-"
+            elif lower.startswith("evidence:"):
+                fields["evidence_url"] = ln.split(":", 1)[1].strip()
+            elif lower.startswith("acknowledge:"):
+                fields["ack_url"] = ln.split(":", 1)[1].strip()
+        return fields
+
+    def _build_template_text_params(
+        self,
+        message: str,
+        count: int,
+        template_name: str,
+        *,
+        include_param_names: bool = True,
+    ) -> list[dict]:
+        count = max(1, count)
+        fields = self._parse_alert_message_fields(message)
+        ordered = [
+            fields["event_type"],
+            fields["godown_name"],
+            fields["camera_name"],
+            fields["detection_time"],
+            fields["summary"],
+            fields["evidence_url"] or "-",
+            fields["ack_url"] or "-",
+        ]
+        if count == 1:
+            text = (message or "").strip()[: self.template_body_max_chars]
+            return [{"type": "text", "text": text or "PDS Netra alert"}]
+
+        param_names = self._default_template_param_names(template_name, count) if include_param_names else []
+        params: list[dict] = []
+        for i in range(count):
+            if i < len(ordered):
+                text = ordered[i]
+            else:
+                text = (message or "").strip()
+            text = (text or "-")[: self.template_body_max_chars]
+            entry = {"type": "text", "text": text}
+            if i < len(param_names):
+                entry["parameter_name"] = param_names[i]
+            params.append(entry)
+        return params
+
+    def _expected_param_count_from_meta_error(self, exc: MetaWhatsAppError) -> Optional[int]:
+        detail = (exc.raw_detail or "") + " " + (exc.error_message or "")
+        match = re.search(r"expected number of params\s*\((\d+)\)", detail, flags=re.IGNORECASE)
+        if not match:
+            return None
+        try:
+            value = int(match.group(1))
+            return value if value > 0 else None
+        except Exception:
+            return None
+
+    def _build_template_payload_with_language(
+        self,
+        target: str,
+        message: str,
+        language_code: str,
+        template_name: str,
+        *,
+        include_body_params: Optional[bool] = None,
+        body_param_count: Optional[int] = None,
+        include_param_names: bool = True,
+    ) -> dict:
+        template: dict = {
+            "name": template_name,
+            "language": {"code": language_code},
+        }
+        use_body = self.template_use_body_param if include_body_params is None else bool(include_body_params)
+        if use_body and message:
+            count = body_param_count if body_param_count is not None else self._default_template_param_count(template_name)
             template["components"] = [
                 {
                     "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": message[: self.template_body_max_chars]},
-                    ],
+                    "parameters": self._build_template_text_params(
+                        message,
+                        count,
+                        template_name,
+                        include_param_names=include_param_names,
+                    ),
                 }
             ]
         return {
@@ -210,6 +347,144 @@ class WhatsAppMetaProvider(NotificationProvider):
             "type": "template",
             "template": template,
         }
+
+    def _template_name_candidates(self) -> list[str]:
+        primary = (self.template_name or "").strip()
+        configured = (os.getenv("META_WA_TEMPLATE_NAME_FALLBACKS") or "").strip()
+        candidates: list[str] = []
+        if primary:
+            candidates.append(primary)
+        if configured:
+            candidates.extend([part.strip() for part in configured.split(",") if part.strip()])
+
+        seen: set[str] = set()
+        unique: list[str] = []
+        for item in candidates:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return unique
+
+    def _template_language_candidates(self) -> list[str]:
+        primary = (self.template_language or "").strip() or "en_US"
+        configured = (os.getenv("META_WA_TEMPLATE_LANGUAGE_FALLBACKS") or "").strip()
+        candidates: list[str] = [primary]
+        if configured:
+            # Respect explicit operator-provided order when configured.
+            candidates.extend([part.strip() for part in configured.split(",") if part.strip()])
+        else:
+            lower_primary = primary.lower().replace("-", "_")
+            if lower_primary == "en":
+                candidates.append("en_US")
+            elif lower_primary == "en_us":
+                candidates.append("en")
+            else:
+                base = lower_primary.split("_", 1)[0]
+                if base:
+                    candidates.append(base)
+                if base == "en":
+                    candidates.append("en_US")
+
+        seen: set[str] = set()
+        unique: list[str] = []
+        for item in candidates:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return unique
+
+    def _send_template_with_language_fallback(self, target: str, message: str) -> Optional[str]:
+        last_exc: Optional[Exception] = None
+        names = self._template_name_candidates()
+        if not names:
+            raise RuntimeError("Template fallback requested but META_WA_TEMPLATE_NAME is not configured")
+        candidates = self._template_language_candidates()
+        total_name = len(names)
+        total_lang = len(candidates)
+        for name_idx, template_name in enumerate(names):
+            for lang_idx, lang in enumerate(candidates):
+                try:
+                    payload = self._build_template_payload_with_language(target, message, lang, template_name)
+                    return self._send_payload(target, payload)
+                except MetaWhatsAppError as exc:
+                    has_next_combo = (name_idx < total_name - 1) or (lang_idx < total_lang - 1)
+                    if exc.error_code == 132000:
+                        expected_count = self._expected_param_count_from_meta_error(exc)
+                        if expected_count:
+                            last_retry_exc: Optional[MetaWhatsAppError] = None
+                            for include_param_names in (False, True):
+                                retry_payload = self._build_template_payload_with_language(
+                                    target,
+                                    message,
+                                    lang,
+                                    template_name,
+                                    include_body_params=True,
+                                    body_param_count=expected_count,
+                                    include_param_names=include_param_names,
+                                )
+                                logger.warning(
+                                    "Meta template params mismatch template=%s lang=%s; retrying with body_params=%s mode=%s",
+                                    template_name,
+                                    lang,
+                                    expected_count,
+                                    "named" if include_param_names else "positional",
+                                )
+                                try:
+                                    return self._send_payload(target, retry_payload)
+                                except MetaWhatsAppError as retry_exc:
+                                    last_retry_exc = retry_exc
+                                    detail = ((retry_exc.raw_detail or "") + " " + (retry_exc.error_message or "")).lower()
+                                    if not include_param_names and (
+                                        retry_exc.error_code == 132000
+                                        or (retry_exc.error_code == 100 and "parameter name" in detail)
+                                    ):
+                                        logger.warning(
+                                            "Meta template likely expects named params template=%s lang=%s; retrying with parameter_name fields",
+                                            template_name,
+                                            lang,
+                                        )
+                                        continue
+                                    break
+                            if last_retry_exc is not None:
+                                retry_detail = (
+                                    (last_retry_exc.raw_detail or "") + " " + (last_retry_exc.error_message or "")
+                                ).lower()
+                                if has_next_combo and (
+                                    last_retry_exc.error_code in {132000, 132001}
+                                    or (
+                                        last_retry_exc.error_code == 100
+                                        and "parameter name" in retry_detail
+                                    )
+                                ):
+                                    logger.warning(
+                                        "Meta template retry failed template=%s lang=%s err_code=%s; retrying next candidate",
+                                        template_name,
+                                        lang,
+                                        last_retry_exc.error_code,
+                                    )
+                                    last_exc = last_retry_exc
+                                    continue
+                                raise last_retry_exc
+                    # 132001 often means template name/translation mismatch for this WABA.
+                    if exc.error_code == 132001 and has_next_combo:
+                        logger.warning(
+                            "Meta template lookup failed template=%s lang=%s; retrying next candidate",
+                            template_name,
+                            lang,
+                        )
+                        last_exc = exc
+                        continue
+                    raise
+                except Exception as exc:
+                    last_exc = exc
+                    raise
+        if last_exc is not None:
+            raise last_exc
+        return None
 
     def send_whatsapp(
         self,
@@ -229,8 +504,7 @@ class WhatsAppMetaProvider(NotificationProvider):
                 self.template_name,
                 self.template_language,
             )
-            template_payload = self._build_template_payload(target, msg)
-            return self._send_payload(target, template_payload)
+            return self._send_template_with_language_fallback(target, msg)
         use_image = bool(media_url and str(media_url).startswith("https://"))
         payload: dict
         if use_image:
@@ -259,8 +533,7 @@ class WhatsAppMetaProvider(NotificationProvider):
                     self.template_name,
                     self.template_language,
                 )
-                template_payload = self._build_template_payload(target, msg)
-                return self._send_payload(target, template_payload)
+                return self._send_template_with_language_fallback(target, msg)
             logger.warning("Meta WhatsApp send failed to=%s err=%s", target, exc)
             raise
         except Exception as exc:

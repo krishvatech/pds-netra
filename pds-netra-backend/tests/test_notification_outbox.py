@@ -355,3 +355,189 @@ def test_meta_provider_raises_when_template_not_configured(monkeypatch):
         assert False, "Expected MetaWhatsAppError"
     except MetaWhatsAppError as exc:
         assert exc.error_code == 131047
+
+
+def test_meta_provider_retries_template_language_on_132001(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "object_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en_US")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE_FALLBACKS", "en_US,en")
+    monkeypatch.setenv("META_WA_TEMPLATE_USE_BODY_PARAM", "false")
+
+    calls: list[dict] = []
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        calls.append(payload)
+        lang = payload["template"]["language"]["code"]
+        if lang == "en_US":
+            raise MetaWhatsAppError(
+                status_code=404,
+                error_type="OAuthException",
+                error_code=132001,
+                error_message="Template name does not exist in the translation",
+            )
+        return {"messages": [{"id": "wamid-lang-fallback"}]}
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    message_id = provider.send_whatsapp("+910000000001", "Fire detected", force_template=True)
+
+    assert message_id == "wamid-lang-fallback"
+    assert len(calls) == 2
+    assert calls[0]["template"]["name"] == "object_alert"
+    assert calls[0]["template"]["language"]["code"] == "en_US"
+    assert calls[1]["template"]["name"] == "object_alert"
+    assert calls[1]["template"]["language"]["code"] == "en"
+
+
+def test_meta_provider_retries_template_name_on_132001(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "object_alert_bad")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME_FALLBACKS", "object_alert_bad,object_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE_FALLBACKS", "en")
+    monkeypatch.setenv("META_WA_TEMPLATE_USE_BODY_PARAM", "false")
+
+    calls: list[dict] = []
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        calls.append(payload)
+        name = payload["template"]["name"]
+        if name == "object_alert_bad":
+            raise MetaWhatsAppError(
+                status_code=404,
+                error_type="OAuthException",
+                error_code=132001,
+                error_message="Template name does not exist in the translation",
+            )
+        return {"messages": [{"id": "wamid-name-fallback"}]}
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    message_id = provider.send_whatsapp("+910000000001", "Fire detected", force_template=True)
+
+    assert message_id == "wamid-name-fallback"
+    assert len(calls) == 2
+    assert calls[0]["template"]["name"] == "object_alert_bad"
+    assert calls[0]["template"]["language"]["code"] == "en"
+    assert calls[1]["template"]["name"] == "object_alert"
+    assert calls[1]["template"]["language"]["code"] == "en"
+
+
+def test_meta_provider_retries_with_expected_param_count_on_132000(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "object_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en")
+    monkeypatch.setenv("META_WA_TEMPLATE_USE_BODY_PARAM", "false")
+
+    calls: list[dict] = []
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        calls.append(payload)
+        if len(calls) == 1:
+            raise MetaWhatsAppError(
+                status_code=400,
+                error_type="OAuthException",
+                error_code=132000,
+                error_message="Number of parameters does not match",
+                raw_detail='{"error":{"error_data":{"details":"body: number of localizable_params (0) does not match the expected number of params (7)"}}}',
+            )
+        return {"messages": [{"id": "wamid-param-fallback"}]}
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    message_id = provider.send_whatsapp(
+        "+910000000001",
+        "PERSON_INTRUSION\nGodown: Central\nCamera: CAM_2\nTime: 20 Feb 2026 12:46 IST\nDetails: Person detected (count=1) in zone all\nEvidence: https://cv.krishvatech.com/evidence/sample\n\nAcknowledge: https://cv.krishvatech.com/evidence/sample",
+        force_template=True,
+    )
+
+    assert message_id == "wamid-param-fallback"
+    assert len(calls) == 2
+    assert "components" not in calls[0]["template"]
+    params = calls[1]["template"]["components"][0]["parameters"]
+    assert len(params) == 7
+    assert params[0]["text"] == "PERSON_INTRUSION"
+    assert params[1]["text"] == "Central"
+    assert params[2]["text"] == "CAM_2"
+
+
+def test_meta_provider_retries_named_params_after_parameter_name_error(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "object_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en")
+    monkeypatch.setenv("META_WA_TEMPLATE_USE_BODY_PARAM", "false")
+
+    calls: list[dict] = []
+
+    def fake_post(*, access_token: str, api_version: str, phone_number_id: str, payload: dict) -> dict:
+        calls.append(payload)
+        if len(calls) == 1:
+            raise MetaWhatsAppError(
+                status_code=400,
+                error_type="OAuthException",
+                error_code=132000,
+                error_message="Number of parameters does not match",
+                raw_detail='{"error":{"error_data":{"details":"body: number of localizable_params (0) does not match the expected number of params (7)"}}}',
+            )
+        if len(calls) == 2:
+            raise MetaWhatsAppError(
+                status_code=400,
+                error_type="OAuthException",
+                error_code=100,
+                error_message="Invalid parameter",
+                raw_detail='{"error":{"error_data":{"details":"Parameter name is missing or empty"}}}',
+            )
+        return {"messages": [{"id": "wamid-named-retry"}]}
+
+    monkeypatch.setattr("app.services.notification_worker._post_meta_whatsapp_message", fake_post)
+
+    provider = WhatsAppMetaProvider()
+    message_id = provider.send_whatsapp(
+        "+910000000001",
+        "PERSON_INTRUSION\nGodown: Central\nCamera: CAM_2\nTime: 20 Feb 2026 12:46 IST\nDetails: Person detected (count=1) in zone all\nEvidence: https://cv.krishvatech.com/evidence/sample\n\nAcknowledge: https://cv.krishvatech.com/evidence/sample",
+        force_template=True,
+    )
+
+    assert message_id == "wamid-named-retry"
+    assert len(calls) == 3
+    positional_params = calls[2 - 1]["template"]["components"][0]["parameters"]
+    assert all("parameter_name" not in entry for entry in positional_params)
+    named_params = calls[3 - 1]["template"]["components"][0]["parameters"]
+    assert all("parameter_name" in entry for entry in named_params)
+    assert named_params[0]["parameter_name"] == "event_type"
+
+
+def test_meta_provider_fills_object_alert_default_names_when_partial_env(monkeypatch):
+    monkeypatch.setenv("META_WA_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("META_WA_PHONE_NUMBER_ID", "123456")
+    monkeypatch.setenv("META_WA_TEMPLATE_NAME", "object_alert")
+    monkeypatch.setenv("META_WA_TEMPLATE_LANGUAGE", "en")
+    monkeypatch.setenv("META_WA_TEMPLATE_BODY_PARAM_NAMES", "event_type,godown_name")
+
+    provider = WhatsAppMetaProvider()
+    params = provider._build_template_text_params(
+        "PERSON_INTRUSION\nGodown: Central\nCamera: CAM_2",
+        7,
+        "object_alert",
+        include_param_names=True,
+    )
+    param_names = [item.get("parameter_name") for item in params]
+
+    assert len(params) == 7
+    assert param_names == [
+        "event_type",
+        "godown_name",
+        "camera_name",
+        "detection_time",
+        "summary",
+        "evidence_url",
+        "ack_url",
+    ]
