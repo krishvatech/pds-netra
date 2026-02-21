@@ -1,10 +1,14 @@
 services:
-  mailhog:
-    image: mailhog/mailhog:latest
+  mosquitto:
+    image: eclipse-mosquitto:2
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8025:8025"   # Web UI (private on server)
-      - "127.0.0.1:1025:1025"   # SMTP (private on server)
+      - "1883:1883"
+    volumes:
+      - ./deployment/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./deployment/mosquitto/pwfile:/mosquitto/config/pwfile:ro
+      - ./deployment/mosquitto/data:/mosquitto/data
+      - ./deployment/mosquitto/log:/mosquitto/log
 
   backend:
     build:
@@ -13,17 +17,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./deployment/env/backend.env
-    environment:
-      ENABLE_MQTT_CONSUMER: "false"
-      ENABLE_DISPATCH_WATCHDOG: "false"
-      ENABLE_DISPATCH_PLAN_SYNC: "false"
-      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     depends_on:
-      - mailhog
-    mem_limit: 512m
+      - mosquitto
     volumes:
       - ./deployment/data/backend:/opt/app/data
-    command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001"]
 
   backend-worker:
     build:
@@ -32,41 +29,35 @@ services:
     restart: unless-stopped
     env_file:
       - ./deployment/env/backend.env
-    environment:
-      ENABLE_MQTT_CONSUMER: "false"
-      ENABLE_DISPATCH_WATCHDOG: "false"
-      ENABLE_DISPATCH_PLAN_SYNC: "false"
-      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     depends_on:
+      - mosquitto
       - backend
-      - mailhog
-    mem_limit: 384m
-    volumes:
-      - ./deployment/data/backend:/opt/app/data
     command: ["python", "-m", "app.worker"]
+
+  migrate:
+    build:
+      context: ./pds-netra-backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./deployment/env/backend.env
+    command: ["python", "-m", "app.scripts.run_migrations"]
+    profiles: ["migrate"]
+    depends_on:
+      - mosquitto
 
   dashboard:
     build:
       context: ./pds-netra-dashboard
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: http://backend:8001
-        NEXT_PUBLIC_MOCK_MODE: "false"
-        NEXT_PUBLIC_ALERTS_WS_URL: wss://cv.krishvatech.com/ws/alerts
     restart: unless-stopped
-    mem_limit: 768m
     env_file:
       - ./deployment/env/dashboard.env
-    environment:
-      NODE_OPTIONS: --max-old-space-size=384
-      BACKEND_INTERNAL_API_BASE_URL: http://backend:8001
     depends_on:
       - backend
 
   caddy:
     image: caddy:2
     restart: unless-stopped
-    mem_limit: 384m
     env_file:
       - ./deployment/.env
     ports:

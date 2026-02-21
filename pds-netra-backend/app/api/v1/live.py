@@ -11,10 +11,11 @@ from datetime import datetime, timezone
 import threading
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from ...core.pagination import clamp_page_size
 from ...core.db import get_db
+from ...core.auth import get_current_user_or_authorized_users_service
 from ...models.godown import Camera
 from ...services.live_frames import enforce_single_live_frame, live_latest_path
 from sqlalchemy import func
@@ -239,3 +240,36 @@ def latest_frame_meta(godown_id: str, camera_id: str) -> dict:
         "stale_threshold_seconds": threshold_seconds,
         **meta,
     }
+
+
+@router.post("/frame/{godown_id}/{camera_id}")
+async def upload_live_frame(
+    godown_id: str,
+    camera_id: str,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user_or_authorized_users_service),
+) -> dict:
+    """Upload a live frame from edge service."""
+    live_root = _live_root()
+    latest_path = (live_root / godown_id / f"{camera_id}_latest.jpg")
+
+    try:
+        latest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read uploaded file and write to latest path
+        content = await file.read()
+        tmp_path = latest_path.with_suffix(latest_path.suffix + ".tmp")
+
+        # Write to temp file first, then atomic rename
+        tmp_path.write_bytes(content)
+        tmp_path.replace(latest_path)
+
+        return {
+            "status": "success",
+            "godown_id": godown_id,
+            "camera_id": camera_id,
+            "path": str(latest_path),
+        }
+    except Exception as e:
+        logger.error("Failed to upload frame for %s/%s: %s", godown_id, camera_id, e)
+        raise HTTPException(status_code=500, detail="Failed to save frame")
