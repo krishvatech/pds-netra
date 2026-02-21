@@ -1,17 +1,4 @@
-version: "3.9"
-
 services:
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./mosquitto/pwfile:/mosquitto/config/pwfile:ro
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
-
   backend:
     build:
       context: ../pds-netra-backend
@@ -19,8 +6,12 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/backend.env
-    depends_on:
-      - mosquitto
+    mem_limit: 512m
+    environment:
+      ENABLE_MQTT_CONSUMER: "false"
+      ENABLE_DISPATCH_WATCHDOG: "false"
+      ENABLE_DISPATCH_PLAN_SYNC: "false"
+      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     volumes:
       - ./data/backend:/opt/app/data
 
@@ -31,8 +22,13 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/backend.env
+    mem_limit: 384m
+    environment:
+      ENABLE_MQTT_CONSUMER: "false"
+      ENABLE_DISPATCH_WATCHDOG: "false"
+      ENABLE_DISPATCH_PLAN_SYNC: "false"
+      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     depends_on:
-      - mosquitto
       - backend
     command: ["python", "-m", "app.worker"]
   
@@ -44,8 +40,8 @@ services:
       - ./env/backend.env
     command: ["python", "-m", "app.scripts.run_migrations"]
     profiles: ["migrate"]
-    depends_on:
-      - mosquitto
+    environment:
+      ENABLE_MQTT_CONSUMER: "false"
 
   dashboard:
     build:
@@ -54,12 +50,17 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/dashboard.env
+    mem_limit: 768m
+    environment:
+      NODE_OPTIONS: --max-old-space-size=384
+      BACKEND_INTERNAL_API_BASE_URL: http://backend:8001
     depends_on:
       - backend
 
   caddy:
     image: caddy:2
     restart: unless-stopped
+    mem_limit: 384m
     env_file:
       - ./.env
     ports:

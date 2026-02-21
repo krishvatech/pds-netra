@@ -23,10 +23,16 @@ const PROFILE_KEY = 'pdsnetra-alert-profile';
 const CUES_COOKIE = 'pdsnetra_alert_cues';
 const PROFILE_COOKIE = 'pdsnetra_alert_profile';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const COOKIE_MAX_BYTES = 1024;
 
 function setCookie(name: string, value: string): void {
   if (typeof document === 'undefined') return;
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}`;
+  const encoded = encodeURIComponent(value);
+  if (encoded.length > COOKIE_MAX_BYTES) {
+    document.cookie = `${name}=; path=/; max-age=0`;
+    return;
+  }
+  document.cookie = `${name}=${encoded}; path=/; samesite=lax; max-age=${COOKIE_MAX_AGE}`;
 }
 
 function resolveKey(): string {

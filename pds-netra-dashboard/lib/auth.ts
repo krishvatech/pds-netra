@@ -4,6 +4,7 @@ const USER_KEY = 'pdsnetra_user';
 const TOKEN_KEY = 'pdsnetra_token';
 const USER_COOKIE = 'pdsnetra_user_snapshot';
 const USER_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const USER_COOKIE_MAX_BYTES = 1024;
 
 function sanitizeUserCookiePayload(user: LoginResponse['user']): LoginResponse['user'] {
   return {
@@ -24,7 +25,11 @@ function setUserCookie(user: LoginResponse['user'] | null): void {
   }
   const compact = sanitizeUserCookiePayload(user);
   const encoded = encodeURIComponent(JSON.stringify(compact));
-  document.cookie = `${USER_COOKIE}=${encoded}; path=/; max-age=${USER_COOKIE_MAX_AGE}`;
+  if (encoded.length > USER_COOKIE_MAX_BYTES) {
+    document.cookie = `${USER_COOKIE}=; path=/; max-age=0`;
+    return;
+  }
+  document.cookie = `${USER_COOKIE}=${encoded}; path=/; samesite=lax; max-age=${USER_COOKIE_MAX_AGE}`;
 }
 
 export function setSession(resp: LoginResponse): void {

@@ -6,20 +6,10 @@
     header @latest_live_jpg Pragma "no-cache"
     header @latest_live_jpg Expires "0"
 
-    # Use ordered handles so auth/webhook endpoints are guaranteed
-    # to bypass dashboard and hit backend directly.
-    handle /api/v1/meta/webhook/* {
-        reverse_proxy backend:8001
-    }
-
-    handle /api/v1/auth/* {
-        reverse_proxy backend:8001
-    }
-
-    # Route all other v1 API calls through Next.js API proxy.
-    # This allows cookie session -> Authorization header translation.
+    # Keep all backend APIs on FastAPI directly.
+    # This removes an extra Next.js hop and reduces memory/CPU pressure.
     handle /api/v1/* {
-        reverse_proxy dashboard:3000
+        reverse_proxy backend:8001
     }
 
     # Media served by backend.

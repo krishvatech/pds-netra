@@ -17,6 +17,7 @@ from ...core.pagination import clamp_page_size
 from ...core.db import get_db
 from ...models.godown import Camera
 from ...services.live_frames import enforce_single_live_frame, live_latest_path
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 
@@ -138,21 +139,13 @@ def list_live_cameras(
     db: Session = Depends(get_db),
 ) -> dict:
     page_size = clamp_page_size(page_size)
-    cameras_sorted = [
-        row[0]
-        for row in (
-            db.query(Camera.id)
-            .filter(Camera.godown_id == godown_id, Camera.is_active.is_(True))
-            .order_by(Camera.id.asc())
-            .all()
-        )
-    ]
-    total = len(cameras_sorted)
+    base_q = db.query(Camera.id).filter(Camera.godown_id == godown_id, Camera.is_active.is_(True))
+    total = db.query(func.count(Camera.id)).filter(Camera.godown_id == godown_id, Camera.is_active.is_(True)).scalar() or 0
     start = max((page - 1) * page_size, 0)
-    end = start + page_size
+    cameras_sorted = [row[0] for row in base_q.order_by(Camera.id.asc()).offset(start).limit(page_size).all()]
     return {
         "godown_id": godown_id,
-        "cameras": cameras_sorted[start:end],
+        "cameras": cameras_sorted,
         "total": total,
         "page": page,
         "page_size": page_size,

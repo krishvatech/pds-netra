@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const SESSION_COOKIE = 'pdsnetra_session';
 const USER_COOKIE = 'pdsnetra_user';
 const SESSION_MAX_AGE_SEC = 60 * 60 * 12;
+const MAX_PROXY_HOPS = 2;
 
 export const dynamic = 'force-dynamic';
 
@@ -71,10 +72,23 @@ function buildForwardHeaders(req: NextRequest): Headers {
       k === 'content-length' ||
       k === 'cookie' ||
       k === 'if-none-match' ||
-      k === 'if-modified-since'
+      k === 'if-modified-since' ||
+      k === 'forwarded' ||
+      k === 'via' ||
+      k === 'x-real-ip' ||
+      k === 'x-forwarded-for' ||
+      k === 'x-forwarded-host' ||
+      k === 'x-forwarded-proto' ||
+      k === 'x-forwarded-port' ||
+      k.startsWith('cf-')
     ) return;
     headers.set(key, value);
   });
+
+  const inboundHopRaw = req.headers.get('x-pds-proxy-hop');
+  const inboundHop = inboundHopRaw ? Number.parseInt(inboundHopRaw, 10) : 0;
+  const nextHop = Number.isFinite(inboundHop) ? inboundHop + 1 : 1;
+  headers.set('X-PDS-Proxy-Hop', String(nextHop));
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -120,6 +134,11 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   const { path = [] } = await ctx.params;
   const joined = path.join('/');
   const method = req.method.toUpperCase();
+  const inboundHopRaw = req.headers.get('x-pds-proxy-hop');
+  const inboundHop = inboundHopRaw ? Number.parseInt(inboundHopRaw, 10) : 0;
+  if (Number.isFinite(inboundHop) && inboundHop > MAX_PROXY_HOPS) {
+    return NextResponse.json({ detail: 'Proxy loop detected' }, { status: 508 });
+  }
 
   if (joined === 'auth/session' && method === 'GET') {
     const token = req.cookies.get(SESSION_COOKIE)?.value;

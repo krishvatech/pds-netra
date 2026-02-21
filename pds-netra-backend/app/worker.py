@@ -10,30 +10,15 @@ import os
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-def _load_env_file(env_path: Path) -> None:
-    if not env_path.exists():
-        raise RuntimeError(f".env not found at: {env_path}")
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        os.environ[key] = value
-
-
-# Force-load .env from backend root
+# Best-effort local dotenv load; never override runtime/container env.
 backend_root = Path(__file__).resolve().parents[1]
 env_path = backend_root / ".env"
-_load_env_file(env_path)
+if env_path.exists():
+    load_dotenv(env_path, override=False)
 
 ALERT_AUTO_CLOSE_DEFAULT_SEC = int(os.getenv("ALERT_AUTO_CLOSE_DEFAULT_SEC", "60"))
 ALERT_AUTO_CLOSE_FIRE_SEC = int(os.getenv("ALERT_AUTO_CLOSE_FIRE_SEC", "120"))
@@ -47,7 +32,6 @@ from .services.incident_lifecycle import mark_alert_closed  # noqa: E402
 from .services.notification_worker import _build_providers, process_outbox_batch  # noqa: E402
 from .services.alert_reports import generate_hq_report, IST  # noqa: E402
 
-import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

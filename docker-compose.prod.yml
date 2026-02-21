@@ -13,6 +13,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./deployment/env/backend.env
+    environment:
+      ENABLE_MQTT_CONSUMER: "false"
+      ENABLE_DISPATCH_WATCHDOG: "false"
+      ENABLE_DISPATCH_PLAN_SYNC: "false"
+      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     depends_on:
       - mailhog
     mem_limit: 512m
@@ -27,6 +32,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./deployment/env/backend.env
+    environment:
+      ENABLE_MQTT_CONSUMER: "false"
+      ENABLE_DISPATCH_WATCHDOG: "false"
+      ENABLE_DISPATCH_PLAN_SYNC: "false"
+      AUTO_SEED_CAMERAS_FROM_EDGE: "false"
     depends_on:
       - backend
       - mailhog
@@ -49,6 +59,7 @@ services:
       - ./deployment/env/dashboard.env
     environment:
       NODE_OPTIONS: --max-old-space-size=384
+      BACKEND_INTERNAL_API_BASE_URL: http://backend:8001
     depends_on:
       - backend
 
