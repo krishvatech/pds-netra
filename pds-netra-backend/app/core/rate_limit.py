@@ -116,6 +116,13 @@ def rate_limit_dependency(
     burst = _get_burst()
 
     token = _extract_bearer_token(authorization)
+    
+    # Bypass rate limiting for the authorized edge service token
+    if token:
+        service_token = (os.getenv("AUTHORIZED_USERS_SERVICE_TOKEN") or "").strip() or (os.getenv("EDGE_BACKEND_TOKEN") or "").strip()
+        if service_token and token == service_token:
+            return
+            
     if token:
         ident = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
     else:

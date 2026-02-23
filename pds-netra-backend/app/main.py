@@ -50,10 +50,12 @@ def create_app() -> FastAPI:
     annotated_root = data_root / "annotated"
     live_root = Path(os.getenv("PDS_LIVE_DIR", str(data_root / "live"))).expanduser()
     watchlist_root = data_root / "watchlist"
+    uploads_root = data_root / "uploads"
     app.mount("/media/snapshots", StaticFiles(directory=media_root, check_dir=False), name="snapshots")
     app.mount("/media/annotated", StaticFiles(directory=annotated_root, check_dir=False), name="annotated")
     app.mount("/media/live", StaticFiles(directory=live_root, check_dir=False), name="live")
     app.mount("/media/watchlist", StaticFiles(directory=watchlist_root, check_dir=False), name="watchlist")
+    app.mount("/media/uploads", StaticFiles(directory=uploads_root, check_dir=False), name="uploads")
     app.state.mqtt_consumer = None
     app.state.dispatch_watchdog_stop = None
     app.state.dispatch_watchdog_thread = None
