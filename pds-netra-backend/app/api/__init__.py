@@ -27,11 +27,12 @@ from .v1.authorized_users import router as authorized_users_router
 from .v1.anpr_sessions import router as anpr_sessions
 from .v1.anpr_events import router as anpr_events_router
 from .v1.anpr_management import router as anpr_management_router
-from ..core.auth import get_current_user
+from .v1.snapshots import router as snapshots_router
+from ..core.auth import get_current_user_or_authorized_users_service
 from ..core.rate_limit import rate_limit_dependency
 
 api_router = APIRouter()
-protected = [Depends(get_current_user), Depends(rate_limit_dependency)]
+protected = [Depends(get_current_user_or_authorized_users_service), Depends(rate_limit_dependency)]
 api_router.include_router(events_router, dependencies=protected)
 api_router.include_router(events_public_router, dependencies=[Depends(rate_limit_dependency)])
 api_router.include_router(meta_webhooks_router, dependencies=[Depends(rate_limit_dependency)])
@@ -54,3 +55,4 @@ api_router.include_router(authorized_users_router, dependencies=[Depends(rate_li
 api_router.include_router(anpr_sessions, dependencies=protected)
 api_router.include_router(anpr_events_router, dependencies=protected)
 api_router.include_router(anpr_management_router, dependencies=protected)
+api_router.include_router(snapshots_router, dependencies=protected)

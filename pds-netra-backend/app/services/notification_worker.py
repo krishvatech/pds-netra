@@ -207,13 +207,15 @@ class WhatsAppMetaProvider(NotificationProvider):
     def _default_template_param_count(self, template_name: str) -> int:
         if self.template_body_param_count > 0:
             return self.template_body_param_count
-        if (template_name or "").strip().lower() == "object_alert":
+        name_lower = (template_name or "").strip().lower()
+        if name_lower == "object_alert" or name_lower.startswith("object_alert_"):
             return 7
         return 1
 
     def _default_template_param_names(self, template_name: str, count: int) -> list[str]:
         defaults: list[str] = []
-        if (template_name or "").strip().lower() == "object_alert" and count >= 7:
+        name_lower = (template_name or "").strip().lower()
+        if (name_lower == "object_alert" or name_lower.startswith("object_alert_")) and count >= 7:
             defaults = [
                 "event_type",
                 "godown_name",
@@ -294,8 +296,12 @@ class WhatsAppMetaProvider(NotificationProvider):
                 text = ordered[i]
             else:
                 text = (message or "").strip()
-            text = (text or "-")[: self.template_body_max_chars]
-            entry = {"type": "text", "text": text}
+            # WhatsApp parameters CANNOT contain newlines, tabs, or more than 4 consecutive spaces (Error 132018)
+            text = (text or "-").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+            while "     " in text: # more than 4 spaces
+                text = text.replace("     ", "    ")
+            text = text.strip()[: self.template_body_max_chars]
+            entry = {"type": "text", "text": text or "-"}
             if i < len(param_names):
                 entry["parameter_name"] = param_names[i]
             params.append(entry)
@@ -319,6 +325,7 @@ class WhatsAppMetaProvider(NotificationProvider):
         language_code: str,
         template_name: str,
         *,
+        media_url: Optional[str] = None,
         include_body_params: Optional[bool] = None,
         body_param_count: Optional[int] = None,
         include_param_names: bool = True,
@@ -327,20 +334,37 @@ class WhatsAppMetaProvider(NotificationProvider):
             "name": template_name,
             "language": {"code": language_code},
         }
+        components: list[dict] = []
+        
+        # 1. Header component (Image)
+        if media_url:
+            components.append({
+                "type": "header",
+                "parameters": [
+                    {
+                        "type": "image",
+                        "image": {"link": media_url}
+                    }
+                ]
+            })
+
+        # 2. Body component
         use_body = self.template_use_body_param if include_body_params is None else bool(include_body_params)
         if use_body and message:
             count = body_param_count if body_param_count is not None else self._default_template_param_count(template_name)
-            template["components"] = [
-                {
-                    "type": "body",
-                    "parameters": self._build_template_text_params(
-                        message,
-                        count,
-                        template_name,
-                        include_param_names=include_param_names,
-                    ),
-                }
-            ]
+            components.append({
+                "type": "body",
+                "parameters": self._build_template_text_params(
+                    message,
+                    count,
+                    template_name,
+                    include_param_names=include_param_names,
+                ),
+            })
+            
+        if components:
+            template["components"] = components
+
         return {
             "messaging_product": "whatsapp",
             "to": target,
@@ -397,7 +421,9 @@ class WhatsAppMetaProvider(NotificationProvider):
             unique.append(item)
         return unique
 
-    def _send_template_with_language_fallback(self, target: str, message: str) -> Optional[str]:
+    def _send_template_with_language_fallback(
+        self, target: str, message: str, media_url: Optional[str] = None
+    ) -> Optional[str]:
         last_exc: Optional[Exception] = None
         names = self._template_name_candidates()
         if not names:
@@ -408,7 +434,9 @@ class WhatsAppMetaProvider(NotificationProvider):
         for name_idx, template_name in enumerate(names):
             for lang_idx, lang in enumerate(candidates):
                 try:
-                    payload = self._build_template_payload_with_language(target, message, lang, template_name)
+                    payload = self._build_template_payload_with_language(
+                        target, message, lang, template_name, media_url=media_url
+                    )
                     return self._send_payload(target, payload)
                 except MetaWhatsAppError as exc:
                     has_next_combo = (name_idx < total_name - 1) or (lang_idx < total_lang - 1)
@@ -422,6 +450,7 @@ class WhatsAppMetaProvider(NotificationProvider):
                                     message,
                                     lang,
                                     template_name,
+                                    media_url=media_url,
                                     include_body_params=True,
                                     body_param_count=expected_count,
                                     include_param_names=include_param_names,
@@ -504,7 +533,7 @@ class WhatsAppMetaProvider(NotificationProvider):
                 self.template_name,
                 self.template_language,
             )
-            return self._send_template_with_language_fallback(target, msg)
+            return self._send_template_with_language_fallback(target, msg, media_url=media_url)
         use_image = bool(media_url and str(media_url).startswith("https://"))
         payload: dict
         if use_image:
@@ -533,7 +562,7 @@ class WhatsAppMetaProvider(NotificationProvider):
                     self.template_name,
                     self.template_language,
                 )
-                return self._send_template_with_language_fallback(target, msg)
+                return self._send_template_with_language_fallback(target, msg, media_url=media_url)
             logger.warning("Meta WhatsApp send failed to=%s err=%s", target, exc)
             raise
         except Exception as exc:
