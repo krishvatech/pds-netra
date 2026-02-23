@@ -250,20 +250,33 @@ class WhatsAppMetaProvider(NotificationProvider):
             "evidence_url": "",
             "ack_url": "",
         }
+        
+        def _clean_key(k: str) -> str:
+            # remove whatsapp markdown chars and normalize
+            k = re.sub(r"[*_`~]", "", k or "")
+            return k.strip().lower()
+
         for ln in lines:
-            lower = ln.lower()
-            if lower.startswith("godown:"):
-                fields["godown_name"] = ln.split(":", 1)[1].strip() or "-"
-            elif lower.startswith("camera:"):
-                fields["camera_name"] = ln.split(":", 1)[1].strip() or "-"
-            elif lower.startswith("time:"):
-                fields["detection_time"] = ln.split(":", 1)[1].strip() or "-"
-            elif lower.startswith("details:"):
-                fields["summary"] = ln.split(":", 1)[1].strip() or "-"
-            elif lower.startswith("evidence:"):
-                fields["evidence_url"] = ln.split(":", 1)[1].strip()
-            elif lower.startswith("acknowledge:"):
-                fields["ack_url"] = ln.split(":", 1)[1].strip()
+            if ":" not in ln:
+                continue
+            k, v = ln.split(":", 1)
+            key = _clean_key(k)
+            val = (v or "").strip()
+
+            if key in ("godown", "godown name"):
+                fields["godown_name"] = val or "-"
+            elif key in ("camera", "camera name"):
+                fields["camera_name"] = val or "-"
+            elif key in ("time", "detection time"):
+                fields["detection_time"] = val or "-"
+            elif key in ("details", "incident summary", "summary"):
+                fields["summary"] = val or "-"
+            elif key in ("evidence", "evidence link", "evidence url"):
+                fields["evidence_url"] = val
+            elif key in ("acknowledge", "acknowledge link", "ack url"):
+                fields["ack_url"] = val
+            elif key in ("event type", "event"):
+                fields["event_type"] = val or fields.get("event_type", "")
         return fields
 
     def _build_template_text_params(
