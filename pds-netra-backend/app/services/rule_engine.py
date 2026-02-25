@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
+from ..models.rule import Rule
 from .after_hours import get_after_hours_policy, is_after_hours
 from .incident_lifecycle import touch_detection_timestamp
 from .notifications import (
@@ -272,8 +273,32 @@ def apply_rules(db: Session, event: Event) -> None:
         # ---- FIX: ensure extra is never NULL and preserve correct zone ----
         if extra is None:
             extra = {}
-        if isinstance(extra, dict) and extra.get("zone_id") is None and zone_id:
-            extra["zone_id"] = zone_id
+
+        # ---- FIX: SECURITY_UNAUTH_ACCESS must use rule's zone_id (not default 'all') ----
+        if alert_type == "SECURITY_UNAUTH_ACCESS" and (not zone_id or zone_id == "all"):
+            # Prefer the newest enabled zone-specific rule on this camera.
+            rz = (
+                db.query(Rule.zone_id)
+                .filter(
+                    Rule.godown_id == event.godown_id,
+                    Rule.camera_id == event.camera_id,
+                    Rule.enabled == True,
+                    Rule.zone_id != "all",
+                    # These are the common rule types that map to SECURITY_UNAUTH_ACCESS in your code:
+                    Rule.type.in_(["UNAUTH_PERSON_AFTER_HOURS", "LOITERING", "FACE_UNKNOWN_ACCESS"]),
+                )
+                .order_by(Rule.created_at.desc())
+                .first()
+            )
+            if rz and rz[0]:
+                zone_id = rz[0]
+
+                # Also fix summary source by updating event.meta zone_id (used in _build_alert_summary)
+                meta = event.meta or {}
+                if meta.get("zone_id") in (None, "", "all"):
+                    meta["zone_id"] = zone_id
+                    event.meta = meta
+                    updated_meta = True
         # ---- END FIX ----
 
         alert = Alert(

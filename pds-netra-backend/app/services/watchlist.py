@@ -18,6 +18,7 @@ from sqlalchemy import func
 from ..models.watchlist import WatchlistPerson, WatchlistPersonImage, WatchlistPersonEmbedding
 from ..models.face_match_event import FaceMatchEvent
 from ..models.event import Alert, Event, AlertEventLink
+from ..models.rule import Rule
 from ..schemas.watchlist import FaceMatchEventIn, WatchlistEmbeddingIn
 from .storage import get_storage_provider
 from .notifications import notify_blacklist_alert
@@ -453,6 +454,26 @@ def _ensure_blacklist_alert(
     summary = "Blacklisted person detected"
     if person_name:
         summary = f"Blacklisted person detected: {person_name}"
+
+    # Ensure zone_id is set for blacklist alerts
+    zone_id = None
+    if event.meta:
+        zone_id = event.meta.get("zone_id")
+    if not zone_id or zone_id == "all":
+        rz = (
+            db.query(Rule.zone_id)
+            .filter(
+                Rule.godown_id == event.godown_id,
+                Rule.camera_id == event.camera_id,
+                Rule.enabled == True,
+                Rule.zone_id != "all",
+            )
+            .order_by(Rule.created_at.desc())
+            .first()
+        )
+        if rz and rz[0]:
+            zone_id = rz[0]
+
     alert = Alert(
         godown_id=event.godown_id,
         camera_id=event.camera_id,
@@ -463,7 +484,7 @@ def _ensure_blacklist_alert(
         status="OPEN",
         title="Blacklisted Person Detected",
         summary=summary,
-        zone_id=None,
+        zone_id=zone_id,
         extra={
             "person_id": person_id,
             "person_name": person_name,
