@@ -110,14 +110,14 @@ def build_alert_notification(db: Session, alert: Alert, event: Optional[Event] =
 
     whatsapp_text = (
         f"{alert_title}\n"
-        f"*Event type:* {alert.alert_type}\n"
-        f"*Godown name:* {godown_label}\n"
-        f"*Camera name:* {cam_label}\n"
-        f"*Detection time:* {_format_ts(alert.start_time)}\n"
-        f"*Incident summary:* {details}"
+        f"Event type: {alert.alert_type}\n"
+        f"Godown name: {godown_label}\n"
+        f"Camera name: {cam_label}\n"
+        f"Detection time: {_format_ts(alert.start_time)}\n"
+        f"Incident summary: {details}"
         )
     if evidence:
-        whatsapp_text += f"\n*Evidence link:* {evidence}"
+        whatsapp_text += f"\nEvidence link: {evidence}"
 
     email_subject = alert_title
     details_display = details or "-"
@@ -373,7 +373,7 @@ def enqueue_alert_notifications(db: Session, alert: Alert, *, event: Optional[Ev
     content = build_alert_notification(db, alert, event)
 
     if ack_url:
-        content.whatsapp_text = f"{content.whatsapp_text}\n\n*Acknowledge:* {ack_url}"
+        content.whatsapp_text = f"{content.whatsapp_text}\n\nAcknowledge: {ack_url}"
         ack_button = (
             "<div style=\"margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;\">"
             "<div style=\"font-size:13px; color:#0f172a; margin-bottom:8px;\"><strong>Acknowledge</strong></div>"
