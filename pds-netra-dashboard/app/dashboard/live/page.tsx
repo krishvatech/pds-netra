@@ -344,13 +344,13 @@ export default function LiveCamerasPage() {
 
     (async () => {
       try {
-        const results = await Promise.all(
-          cameras.map(async (cam) => {
+        const results: Array<[string, any[]]> = await Promise.all(
+          cameras.map(async (cam): Promise<[string, any[]]> => {
             try {
               const resp = await getCameraZones(cam.camera_id, selectedGodown);
-              return [cam.camera_id, resp?.zones ?? []] as const;
+              return [cam.camera_id, resp?.zones ?? []];
             } catch {
-              return [cam.camera_id, []] as const;
+              return [cam.camera_id, []];
             }
           })
         );
