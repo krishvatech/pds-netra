@@ -615,6 +615,9 @@ export default function LiveCamerasPage() {
 
   const handleOpenFullscreen = (cameraId: string) => {
     setFullscreenCameraId(cameraId);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('fullscreenCameraId', cameraId);
+    }
   };
 
   const handleCloseFullscreen = () => {
@@ -771,6 +774,11 @@ export default function LiveCamerasPage() {
                         </div>
                       </div>
                     ) : null}
+                    {process.env.NODE_ENV !== 'production' && (
+                      <div className="mt-2 text-xs text-white/70">
+                        id={String((camera as any).id)} cam_id={String(camera.camera_id)} zones={(zonesByCamera[camera.camera_id] ?? []).length}
+                      </div>
+                    )}
                     <div className="relative mt-3 aspect-video w-full overflow-hidden rounded-2xl border border-white/40 bg-black/85 shadow-inner">
                       <div className={`absolute left-3 top-3 z-[2] rounded-md border border-white/30 bg-black/60 px-2 py-1 text-[11px] ${ageLabelClass}`}>
                         <div>{formatFrameAge(frameMeta?.ageSeconds)}</div>
