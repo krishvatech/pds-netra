@@ -175,12 +175,12 @@ function isFrameStale(ageSeconds: number | null | undefined): boolean {
   return ageSeconds >= LIVE_STALE_THRESHOLD_SECONDS;
 }
 
-function ZoneOverlay({ zones }: { zones: any[] }) {
+function ZoneOverlay({ zones, className }: { zones: any[]; className?: string }) {
   if (!zones || zones.length === 0) return null;
 
   return (
     <svg
-      className="absolute inset-0 h-full w-full pointer-events-none"
+      className={`absolute inset-0 h-full w-full pointer-events-none ${className ?? ''}`}
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
     >
@@ -789,19 +789,19 @@ export default function LiveCamerasPage() {
                           STALE
                         </div>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenFullscreen(camera.camera_id)}
-                        className="absolute right-3 top-3 rounded-full border border-white/60 bg-black/50 p-2 text-white/90 shadow-sm transition hover:bg-black/70"
-                        aria-label={`Open full screen for ${camera.camera_id}`}
-                        title="Full screen"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
-                        </svg>
-                      </button>
                       {isLive && !hasError ? (
                         <div className="relative h-full w-full">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenFullscreen(camera.camera_id)}
+                            className="absolute right-3 top-3 z-20 rounded-full border border-white/60 bg-black/50 p-2 text-white/90 shadow-sm transition hover:bg-black/70"
+                            aria-label={`Open full screen for ${camera.camera_id}`}
+                            title="Full screen"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+                            </svg>
+                          </button>
                           <AuthedLiveImage
                             requestUrl={camUrl}
                             alt={`Live ${camera.camera_id}`}
@@ -819,7 +819,7 @@ export default function LiveCamerasPage() {
                               }))
                             }
                           />
-                          <ZoneOverlay zones={zonesByCamera[camera.camera_id] ?? []} />
+                          <ZoneOverlay zones={zonesByCamera[camera.camera_id] ?? []} className="z-10" />
                         </div>
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-sm text-slate-300">
@@ -1082,7 +1082,7 @@ export default function LiveCamerasPage() {
                     }))
                   }
                 />
-                <ZoneOverlay zones={zonesByCamera[fullscreenCameraId] ?? []} />
+                <ZoneOverlay zones={zonesByCamera[fullscreenCameraId] ?? []} className="z-10" />
               </div>
             </div>
             <div className="absolute left-6 top-14 z-10 rounded-md border border-white/30 bg-black/60 px-2 py-1 text-xs text-slate-200">
