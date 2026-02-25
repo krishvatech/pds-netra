@@ -3,7 +3,7 @@ import { Table, THead, TBody, TR, TH, TD } from '../ui/table';
 import type { EventItem } from '@/lib/types';
 import { formatUtc, humanEventType, severityBadgeClass } from '@/lib/formatters';
 export function EventsTable({ events, showGodown = false }: { events: EventItem[]; showGodown?: boolean }) {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001';
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
   const resolveSnapshot = (event: EventItem) => {
     const direct = event.image_url;
     const metaSnapshot =

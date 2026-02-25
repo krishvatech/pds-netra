@@ -196,7 +196,7 @@ export default function TestRunDetailPage() {
   }
 
   const snapshotEvents = events.filter((e) => e.image_url && e.bbox && e.bbox.length === 4).slice(0, 6);
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001';
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
   const resolveMediaUrl = (url?: string | null) => {
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url;

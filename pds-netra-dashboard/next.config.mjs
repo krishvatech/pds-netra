@@ -21,7 +21,7 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    const backend = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8001';
+    const backend = process.env.NEXT_PUBLIC_API_BASE_URL || '';
     return [
       // Media stays proxied directly; API is handled by app/api route handlers.
       { source: '/media/:path*', destination: `${backend}/media/:path*` }

@@ -132,7 +132,7 @@ export default function AlertDetailPage({ params }: { params: { alertId: string 
   const [note, setNote] = useState<string>("");
 
   // ✅ IMPORTANT: adjust these if your backend routes differ
-  const API_BASE = ""; // keep empty if dashboard proxy is set; otherwise set like "http://127.0.0.1:8001"
+  const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
   const detailUrl = `${API_BASE}/api/v1/alerts/${encodeURIComponent(alertId)}`;
   const deliveriesUrl = `${API_BASE}/api/v1/alerts/${encodeURIComponent(alertId)}/deliveries`;
   const timelineUrl = `${API_BASE}/api/v1/alerts/${encodeURIComponent(alertId)}/timeline`;
