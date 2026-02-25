@@ -502,13 +502,13 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
     """Generate a human-readable summary for a new alert."""
     if alert_type == "SECURITY_UNAUTH_ACCESS":
         movement = event.meta.get("movement_type") if event.meta else None
-        zone = event.meta.get("zone_id") if event.meta else None
+        zone_id = event.meta.get("zone_id") if event.meta else None
         if movement:
-            return f"Detected {movement} in zone {zone or 'unknown'} at {event.timestamp_utc}"
+            return f"Detected {movement} in zone {zone_id or 'unknown'} at {event.timestamp_utc}"
         return (
-            f"Unauthorized access detected in zone {zone} at {event.timestamp_utc}"
-            if zone
-            else "Unauthorized access detected"
+            f"Unauthorized access detected in zone {zone_id} at {event.timestamp_utc}"
+            if zone_id and zone_id != "all"
+            else f"Unauthorized access detected at {event.timestamp_utc}"
         )
 
     if alert_type == "ANIMAL_INTRUSION":
