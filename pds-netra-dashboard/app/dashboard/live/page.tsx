@@ -175,6 +175,35 @@ function isFrameStale(ageSeconds: number | null | undefined): boolean {
   return ageSeconds >= LIVE_STALE_THRESHOLD_SECONDS;
 }
 
+function ZoneOverlay({ zones }: { zones: any[] }) {
+  if (!zones || zones.length === 0) return null;
+
+  return (
+    <svg
+      className="absolute inset-0 h-full w-full pointer-events-none"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      {zones.map((z, i) => {
+        const pts = (z?.polygon ?? [])
+          .map(([x, y]: [number, number]) => `${x * 100},${y * 100}`)
+          .join(' ');
+        if (!pts) return null;
+
+        return (
+          <polygon
+            key={z?.id ?? i}
+            points={pts}
+            fill="rgba(59, 130, 246, 0.10)"
+            stroke="rgba(59, 130, 246, 0.95)"
+            strokeWidth="0.6"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function LiveCamerasPage() {
   const inlineErrorClass = 'text-xs text-red-400';
   const [godowns, setGodowns] = useState<GodownListItem[]>([]);
@@ -187,6 +216,7 @@ export default function LiveCamerasPage() {
   const [zoneName, setZoneName] = useState<string>('zone_1');
   const [zonePoints, setZonePoints] = useState<Array<{ x: number; y: number }>>([]);
   const [zones, setZones] = useState<Array<{ id: string; polygon: number[][] }>>([]);
+  const [zonesByCamera, setZonesByCamera] = useState<Record<string, any[]>>({});
   const [zonesLoading, setZonesLoading] = useState(false);
   const [zonesError, setZonesError] = useState<string | null>(null);
   const [zoneImageSize, setZoneImageSize] = useState<{ w: number; h: number } | null>(null);
@@ -304,6 +334,41 @@ export default function LiveCamerasPage() {
       return String(a.label ?? a.camera_id).localeCompare(String(b.label ?? b.camera_id));
     });
   }, [godownDetail]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!selectedGodown || cameras.length === 0) {
+      setZonesByCamera({});
+      return;
+    }
+
+    (async () => {
+      try {
+        const results = await Promise.all(
+          cameras.map(async (cam) => {
+            try {
+              const resp = await getCameraZones(cam.camera_id, selectedGodown);
+              return [cam.camera_id, resp?.zones ?? []] as const;
+            } catch {
+              return [cam.camera_id, []] as const;
+            }
+          })
+        );
+
+        if (!mounted) return;
+
+        const map: Record<string, any[]> = {};
+        for (const [camId, zs] of results) map[camId] = zs;
+        setZonesByCamera(map);
+      } catch {
+        if (mounted) setZonesByCamera({});
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedGodown, cameras]);
 
   useEffect(() => {
     let mounted = true;
@@ -728,23 +793,26 @@ export default function LiveCamerasPage() {
                         </svg>
                       </button>
                       {isLive && !hasError ? (
-                        <AuthedLiveImage
-                          requestUrl={camUrl}
-                          alt={`Live ${camera.camera_id}`}
-                          className="h-full w-full object-contain"
-                          pollMs={fullscreenCameraId === camera.camera_id ? 0 : 1500}
-                          hiddenPollMs={8000}
-                          refreshToken={streamNonce}
-                          onStatusChange={(ok) =>
-                            setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
-                          }
-                          onFrameMeta={(meta) =>
-                            setCameraFrameMeta((prev) => ({
-                              ...prev,
-                              [camera.camera_id]: meta ?? { ageSeconds: null, capturedAtUtc: null }
-                            }))
-                          }
-                        />
+                        <div className="relative h-full w-full">
+                          <AuthedLiveImage
+                            requestUrl={camUrl}
+                            alt={`Live ${camera.camera_id}`}
+                            className="h-full w-full object-contain"
+                            pollMs={fullscreenCameraId === camera.camera_id ? 0 : 1500}
+                            hiddenPollMs={8000}
+                            refreshToken={streamNonce}
+                            onStatusChange={(ok) =>
+                              setCameraErrors((prev) => ({ ...prev, [camera.camera_id]: !ok }))
+                            }
+                            onFrameMeta={(meta) =>
+                              setCameraFrameMeta((prev) => ({
+                                ...prev,
+                                [camera.camera_id]: meta ?? { ageSeconds: null, capturedAtUtc: null }
+                              }))
+                            }
+                          />
+                          <ZoneOverlay zones={zonesByCamera[camera.camera_id] ?? []} />
+                        </div>
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-sm text-slate-300">
                           Live feed not available yet.
@@ -991,20 +1059,23 @@ export default function LiveCamerasPage() {
               </Button>
             </div>
             <div className="absolute inset-0 flex items-center justify-center px-6 pb-6 pt-16">
-              <AuthedLiveImage
-                requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}`}
-                alt={`Live ${fullscreenCameraId}`}
-                className="max-h-full w-auto max-w-full object-contain"
-                pollMs={1500}
-                hiddenPollMs={8000}
-                refreshToken={streamNonce}
-                onFrameMeta={(meta) =>
-                  setCameraFrameMeta((prev) => ({
-                    ...prev,
-                    [fullscreenCameraId]: meta ?? { ageSeconds: null, capturedAtUtc: null }
-                  }))
-                }
-              />
+              <div className="relative max-h-full w-auto max-w-full">
+                <AuthedLiveImage
+                  requestUrl={`/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(fullscreenCameraId)}`}
+                  alt={`Live ${fullscreenCameraId}`}
+                  className="max-h-full w-auto max-w-full object-contain"
+                  pollMs={1500}
+                  hiddenPollMs={8000}
+                  refreshToken={streamNonce}
+                  onFrameMeta={(meta) =>
+                    setCameraFrameMeta((prev) => ({
+                      ...prev,
+                      [fullscreenCameraId]: meta ?? { ageSeconds: null, capturedAtUtc: null }
+                    }))
+                  }
+                />
+                <ZoneOverlay zones={zonesByCamera[fullscreenCameraId] ?? []} />
+              </div>
             </div>
             <div className="absolute left-6 top-14 z-10 rounded-md border border-white/30 bg-black/60 px-2 py-1 text-xs text-slate-200">
               <div className={frameAgeClass(cameraFrameMeta[fullscreenCameraId]?.ageSeconds)}>
