@@ -269,6 +269,13 @@ def apply_rules(db: Session, event: Event) -> None:
         if alert_type == "ANIMAL_INTRUSION":
             extra = _animal_extra_from_event(event)
 
+        # ---- FIX: ensure extra is never NULL and preserve correct zone ----
+        if extra is None:
+            extra = {}
+        if isinstance(extra, dict) and extra.get("zone_id") is None and zone_id:
+            extra["zone_id"] = zone_id
+        # ---- END FIX ----
+
         alert = Alert(
             godown_id=event.godown_id,
             camera_id=event.camera_id,
