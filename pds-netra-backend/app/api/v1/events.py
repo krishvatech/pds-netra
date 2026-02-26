@@ -8,6 +8,7 @@ responses used by the dashboard.
 """
 
 from __future__ import annotations
+import os
 
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -141,7 +142,7 @@ def _infer_zone_id(db: Session, event: Event) -> Optional[str]:
 
 
 def _event_to_item(event: Event) -> dict:
-    snapshots_root = Path(__file__).resolve().parents[3] / "data" / "snapshots"
+    snapshots_root = Path(os.getenv("PDS_DATA_DIR", "/opt/app/data")) / "snapshots"
 
     def _is_internal_host(value: str) -> bool:
         host = value.strip().lower()
@@ -348,6 +349,7 @@ def list_alerts(
                     "movement_type": meta.get("movement_type"),
                     "reason": meta.get("reason"),
                     "run_id": extra.get("run_id"),
+                    "snapshot_url": alert.events[0].event.image_url if alert.events else None,
                 }
             except Exception:
                 key_meta = {}
@@ -458,6 +460,7 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
             "movement_type": meta.get("movement_type"),
             "reason": meta.get("reason"),
             "run_id": extra.get("run_id"),
+                    "snapshot_url": alert.events[0].event.image_url if alert.events else None,
         }
     if alert.alert_type == "BLACKLIST_PERSON_MATCH":
         extra = alert.extra or {}
