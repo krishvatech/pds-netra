@@ -412,6 +412,10 @@ def list_alerts(
                     "snapshot_url": extra.get("snapshot_url"),
                 }
             )
+        # Fallback: some alerts (ex: BLACKLIST_PERSON_MATCH) may not have linked events,
+        # but Alert.zone_id is still present. Ensure dashboard gets zone_id.
+        if (not key_meta.get("zone_id")) and alert.zone_id:
+            key_meta["zone_id"] = alert.zone_id
         items.append(
             {
                 "id": alert.id,
@@ -516,6 +520,9 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
                 "snapshot_url": extra.get("snapshot_url"),
             }
         )
+    # Fallback: if no linked events exist, still expose Alert.zone_id via key_meta
+    if (not key_meta.get("zone_id")) and alert.zone_id:
+        key_meta["zone_id"] = alert.zone_id
     return {
         "id": alert.id,
         "godown_id": alert.godown_id,
