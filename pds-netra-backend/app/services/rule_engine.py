@@ -20,6 +20,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from zoneinfo import ZoneInfo
+IST = ZoneInfo("Asia/Kolkata")
 
 from ..models.event import Event, Alert, AlertEventLink
 from ..models.godown import Camera
@@ -529,11 +530,11 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         movement = event.meta.get("movement_type") if event.meta else None
         zone_id = event.meta.get("zone_id") if event.meta else None
         if movement:
-            return f"Detected {movement} in zone {zone_id or 'unknown'} at {event.timestamp_utc}"
+            return f"Detected {movement} in zone {zone_id or 'unknown'} at {event.timestamp_utc.astimezone(IST).strftime('%d %b %Y %H:%M IST')}"
         return (
-            f"Unauthorized access detected in zone {zone_id} at {event.timestamp_utc}"
+            f"Unauthorized access detected in zone {zone_id} at {event.timestamp_utc.astimezone(IST).strftime('%d %b %Y %H:%M IST')}"
             if zone_id and zone_id != "all"
-            else f"Unauthorized access detected at {event.timestamp_utc}"
+            else f"Unauthorized access detected at {event.timestamp_utc.astimezone(IST).strftime('%d %b %Y %H:%M IST')}"
         )
 
     if alert_type == "ANIMAL_INTRUSION":
