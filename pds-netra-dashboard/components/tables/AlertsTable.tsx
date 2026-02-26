@@ -29,9 +29,9 @@ export function AlertsTable({ alerts }: { alerts: AlertItem[] }) {
           {alerts.map((a) => (
             <TR key={a.id}>
               <TD>
-                <Link href={`/dashboard/alerts/${encodeURIComponent(a.id)}`} className="font-medium hover:underline">
+                <span className="font-medium text-slate-200">
                   {humanAlertType(a.alert_type)}
-                </Link>
+                </span>
                 {a.alert_type === 'BLACKLIST_PERSON_MATCH' && (a.key_meta?.person_name || a.key_meta?.person_id) ? (
                   <div className="text-xs text-slate-500 mt-1">
                     Blacklisted: {a.key_meta?.person_name ?? 'Unknown'}
