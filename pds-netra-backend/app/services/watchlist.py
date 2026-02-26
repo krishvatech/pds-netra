@@ -11,6 +11,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -451,10 +452,6 @@ def _ensure_blacklist_alert(
         db.commit()
         return existing, False
 
-    summary = "Blacklisted person detected"
-    if person_name:
-        summary = f"Blacklisted person detected: {person_name}"
-
     # Ensure zone_id is set for blacklist alerts
     zone_id = None
     if event.meta:
@@ -473,6 +470,30 @@ def _ensure_blacklist_alert(
         )
         if rz and rz[0]:
             zone_id = rz[0]
+
+    # Build summary AFTER zone_id is known, and include IST time
+    ist = ZoneInfo("Asia/Kolkata")
+
+    # Prefer event timestamp if present, else fallback to utcnow
+    detected_at_utc = None
+    if getattr(event, "created_at", None):
+        detected_at_utc = event.created_at
+    elif getattr(event, "ts", None):
+        detected_at_utc = event.ts
+
+    if detected_at_utc is None:
+        from datetime import datetime, timezone
+        detected_at_utc = datetime.now(timezone.utc)
+
+    detected_at_ist = detected_at_utc.astimezone(ist)
+    detected_at_str = detected_at_ist.strftime("%d %b %Y %I:%M %p IST")
+
+    summary = "Blacklisted person detected"
+    if person_name:
+        summary = f"Blacklisted person detected: {person_name}"
+    if zone_id and zone_id != "all":
+        summary = f"{summary} in zone {zone_id}"
+    summary = f"{summary} at {detected_at_str}"
 
     alert = Alert(
         godown_id=event.godown_id,
