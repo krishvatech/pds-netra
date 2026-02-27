@@ -42,6 +42,7 @@ export function humanEventType(eventType: string): string {
     ANIMAL_INTRUSION: 'Animal Intrusion',
     ANIMAL_DETECTED: 'Animal Detected',
     FIRE_DETECTED: 'Fire Detected',
+    MOBILE_PHONE_USAGE: 'Mobile Phone Usage',
     BAG_MOVEMENT: 'Bag/Trolley Movement',
     ANPR_PLATE_DETECTED: 'ANPR Plate Detected',
     ANPR_PLATE_MISMATCH: 'ANPR Plate Mismatch',
@@ -68,6 +69,7 @@ export function humanAlertType(alertType: string): string {
     DISPATCH_NOT_STARTED_24H: 'Dispatch: Not Started in 24h',
     DISPATCH_MOVEMENT_DELAY: 'Dispatch: Movement Delay',
     FIRE_DETECTED: 'Fire Detected',
+    MOBILE_PHONE_USAGE: 'Mobile Phone Usage',
     ANPR_PLATE_DETECTED: 'ANPR Plate Detected',
     BLACKLIST_PERSON_MATCH: 'Blacklisted Person Detected'
 

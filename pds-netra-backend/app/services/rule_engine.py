@@ -262,6 +262,17 @@ def apply_rules(db: Session, event: Event) -> None:
                 extra["occurred_at"] = upd.get("occurred_at")
             existing_alert.extra = extra
 
+        if existing_alert.alert_type == "MOBILE_PHONE_USAGE":
+            extra = dict(existing_alert.extra or {})
+            meta = event.meta or {}
+            extra["phone_confidence"] = meta.get("phone_confidence") or meta.get("confidence")
+            extra["last_seen_at"] = event.timestamp_utc.isoformat() if event.timestamp_utc else None
+            if event.image_url:
+                extra["snapshot_url"] = event.image_url
+            if not extra.get("occurred_at") and event.timestamp_utc:
+                extra["occurred_at"] = event.timestamp_utc.isoformat()
+            existing_alert.extra = extra
+
         if updated_meta:
             db.add(event)
 
@@ -270,6 +281,14 @@ def apply_rules(db: Session, event: Event) -> None:
         extra = None
         if alert_type == "ANIMAL_INTRUSION":
             extra = _animal_extra_from_event(event)
+        if alert_type == "MOBILE_PHONE_USAGE":
+            meta = event.meta or {}
+            extra = {
+                "phone_confidence": meta.get("phone_confidence") or meta.get("confidence"),
+                "snapshot_url": event.image_url,
+                "occurred_at": event.timestamp_utc.isoformat() if event.timestamp_utc else None,
+                "last_seen_at": event.timestamp_utc.isoformat() if event.timestamp_utc else None,
+            }
 
         # ---- FIX: ensure extra is never NULL and preserve correct zone ----
         if extra is None:
@@ -493,6 +512,9 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
     if event_type == "FIRE_DETECTED":
         return "FIRE_DETECTED"
 
+    if event_type == "MOBILE_PHONE_USAGE":
+        return "MOBILE_PHONE_USAGE"
+
     if event_type == "BAG_MOVEMENT":
         movement_type = meta.get("movement_type") if meta else None
         if movement_type == "AFTER_HOURS":
@@ -562,6 +584,12 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         if conf is not None:
             return f"Fire detected{class_text} confidence={float(conf):.2f}"
         return f"Fire detected{class_text}"
+
+    if alert_type == "MOBILE_PHONE_USAGE":
+        conf = (event.meta or {}).get("phone_confidence") or (event.meta or {}).get("confidence")
+        if conf is not None:
+            return f"Mobile phone usage detected confidence={float(conf):.2f}"
+        return "Mobile phone usage detected"
 
     if alert_type == "OPERATION_BAG_MOVEMENT_ANOMALY":
         return f"After-hours bag movement detected in zone {event.meta.get('zone_id')}"

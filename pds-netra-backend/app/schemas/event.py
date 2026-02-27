@@ -37,6 +37,11 @@ class MetaIn(BaseModel):
     fire_model_name: Optional[str] = None
     fire_model_version: Optional[str] = None
     fire_weights_id: Optional[str] = None
+    phone_confidence: Optional[float] = None
+    phone_bboxes: Optional[List[List[int]]] = None
+    phone_model_name: Optional[str] = None
+    phone_model_version: Optional[str] = None
+    phone_weights_id: Optional[str] = None
     extra: Dict[str, str] = Field(default_factory=dict)
 
 

@@ -18,6 +18,7 @@ export const dashboardNav = [
   { href: '/dashboard/watchlist', label: 'Watchlist', icon: WatchlistIcon },
   { href: '/dashboard/animals', label: 'Animals', icon: AnimalsIcon },
   { href: '/dashboard/fire', label: 'Fire', icon: FireIcon },
+  { href: '/dashboard/phone', label: 'Phone', icon: PhoneIcon },
   { href: '/dashboard/incidents', label: 'Incidents', icon: IncidentIcon },
   { href: '/dashboard/reports', label: 'Reports', icon: ReportIcon },
   { href: '/dashboard/health', label: 'Health', icon: HeartbeatIcon },
@@ -197,6 +198,29 @@ function FireIcon({ active }: { active: boolean }) {
       />
       <path
         d="M12 21C9.8 20.2 8.5 18.6 8.5 16.6C8.5 14.6 10 13 12 12"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function PhoneIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="7"
+        y="3"
+        width="10"
+        height="18"
+        rx="2"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+      />
+      <circle cx="12" cy="17" r="1" fill={active ? '#f59e0b' : '#64748b'} />
+      <path
+        d="M10 6H14"
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.6"
         strokeLinecap="round"

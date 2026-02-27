@@ -50,7 +50,7 @@ def ingest_edge_event(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok", "event_id": event.id, "created": created}
-    if event_type in {"ANIMAL_INTRUSION", "ANIMAL_DETECTED", "FIRE_DETECTED"} | ANPR_EVENT_TYPES:
+    if event_type in {"ANIMAL_INTRUSION", "ANIMAL_DETECTED", "FIRE_DETECTED", "MOBILE_PHONE_USAGE"} | ANPR_EVENT_TYPES:
         event_in = EventIn.model_validate(payload)
         event = handle_incoming_event(event_in, db)
         return {"status": "ok", "event_id": event.id}

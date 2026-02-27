@@ -69,6 +69,7 @@ export interface CameraModules {
   person_after_hours_enabled?: boolean | null;
   animal_detection_enabled?: boolean | null;
   fire_detection_enabled?: boolean | null;
+  phone_usage_enabled?: boolean | null;
   health_monitoring_enabled?: boolean | null;
 }
 
@@ -174,6 +175,7 @@ export interface AlertItem {
     fire_model_name?: string | null;
     fire_model_version?: string | null;
     fire_weights_id?: string | null;
+    phone_confidence?: number | null;
     [key: string]: unknown;
   };
 }

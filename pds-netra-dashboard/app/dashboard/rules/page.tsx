@@ -48,6 +48,15 @@ const RULE_TYPES: Array<{ value: string; label: string; fields: FieldDef[] }> = 
   { value: 'LOITERING', label: 'Loitering', fields: [{ key: 'threshold_seconds', label: 'Threshold (sec)', type: 'number', placeholder: '120' }] },
   { value: 'ANIMAL_FORBIDDEN', label: 'Animal Forbidden', fields: [] },
   {
+    value: 'PHONE_USAGE',
+    label: 'Phone Usage',
+    fields: [
+      { key: 'start_time', label: 'Start time (HH:MM)', type: 'text', placeholder: '09:00' },
+      { key: 'end_time', label: 'End time (HH:MM)', type: 'text', placeholder: '19:00' },
+      { key: 'cooldown_seconds', label: 'Cooldown (sec)', type: 'number', placeholder: '30' }
+    ]
+  },
+  {
     value: 'BAG_MOVEMENT_AFTER_HOURS',
     label: 'Bag Movement After Hours',
     fields: [
