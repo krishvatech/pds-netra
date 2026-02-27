@@ -21,6 +21,7 @@ services:
       - mosquitto
     volumes:
       - ./deployment/data/backend:/opt/app/data
+      - ./pds-netra-edge:/opt/pds-netra-edge
 
   backend-worker:
     build:
