@@ -57,7 +57,6 @@ class CameraModules(BaseModel):
     person_after_hours_enabled: Optional[bool] = None
     animal_detection_enabled: Optional[bool] = None
     fire_detection_enabled: Optional[bool] = None
-    phone_usage_enabled: Optional[bool] = None
     health_monitoring_enabled: Optional[bool] = None
 
 

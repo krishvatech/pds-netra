@@ -61,7 +61,6 @@ function humanAlertType(alertType: string) {
     ANPR_PLATE_NOT_VERIFIED: "Not Verified Plate Detected",
     ANPR_PLATE_BLACKLIST: "Blacklisted Plate Detected",
     ANPR_PLATE_ALERT: "ANPR Plate Alert",
-    MOBILE_PHONE_USAGE: "Mobile Phone Usage",
   };
   return map[alertType] ?? alertType.replaceAll("_", " ");
 }
@@ -185,7 +184,6 @@ export default function AlertDetailPage({ params }: { params: { alertId: string 
       "count",
       "animal_confidence",
       "confidence",
-      "phone_confidence",
       "animal_is_night",
       "zone_id",
       "snapshot_url",
