@@ -518,6 +518,9 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
     if event_type == "MOBILE_PHONE_USAGE":
         return "MOBILE_PHONE_USAGE"
 
+    if event_type == "PROXIMITY_SOCIALIZING":
+        return "PROXIMITY_SOCIALIZING"
+
     if event_type == "BAG_MOVEMENT":
         movement_type = meta.get("movement_type") if meta else None
         if movement_type == "AFTER_HOURS":

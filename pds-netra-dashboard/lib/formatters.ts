@@ -72,6 +72,7 @@ export function humanAlertType(alertType: string): string {
     FIRE_DETECTED: 'Fire Detected',
     WORKPLACE_WORKSTATION_ABSENCE: 'Station Monitoring: Workstation Absence',
     MOBILE_PHONE_USAGE: 'Mobile Phone Usage',
+    PROXIMITY_SOCIALIZING: 'Proximity Socializing',
     ANPR_PLATE_DETECTED: 'ANPR Plate Detected',
     BLACKLIST_PERSON_MATCH: 'Blacklisted Person Detected'
 
