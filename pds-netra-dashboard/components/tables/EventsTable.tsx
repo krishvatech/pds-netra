@@ -4,6 +4,12 @@ import type { EventItem } from '@/lib/types';
 import { formatUtc, humanEventType, severityBadgeClass } from '@/lib/formatters';
 export function EventsTable({ events, showGodown = false }: { events: EventItem[]; showGodown?: boolean }) {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const stationStatus = (event: EventItem) => {
+    const raw =
+      ((event.meta as any)?.extra?.station_status as string | undefined) ??
+      (event.event_type === 'WORKSTATION_ABSENCE' ? 'ABSENT' : undefined);
+    return raw ? String(raw).toUpperCase() : '';
+  };
   const resolveSnapshot = (event: EventItem) => {
     const direct = event.image_url;
     const metaSnapshot =
@@ -63,6 +69,13 @@ export function EventsTable({ events, showGodown = false }: { events: EventItem[
                   : e.event_type === 'ANIMAL_INTRUSION' && (e.meta?.animal_species || e.meta?.animal_label)
                     ? `Animal Intrusion: ${e.meta?.animal_label ?? e.meta?.animal_species}`
                     : humanEventType(e.event_type)}
+                {stationStatus(e) === 'ABSENT' ? (
+                  <div className="mt-1">
+                    <span className="inline-flex items-center rounded-full border border-rose-400/40 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-300">
+                      ABSENT
+                    </span>
+                  </div>
+                ) : null}
                 {e.event_type === 'FACE_MATCH' && (e.meta?.person_name || e.meta?.person_id) ? (
                   <div className="text-xs text-slate-500 mt-1">
                     Blacklisted: {e.meta?.person_name ?? 'Unknown'}

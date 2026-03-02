@@ -41,7 +41,8 @@ import type {
   AnprDailyPlan,
   AnprDailyPlanItem,
   AnprDailyReportResponse,
-  CsvImportSummary
+  CsvImportSummary,
+  StationMonitoringAlertItem
 } from './types';
 import { clearSession, getToken, getUser } from './auth';
 
@@ -441,6 +442,19 @@ export async function getAlerts(params?: {
 }): Promise<Paginated<AlertItem> | AlertItem[]> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/alerts${q}`);
+}
+
+export async function getStationMonitoringAlerts(params?: {
+  godown_id?: string;
+  camera_id?: string;
+  zone_id?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<Paginated<StationMonitoringAlertItem>> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/station-monitoring/alerts${q}`);
 }
 
 export async function getAlertDetail(alertId: string): Promise<AlertDetail> {

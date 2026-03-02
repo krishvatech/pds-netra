@@ -58,6 +58,7 @@ class CameraModules(BaseModel):
     animal_detection_enabled: Optional[bool] = None
     fire_detection_enabled: Optional[bool] = None
     health_monitoring_enabled: Optional[bool] = None
+    workplace_station_enabled: Optional[bool] = None
 
 
 class CameraCreate(BaseModel):

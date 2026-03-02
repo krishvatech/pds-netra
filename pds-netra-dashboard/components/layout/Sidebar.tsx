@@ -13,6 +13,7 @@ export const dashboardNav = [
   { href: '/dashboard/cameras', label: 'Cameras', icon: CameraIcon },
   { href: '/dashboard/authorized-users', label: 'Authorized Users', icon: UsersIcon },
   { href: '/dashboard/alerts', label: 'Alerts', icon: AlertIcon },
+  { href: '/dashboard/station-monitoring', label: 'Station Monitoring', icon: StationMonitoringIcon },
   { href: '/dashboard/after-hours', label: 'After-hours', icon: AfterHoursIcon },
   { href: '/dashboard/after-hours/policies', label: 'After-hours Policies', icon: AfterHoursPolicyIcon },
   { href: '/dashboard/watchlist', label: 'Watchlist', icon: WatchlistIcon },
@@ -138,6 +139,28 @@ function AlertIcon({ active }: { active: boolean }) {
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.6"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function StationMonitoringIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect
+        x="4"
+        y="5"
+        width="16"
+        height="14"
+        rx="2"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+      />
+      <path
+        d="M8 15V12M12 15V10M16 15V8"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.8"
+        strokeLinecap="round"
       />
     </svg>
   );

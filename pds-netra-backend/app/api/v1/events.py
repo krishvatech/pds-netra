@@ -414,6 +414,26 @@ def list_alerts(
                     "snapshot_url": extra.get("snapshot_url"),
                 }
             )
+        if alert.alert_type == "WORKPLACE_WORKSTATION_ABSENCE":
+            extra = alert.extra or {}
+            if (not extra) and alert.events:
+                try:
+                    first_meta = (alert.events[0].event.meta or {})
+                    meta_extra = first_meta.get("extra") if isinstance(first_meta, dict) else None
+                    if isinstance(meta_extra, dict):
+                        extra = meta_extra
+                except Exception:
+                    extra = {}
+            key_meta.update(
+                {
+                    "workstation_zone_id": extra.get("workstation_zone_id"),
+                    "absent_seconds": extra.get("absent_seconds"),
+                    "threshold_seconds": extra.get("threshold_seconds"),
+                    "cooldown_seconds": extra.get("cooldown_seconds"),
+                    "snapshot_url": extra.get("snapshot_url"),
+                    "created_at": extra.get("created_at"),
+                }
+            )
         # Fallback: some alerts (ex: BLACKLIST_PERSON_MATCH) may not have linked events,
         # but Alert.zone_id is still present. Ensure dashboard gets zone_id.
         if (not key_meta.get("zone_id")) and alert.zone_id:
@@ -521,6 +541,26 @@ def get_alert(alert_id: int, db: Session = Depends(get_db), user=Depends(get_opt
                 "threshold_hours": extra.get("threshold_hours"),
                 "last_seen_at": extra.get("last_seen_at"),
                 "snapshot_url": extra.get("snapshot_url"),
+            }
+        )
+    if alert.alert_type == "WORKPLACE_WORKSTATION_ABSENCE":
+        extra = alert.extra or {}
+        if (not extra) and alert.events:
+            try:
+                first_meta = (alert.events[0].event.meta or {})
+                meta_extra = first_meta.get("extra") if isinstance(first_meta, dict) else None
+                if isinstance(meta_extra, dict):
+                    extra = meta_extra
+            except Exception:
+                extra = {}
+        key_meta.update(
+            {
+                "workstation_zone_id": extra.get("workstation_zone_id"),
+                "absent_seconds": extra.get("absent_seconds"),
+                "threshold_seconds": extra.get("threshold_seconds"),
+                "cooldown_seconds": extra.get("cooldown_seconds"),
+                "snapshot_url": extra.get("snapshot_url"),
+                "created_at": extra.get("created_at"),
             }
         )
     # Fallback: if no linked events exist, still expose Alert.zone_id via key_meta

@@ -493,6 +493,9 @@ def _map_event_to_alert_type(event_type: str, meta: dict | None) -> Optional[str
     if event_type == "FIRE_DETECTED":
         return "FIRE_DETECTED"
 
+    if event_type == "WORKSTATION_ABSENCE":
+        return "WORKPLACE_WORKSTATION_ABSENCE"
+
     if event_type == "BAG_MOVEMENT":
         movement_type = meta.get("movement_type") if meta else None
         if movement_type == "AFTER_HOURS":
@@ -562,6 +565,29 @@ def _build_alert_summary(alert_type: str, event: Event) -> str:
         if conf is not None:
             return f"Fire detected{class_text} confidence={float(conf):.2f}"
         return f"Fire detected{class_text}"
+
+    if alert_type == "WORKPLACE_WORKSTATION_ABSENCE":
+        meta = event.meta or {}
+        zone_id = meta.get("zone_id") or (
+            (meta.get("extra") or {}).get("workstation_zone_id")
+            if isinstance(meta.get("extra"), dict)
+            else None
+        )
+        absent_seconds = (
+            (meta.get("extra") or {}).get("absent_seconds")
+            if isinstance(meta.get("extra"), dict)
+            else None
+        )
+        threshold_seconds = (
+            (meta.get("extra") or {}).get("threshold_seconds")
+            if isinstance(meta.get("extra"), dict)
+            else None
+        )
+        return (
+            "Station Monitoring: Workstation absent in "
+            f"{zone_id or 'unknown'} for {absent_seconds or '0'}s "
+            f"(threshold {threshold_seconds or '0'}s)"
+        )
 
     if alert_type == "OPERATION_BAG_MOVEMENT_ANOMALY":
         return f"After-hours bag movement detected in zone {event.meta.get('zone_id')}"

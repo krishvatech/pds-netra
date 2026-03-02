@@ -53,6 +53,7 @@ function humanAlertType(alertType: string) {
   const map: Record<string, string> = {
     ANIMAL_INTRUSION: "Animal Intrusion",
     FIRE_DETECTED: "Fire Detected",
+    WORKPLACE_WORKSTATION_ABSENCE: "Station Monitoring: Workstation Absence",
     CAMERA_HEALTH_ISSUE: "Camera Health Issue",
     SECURITY_UNAUTH_ACCESS: "Unauthorized Access",
     AFTER_HOURS_PERSON_PRESENCE: "After-hours Person Presence",

@@ -70,6 +70,7 @@ export interface CameraModules {
   animal_detection_enabled?: boolean | null;
   fire_detection_enabled?: boolean | null;
   health_monitoring_enabled?: boolean | null;
+  workplace_station_enabled?: boolean | null;
 }
 
 export interface GodownDetail {
@@ -235,6 +236,22 @@ export interface HealthSummary {
     enabled: boolean;
     connected: boolean;
   };
+}
+
+export interface StationMonitoringAlertItem {
+  id: string;
+  public_id?: string | null;
+  godown_id: string;
+  camera_id?: string | null;
+  zone_id?: string | null;
+  alert_type: string;
+  severity_final: Severity;
+  status: AlertStatus;
+  start_time: string;
+  created_at?: string | null;
+  summary?: string | null;
+  snapshot_url?: string | null;
+  extra?: Record<string, unknown> | null;
 }
 
 export interface GodownHealth {

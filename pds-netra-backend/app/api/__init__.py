@@ -28,6 +28,7 @@ from .v1.anpr_sessions import router as anpr_sessions
 from .v1.anpr_events import router as anpr_events_router
 from .v1.anpr_management import router as anpr_management_router
 from .v1.snapshots import router as snapshots_router
+from .v1.station_monitoring import router as station_monitoring_router
 from ..core.auth import get_current_user_or_authorized_users_service
 from ..core.rate_limit import rate_limit_dependency
 
@@ -56,3 +57,4 @@ api_router.include_router(anpr_sessions, dependencies=protected)
 api_router.include_router(anpr_events_router, dependencies=protected)
 api_router.include_router(anpr_management_router, dependencies=protected)
 api_router.include_router(snapshots_router, dependencies=protected)
+api_router.include_router(station_monitoring_router, dependencies=protected)
