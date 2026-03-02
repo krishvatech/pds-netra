@@ -398,6 +398,7 @@ export interface RuleItem {
   threshold_distance?: number | null;
   max_distance_m?: number | null;
   min_group_size?: number | null;
+  pixels_per_meter?: number | null;
   allowed_plates?: string[] | null;
   blocked_plates?: string[] | null;
 }
