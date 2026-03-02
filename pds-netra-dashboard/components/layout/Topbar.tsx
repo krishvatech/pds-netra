@@ -324,7 +324,7 @@ export function Topbar({
               </Button>
             </div>
             <div className="pointer-events-none absolute left-1/2 max-w-[60%] -translate-x-1/2 truncate text-center text-base font-semibold font-display tracking-tight">
-              PDS Netra
+              Digital Netra
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button
@@ -350,7 +350,7 @@ export function Topbar({
             </div>
           </div>
           <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 lg:block sm:text-sm">Control Deck</div>
-          <div className="hidden truncate text-lg font-semibold font-display tracking-tight lg:block sm:text-xl">PDS Netra Dashboard</div>
+          <div className="hidden truncate text-lg font-semibold font-display tracking-tight lg:block sm:text-xl">Digital Netra Dashboard</div>
           <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
             Live perimeter
@@ -494,7 +494,7 @@ export function Topbar({
           <SheetHeader className="space-y-2 bg-gradient-to-r from-slate-950 to-slate-900/80">
             <div className="flex items-center justify-between gap-2">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.28em] text-slate-300">
-                PDS Netra
+                Digital Netra
               </div>
               <button
                 type="button"

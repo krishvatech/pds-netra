@@ -28,6 +28,9 @@ class RuleBase(BaseModel):
     require_active_dispatch_plan: Optional[bool] = None
     allowed_overage_percent: Optional[float] = None
     threshold_distance: Optional[int] = None
+    max_distance_m: Optional[float] = None
+    min_group_size: Optional[int] = None
+    pixels_per_meter: Optional[float] = None
     allowed_plates: Optional[List[str]] = None
     blocked_plates: Optional[List[str]] = None
 
@@ -54,6 +57,9 @@ class RuleUpdate(BaseModel):
     require_active_dispatch_plan: Optional[bool] = None
     allowed_overage_percent: Optional[float] = None
     threshold_distance: Optional[int] = None
+    max_distance_m: Optional[float] = None
+    min_group_size: Optional[int] = None
+    pixels_per_meter: Optional[float] = None
     allowed_plates: Optional[List[str]] = None
     blocked_plates: Optional[List[str]] = None
 

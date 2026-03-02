@@ -65,6 +65,9 @@ PARAM_FIELDS = [
     "require_active_dispatch_plan",
     "allowed_overage_percent",
     "threshold_distance",
+    "max_distance_m",
+    "min_group_size",
+    "pixels_per_meter",
     "allowed_plates",
     "blocked_plates",
 ]

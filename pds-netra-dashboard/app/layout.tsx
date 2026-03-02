@@ -3,8 +3,8 @@ import { Sora, Fraunces } from 'next/font/google';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PDS Netra Dashboard',
-  description: 'Central monitoring dashboard for PDS Netra'
+  title: 'Digital Netra Dashboard',
+  description: 'Central monitoring dashboard for Digital Netra'
 };
 
 const sora = Sora({

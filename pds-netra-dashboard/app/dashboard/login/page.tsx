@@ -47,7 +47,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md relative z-10 glass-panel-strong">
         <CardHeader>
           <div className="text-sm uppercase tracking-[0.3em] text-slate-500">Secure Access</div>
-          <div className="text-2xl font-semibold font-display">PDS Netra Command</div>
+          <div className="text-2xl font-semibold font-display">Digital Netra Command</div>
           <div className="text-sm text-slate-600">Sign in to continue</div>
         </CardHeader>
         <CardContent>

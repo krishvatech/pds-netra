@@ -608,7 +608,7 @@ export function Sidebar({ user }: { user: LoginResponse['user'] | null }) {
           PN
         </div>
         <div>
-          <div className="text-xl font-semibold font-display tracking-tight">PDS Netra</div>
+          <div className="text-xl font-semibold font-display tracking-tight">Digital Netra</div>
           <div className="text-xs text-slate-400">State Command Center</div>
         </div>
       </div>
