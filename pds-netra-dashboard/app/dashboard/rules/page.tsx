@@ -48,15 +48,6 @@ const RULE_TYPES: Array<{ value: string; label: string; fields: FieldDef[] }> = 
   { value: 'LOITERING', label: 'Loitering', fields: [{ key: 'threshold_seconds', label: 'Threshold (sec)', type: 'number', placeholder: '120' }] },
   { value: 'ANIMAL_FORBIDDEN', label: 'Animal Forbidden', fields: [] },
   {
-    value: 'PHONE_USAGE',
-    label: 'Phone Usage',
-    fields: [
-      { key: 'start_time', label: 'Start time (HH:MM)', type: 'text', placeholder: '09:00' },
-      { key: 'end_time', label: 'End time (HH:MM)', type: 'text', placeholder: '19:00' },
-      { key: 'cooldown_seconds', label: 'Cooldown (sec)', type: 'number', placeholder: '30' }
-    ]
-  },
-  {
     value: 'BAG_MOVEMENT_AFTER_HOURS',
     label: 'Bag Movement After Hours',
     fields: [
@@ -65,6 +56,16 @@ const RULE_TYPES: Array<{ value: string; label: string; fields: FieldDef[] }> = 
     ]
   },
   { value: 'BAG_MOVEMENT_MONITOR', label: 'Bag Movement Monitor', fields: [{ key: 'threshold_distance', label: 'Threshold distance (px)', type: 'number', placeholder: '50' }] },
+  {
+    value: 'PROXIMITY_SOCIALIZING',
+    label: 'Proximity Socializing',
+    fields: [
+      { key: 'max_distance_m', label: 'Max distance (m)', type: 'number', placeholder: '1.0' },
+      { key: 'threshold_seconds', label: 'Duration (sec)', type: 'number', placeholder: '15' },
+      { key: 'min_group_size', label: 'Min group size', type: 'number', placeholder: '2' },
+      { key: 'cooldown_seconds', label: 'Cooldown (sec)', type: 'number', placeholder: '60' }
+    ]
+  },
   { value: 'BAG_MONITOR', label: 'Bag Monitor', fields: [{ key: 'cooldown_seconds', label: 'Cooldown (sec)', type: 'number', placeholder: '60' }] },
   {
     value: 'BAG_ODD_HOURS',
@@ -112,6 +113,8 @@ function paramSummary(rule: RuleItem) {
   if (typeof rule.cooldown_seconds === 'number') parts.push(`cooldown ${rule.cooldown_seconds}s`);
   if (typeof rule.allowed_overage_percent === 'number') parts.push(`overage ${rule.allowed_overage_percent}%`);
   if (typeof rule.threshold_distance === 'number') parts.push(`distance ${rule.threshold_distance}px`);
+  if (typeof rule.max_distance_m === 'number') parts.push(`distance ${rule.max_distance_m}m`);
+  if (typeof rule.min_group_size === 'number') parts.push(`group >= ${rule.min_group_size}`);
   if (rule.allowed_plates && rule.allowed_plates.length) parts.push(`whitelist ${rule.allowed_plates.join(', ')}`);
   if (rule.blocked_plates && rule.blocked_plates.length) parts.push(`blacklist ${rule.blocked_plates.join(', ')}`);
   if (rule.require_active_dispatch_plan !== null && rule.require_active_dispatch_plan !== undefined) {
@@ -176,6 +179,9 @@ export default function RulesPage() {
     require_active_dispatch_plan: true,
     allowed_overage_percent: '',
     threshold_distance: '',
+    max_distance_m: '',
+    min_group_size: '',
+    pixels_per_meter: '',
     allowed_plates: '',
     blocked_plates: ''
   });
@@ -377,6 +383,9 @@ export default function RulesPage() {
       require_active_dispatch_plan: true,
       allowed_overage_percent: '',
       threshold_distance: '',
+      max_distance_m: '',
+      min_group_size: '',
+      pixels_per_meter: '',
       allowed_plates: '',
       blocked_plates: ''
     });
@@ -410,6 +419,32 @@ export default function RulesPage() {
     applyNumber('cooldown_seconds', form.cooldown_seconds);
     applyNumber('allowed_overage_percent', form.allowed_overage_percent);
     applyNumber('threshold_distance', form.threshold_distance);
+    applyNumber('max_distance_m', form.max_distance_m);
+    applyNumber('min_group_size', form.min_group_size);
+    if (form.type === 'PROXIMITY_SOCIALIZING') {
+      const maxDistance = payload.max_distance_m;
+      const thresholdSec = payload.threshold_seconds;
+      const minGroup = payload.min_group_size;
+      const cooldown = payload.cooldown_seconds;
+      if (maxDistance !== undefined && Number(maxDistance) <= 0) {
+        setError('Max distance must be greater than 0 meters.');
+        return;
+      }
+      if (thresholdSec !== undefined && Number(thresholdSec) < 1) {
+        setError('Duration must be at least 1 second.');
+        return;
+      }
+      if (minGroup !== undefined && Number(minGroup) < 2) {
+        setError('Min group size must be 2 or more.');
+        return;
+      }
+      if (cooldown !== undefined && Number(cooldown) < 0) {
+        setError('Cooldown cannot be negative.');
+        return;
+      }
+      // Keep proximity input user-friendly (meters only). Calibration comes from zone config.
+      delete payload.pixels_per_meter;
+    }
     if (form.type === 'BAG_UNPLANNED') payload.require_active_dispatch_plan = form.require_active_dispatch_plan;
     if (form.type === 'ANPR_WHITELIST_ONLY') payload.allowed_plates = parseList(form.allowed_plates);
     if (form.type === 'ANPR_BLACKLIST_ALERT') payload.blocked_plates = parseList(form.blocked_plates);
@@ -446,6 +481,9 @@ export default function RulesPage() {
       require_active_dispatch_plan: rule.require_active_dispatch_plan ?? true,
       allowed_overage_percent: rule.allowed_overage_percent?.toString() ?? '',
       threshold_distance: rule.threshold_distance?.toString() ?? '',
+      max_distance_m: rule.max_distance_m?.toString() ?? '',
+      min_group_size: rule.min_group_size?.toString() ?? '',
+      pixels_per_meter: rule.pixels_per_meter?.toString() ?? '',
       allowed_plates: rule.allowed_plates?.join(', ') ?? '',
       blocked_plates: rule.blocked_plates?.join(', ') ?? ''
     });
@@ -686,6 +724,11 @@ export default function RulesPage() {
                 );
               })}
             </div>
+          )}
+          {form.type === 'PROXIMITY_SOCIALIZING' && (
+            <p className="mt-2 text-xs text-slate-500">
+              Enter distance in meters. Zone calibration is applied automatically.
+            </p>
           )}
 
           <div className="flex items-center gap-3 mt-5">

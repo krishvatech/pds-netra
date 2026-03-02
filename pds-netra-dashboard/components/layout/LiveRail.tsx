@@ -26,6 +26,7 @@ function alertPriority(alert: AlertItem): number {
   if (alert.alert_type === 'ANPR_PLATE_NOT_VERIFIED') return 3;
   if (alert.alert_type === 'AFTER_HOURS_PERSON_PRESENCE') return 3;
   if (alert.alert_type === 'AFTER_HOURS_VEHICLE_PRESENCE') return 3;
+  if (alert.alert_type === 'PROXIMITY_SOCIALIZING') return 2;
   return 0;
 }
 
