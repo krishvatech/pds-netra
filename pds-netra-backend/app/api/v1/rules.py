@@ -4,7 +4,7 @@ API endpoints for managing detection rules.
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -70,7 +70,55 @@ PARAM_FIELDS = [
     "pixels_per_meter",
     "allowed_plates",
     "blocked_plates",
+    "zone_ids",
 ]
+
+
+def _normalize_zone_ids(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        items = [str(part).strip() for part in value]
+    else:
+        return None
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not item:
+            continue
+        if item not in seen:
+            normalized.append(item)
+            seen.add(item)
+    return normalized or None
+
+
+def _normalize_rule_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    zone_ids = _normalize_zone_ids(data.get("zone_ids"))
+    if "zone_ids" in data:
+        data["zone_ids"] = zone_ids
+
+    rule_type = str(data.get("type") or "").strip().upper()
+    zone_id = str(data.get("zone_id") or "").strip()
+
+    if zone_ids:
+        if len(zone_ids) == 1:
+            data["zone_id"] = zone_ids[0]
+        elif not zone_id or zone_id.lower() in {"all", "*", "__global__", "global"}:
+            data["zone_id"] = "all"
+
+    if rule_type == "WORKSTATION_ABSENCE":
+        threshold = data.get("threshold_seconds")
+        try:
+            threshold_value = int(threshold) if threshold is not None else None
+        except Exception:
+            threshold_value = None
+        if threshold_value is None or threshold_value < 1:
+            raise HTTPException(status_code=422, detail="WORKSTATION_ABSENCE requires threshold_seconds >= 1")
+        if not zone_ids and not zone_id:
+            raise HTTPException(status_code=422, detail="WORKSTATION_ABSENCE requires one or more selected zones")
+    return data
 
 
 def _extract_params(data: dict) -> Dict[str, Any]:
@@ -279,14 +327,14 @@ def create_rule(
         raise HTTPException(status_code=404, detail="Godown not found")
     if not _is_admin(user) and (not user.user_id or godown.created_by_user_id != user.user_id):
         raise HTTPException(status_code=403, detail="Forbidden")
-    data = payload.model_dump()
+    data = _normalize_rule_payload(payload.model_dump())
     params = _extract_params(data)
     rule = Rule(
-        godown_id=payload.godown_id,
-        camera_id=payload.camera_id,
-        zone_id=payload.zone_id,
-        type=payload.type,
-        enabled=payload.enabled,
+        godown_id=data["godown_id"],
+        camera_id=data["camera_id"],
+        zone_id=data["zone_id"],
+        type=data["type"],
+        enabled=data["enabled"],
         params=params,
     )
     db.add(rule)
@@ -304,7 +352,7 @@ def update_rule(
     user: UserContext = Depends(get_current_user),
 ) -> RuleOut:
     rule = _get_rule_for_user(db, rule_id, user)
-    data = payload.model_dump(exclude_unset=True)
+    data = _normalize_rule_payload(payload.model_dump(exclude_unset=True))
     if "godown_id" in data:
         godown = db.get(Godown, data["godown_id"])
         if not godown:

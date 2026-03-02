@@ -205,6 +205,13 @@ def update_workstation(
     )
     if camera is None:
         raise HTTPException(status_code=404, detail="Camera not found")
+    if not station_workstations.is_monitored_workstation_zone(
+        db,
+        godown_id=payload.godown_id,
+        camera_id=payload.camera_id,
+        zone_id=zone_id,
+    ):
+        raise HTTPException(status_code=404, detail="Workstation zone is not selected in any enabled station monitoring rule")
     cleaned = _validate_workstation_payload(payload)
     workstation = station_workstations.upsert_workstation(
         godown_id=payload.godown_id,

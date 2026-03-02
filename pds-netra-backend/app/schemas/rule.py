@@ -33,6 +33,7 @@ class RuleBase(BaseModel):
     pixels_per_meter: Optional[float] = None
     allowed_plates: Optional[List[str]] = None
     blocked_plates: Optional[List[str]] = None
+    zone_ids: Optional[List[str]] = None
 
 
 class RuleCreate(RuleBase):
@@ -62,6 +63,7 @@ class RuleUpdate(BaseModel):
     pixels_per_meter: Optional[float] = None
     allowed_plates: Optional[List[str]] = None
     blocked_plates: Optional[List[str]] = None
+    zone_ids: Optional[List[str]] = None
 
 
 class RuleOut(RuleBase):

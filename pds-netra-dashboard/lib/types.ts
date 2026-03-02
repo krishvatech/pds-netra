@@ -395,6 +395,7 @@ export interface RuleItem {
   godown_id: string;
   camera_id: string;
   zone_id: string;
+  zone_ids?: string[] | null;
   type: string;
   enabled: boolean;
   created_at?: string | null;

@@ -18,11 +18,11 @@
     "zone_id": "zone_ws_2",
     "seat_label": null,
     "employee_name": null,
-    "status": "DISABLED",
+    "status": "ACTIVE",
     "shift_start": null,
     "shift_end": null,
     "leave_from": null,
     "leave_to": null,
-    "updated_at": "2026-03-02T11:38:03Z"
+    "updated_at": "2026-03-02T17:56:33Z"
   }
 ]

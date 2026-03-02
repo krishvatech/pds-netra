@@ -720,6 +720,7 @@ export async function createRule(payload: Partial<RuleItem> & {
   camera_id: string;
   zone_id: string;
   type: string;
+  zone_ids?: string[];
 }): Promise<RuleItem> {
   return apiFetch('/api/v1/rules', {
     method: 'POST',

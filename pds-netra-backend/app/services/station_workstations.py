@@ -7,17 +7,19 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
 from ..core.errors import safe_json_dump_atomic, safe_json_load
 from ..models.godown import Camera
+from ..models.rule import Rule
 from .test_runs import data_dir
 
 logger = logging.getLogger("station_workstations")
 
 STATUSES = {"ACTIVE", "ON_LEAVE", "DISABLED"}
+WORKSTATION_RULE_TYPE = "WORKSTATION_ABSENCE"
 
 
 @dataclass
@@ -63,7 +65,27 @@ def _row_key(godown_id: str, camera_id: str, zone_id: str) -> str:
     return f"{godown_id}::{camera_id}::{zone_id}"
 
 
-def _parse_camera_zones(camera: Camera) -> List[str]:
+def _normalize_zone_ids(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",")]
+    elif isinstance(value, list):
+        items = [str(part).strip() for part in value]
+    else:
+        return []
+    normalized: List[str] = []
+    seen: Set[str] = set()
+    for item in items:
+        if not item or item.lower() in {"all", "*", "__global__", "global"}:
+            continue
+        if item not in seen:
+            normalized.append(item)
+            seen.add(item)
+    return normalized
+
+
+def _parse_camera_zone_ids(camera: Camera) -> List[str]:
     raw = camera.zones_json
     if not raw:
         return []
@@ -74,13 +96,52 @@ def _parse_camera_zones(camera: Camera) -> List[str]:
     if not isinstance(payload, list):
         return []
     zones: List[str] = []
+    seen: Set[str] = set()
     for zone in payload:
         if not isinstance(zone, dict):
             continue
         zone_id = str(zone.get("id") or "").strip()
-        if zone_id.startswith("zone_ws_"):
-            zones.append(zone_id)
+        if not zone_id or zone_id in seen:
+            continue
+        zones.append(zone_id)
+        seen.add(zone_id)
     return zones
+
+
+def _camera_rule_zone_map(db: Session, *, godown_id: Optional[str] = None, camera_id: Optional[str] = None) -> Dict[tuple[str, str], Set[str]]:
+    query = db.query(Rule).filter(
+        Rule.enabled == True,  # noqa: E712
+        Rule.type == WORKSTATION_RULE_TYPE,
+    )
+    if godown_id:
+        query = query.filter(Rule.godown_id == godown_id)
+    if camera_id:
+        query = query.filter(Rule.camera_id == camera_id)
+
+    camera_query = db.query(Camera)
+    if godown_id:
+        camera_query = camera_query.filter(Camera.godown_id == godown_id)
+    if camera_id:
+        camera_query = camera_query.filter(Camera.id == camera_id)
+    cameras = camera_query.all()
+    camera_zone_lookup = {
+        (str(cam.godown_id), str(cam.id)): set(_parse_camera_zone_ids(cam))
+        for cam in cameras
+    }
+
+    mapping: Dict[tuple[str, str], Set[str]] = {}
+    for rule in query.all():
+        key = (str(rule.godown_id), str(rule.camera_id))
+        selected = set(_normalize_zone_ids((rule.params or {}).get("zone_ids")))
+        zone_id = str(rule.zone_id or "").strip()
+        if not selected and zone_id and zone_id.lower() not in {"all", "*", "__global__", "global"}:
+            selected.add(zone_id)
+        if zone_id.lower() in {"all", "*", "__global__", "global"}:
+            selected |= camera_zone_lookup.get(key, set())
+        if not selected:
+            continue
+        mapping.setdefault(key, set()).update(selected)
+    return mapping
 
 
 def list_workstations(
@@ -100,10 +161,11 @@ def list_workstations(
         query = query.filter(Camera.godown_id == godown_id)
     if camera_id:
         query = query.filter(Camera.id == camera_id)
+    rule_zone_map = _camera_rule_zone_map(db, godown_id=godown_id, camera_id=camera_id)
 
     items: List[Dict[str, Any]] = []
     for camera in query.all():
-        zone_ids = _parse_camera_zones(camera)
+        zone_ids = sorted(rule_zone_map.get((str(camera.godown_id), str(camera.id)), set()))
         for zone_id in zone_ids:
             key = _row_key(str(camera.godown_id), str(camera.id), zone_id)
             saved = indexed.get(key, {})
@@ -123,6 +185,17 @@ def list_workstations(
             items.append(asdict(item))
     items.sort(key=lambda row: (row["camera_id"], row["zone_id"]))
     return items
+
+
+def is_monitored_workstation_zone(
+    db: Session,
+    *,
+    godown_id: str,
+    camera_id: str,
+    zone_id: str,
+) -> bool:
+    mapping = _camera_rule_zone_map(db, godown_id=godown_id, camera_id=camera_id)
+    return zone_id in mapping.get((godown_id, camera_id), set())
 
 
 def upsert_workstation(

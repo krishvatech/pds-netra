@@ -45,6 +45,14 @@ const RULE_TYPES: Array<{ value: string; label: string; fields: FieldDef[] }> = 
       { key: 'end', label: 'End time (HH:MM)', type: 'text', placeholder: '23:59' }
     ]
   },
+  {
+    value: 'WORKSTATION_ABSENCE',
+    label: 'Workstation Absence',
+    fields: [
+      { key: 'threshold_seconds', label: 'Threshold (sec)', type: 'number', placeholder: '60' },
+      { key: 'cooldown_seconds', label: 'Cooldown (sec)', type: 'number', placeholder: '120' }
+    ]
+  },
   { value: 'LOITERING', label: 'Loitering', fields: [{ key: 'threshold_seconds', label: 'Threshold (sec)', type: 'number', placeholder: '120' }] },
   { value: 'ANIMAL_FORBIDDEN', label: 'Animal Forbidden', fields: [] },
   {
@@ -166,6 +174,8 @@ export default function RulesPage() {
     godown_id: '',
     camera_id: '',
     zone_id: '',
+    zone_ids: [] as string[],
+    all_zones: false,
     type: RULE_TYPES[0].value,
     enabled: true,
     start_time: '',
@@ -370,6 +380,8 @@ export default function RulesPage() {
       godown_id: '',
       camera_id: '',
       zone_id: '',
+      zone_ids: [],
+      all_zones: false,
       type: RULE_TYPES[0].value,
       enabled: true,
       start_time: '',
@@ -392,18 +404,31 @@ export default function RulesPage() {
   }
 
   async function handleSubmit() {
-    if (!form.godown_id || !form.camera_id || !form.zone_id) {
-      setError('Godown, camera, and zone are required.');
+    const selectedZoneIds = Array.from(new Set(form.zone_ids.filter(Boolean)));
+    const hasZoneSelection = zoneOptions.length > 0
+      ? (form.all_zones || selectedZoneIds.length > 0)
+      : Boolean(form.zone_id);
+    if (!form.godown_id || !form.camera_id || !hasZoneSelection) {
+      setError('Godown, camera, and at least one zone are required.');
       return;
     }
     setError(null);
     const payload: Record<string, any> = {
       godown_id: form.godown_id,
       camera_id: form.camera_id,
-      zone_id: form.zone_id,
+      zone_id: form.all_zones ? 'all' : (selectedZoneIds[0] || form.zone_id),
       type: form.type,
       enabled: form.enabled
     };
+    if (form.type === 'WORKSTATION_ABSENCE' && form.all_zones && zoneOptions.length > 0) {
+      payload.zone_ids = zoneOptions;
+    }
+    if (!form.all_zones && selectedZoneIds.length > 0) {
+      payload.zone_ids = selectedZoneIds;
+      if (selectedZoneIds.length > 1) {
+        payload.zone_id = 'all';
+      }
+    }
     const applyNumber = (key: string, value: string) => {
       if (value === '') return;
       const num = Number(value);
@@ -463,11 +488,15 @@ export default function RulesPage() {
   }
 
   function handleEdit(rule: RuleItem) {
+    const ruleZoneIds = Array.isArray(rule.zone_ids) ? rule.zone_ids.filter(Boolean) : [];
+    const isAllZonesRule = !ruleZoneIds.length && (rule.zone_id ?? '').toLowerCase() === 'all';
     setForm({
       id: rule.id,
       godown_id: rule.godown_id,
       camera_id: rule.camera_id,
       zone_id: rule.zone_id,
+      zone_ids: ruleZoneIds.length ? ruleZoneIds : (isAllZonesRule ? [] : [rule.zone_id]),
+      all_zones: isAllZonesRule,
       type: rule.type,
       enabled: rule.enabled,
       start_time: rule.start_time ?? '',
@@ -653,7 +682,7 @@ export default function RulesPage() {
           <div className="text-sm text-slate-600">Rules are pushed to edge automatically within seconds.</div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <div className="text-xs text-slate-600 mb-1">Godown</div>
               <Select
@@ -675,18 +704,6 @@ export default function RulesPage() {
               )}
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Zone</div>
-              {zoneOptions.length ? (
-                <Select
-                  value={form.zone_id}
-                  onChange={(e) => setForm((s) => ({ ...s, zone_id: e.target.value }))}
-                  options={[{ label: 'Select zone', value: '' }, ...zoneOptions.map((z) => ({ label: z, value: z }))]}
-                />
-              ) : (
-                <Input value={form.zone_id} onChange={(e) => setForm((s) => ({ ...s, zone_id: e.target.value }))} placeholder="all / aisle_zone3" />
-              )}
-            </div>
-            <div>
               <div className="text-xs text-slate-600 mb-1">Rule type</div>
               <Select
                 value={form.type}
@@ -694,6 +711,77 @@ export default function RulesPage() {
                 options={RULE_TYPES.map((r) => ({ label: r.label, value: r.value }))}
               />
             </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-xs text-slate-600">Zones</div>
+              {zoneOptions.length > 0 && (
+                <div className="text-xs text-slate-500">
+                  {form.all_zones ? 'All zones selected' : `${form.zone_ids.length} zone${form.zone_ids.length === 1 ? '' : 's'} selected`}
+                </div>
+              )}
+            </div>
+            {!zoneOptions.length ? (
+              <Input value={form.zone_id} onChange={(e) => setForm((s) => ({ ...s, zone_id: e.target.value }))} placeholder="all / aisle_zone3" />
+            ) : (
+              <div className="rounded-xl border border-white/10 bg-slate-950/40 p-4 space-y-4">
+                <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={form.all_zones}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        all_zones: e.target.checked,
+                        zone_ids: e.target.checked ? [] : s.zone_ids,
+                        zone_id: e.target.checked ? 'all' : s.zone_id
+                      }))
+                    }
+                  />
+                  Apply to all zones on this camera
+                </label>
+                {!form.all_zones && form.zone_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {form.zone_ids.map((zoneId) => (
+                      <span key={zoneId} className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-100">
+                        {zoneId}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {zoneOptions.map((zoneId) => (
+                    <label
+                      key={zoneId}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-sm transition-colors ${
+                        form.all_zones
+                          ? 'border-white/5 text-slate-500'
+                          : form.zone_ids.includes(zoneId)
+                            ? 'border-cyan-400/40 bg-cyan-400/10 text-slate-100'
+                            : 'border-white/10 text-slate-200 hover:border-white/20'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={form.all_zones}
+                        checked={form.zone_ids.includes(zoneId)}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            zone_ids: e.target.checked
+                              ? [...s.zone_ids, zoneId]
+                              : s.zone_ids.filter((z) => z !== zoneId),
+                            zone_id: e.target.checked ? zoneId : s.zone_id
+                          }))
+                        }
+                      />
+                      <span className="truncate">{zoneId}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {formType.fields.length > 0 && (
@@ -783,7 +871,11 @@ export default function RulesPage() {
                         <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
                           <span>{rule.camera_id}</span>
                           <span className="text-slate-400">•</span>
-                          <span>{rule.zone_id}</span>
+                          <span>
+                            {Array.isArray(rule.zone_ids) && rule.zone_ids.length
+                              ? rule.zone_ids.join(', ')
+                              : rule.zone_id}
+                          </span>
                         </div>
                       </TD>
                       <TD>{rule.type.replaceAll('_', ' ')}</TD>
