@@ -396,6 +396,8 @@ export interface RuleItem {
   require_active_dispatch_plan?: boolean | null;
   allowed_overage_percent?: number | null;
   threshold_distance?: number | null;
+  max_distance_m?: number | null;
+  min_group_size?: number | null;
   allowed_plates?: string[] | null;
   blocked_plates?: string[] | null;
 }
