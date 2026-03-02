@@ -103,6 +103,25 @@ def _seed_rules_for_camera(db: Session, cam: Camera) -> int:
                 )
                 created += 1
 
+    # Phone usage rules for security cameras (default: active hours)
+    if "SECURITY" in role or "AISLE" in role or "SECURITY" in cam_id.upper() or "AISLE" in cam_id.upper():
+        for zone_id in zone_targets:
+            rtype = "PHONE_USAGE"
+            params = {"start_time": "09:00", "end_time": "19:00", "cooldown_seconds": 30}
+            if _rule_exists(db, godown_id, cam_id, zone_id, rtype):
+                continue
+            db.add(
+                Rule(
+                    godown_id=godown_id,
+                    camera_id=cam_id,
+                    zone_id=zone_id,
+                    type=rtype,
+                    enabled=True,
+                    params=params,
+                )
+            )
+            created += 1
+
     # Bag movement rules for aisle cameras
     if "AISLE" in role or "AISLE" in cam_id.upper():
         for zone_id in zone_targets:

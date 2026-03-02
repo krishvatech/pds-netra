@@ -26,6 +26,7 @@ const mockCameras: CameraInfo[] = [
       person_after_hours_enabled: false,
       animal_detection_enabled: false,
       fire_detection_enabled: false,
+      phone_usage_enabled: false,
       health_monitoring_enabled: true
     }
   },
@@ -41,6 +42,7 @@ const mockCameras: CameraInfo[] = [
       person_after_hours_enabled: true,
       animal_detection_enabled: true,
       fire_detection_enabled: false,
+      phone_usage_enabled: false,
       health_monitoring_enabled: true
     }
   }
@@ -52,6 +54,7 @@ const moduleLabels: Array<{ key: keyof CameraModules; label: string }> = [
   { key: 'person_after_hours_enabled', label: 'After-hours' },
   { key: 'animal_detection_enabled', label: 'Animals' },
   { key: 'fire_detection_enabled', label: 'Fire' },
+  { key: 'phone_usage_enabled', label: 'Phone' },
   { key: 'health_monitoring_enabled', label: 'Health' }
 ];
 
@@ -64,6 +67,7 @@ function defaultModulesForRole(role?: string | null): CameraModules {
       person_after_hours_enabled: false,
       animal_detection_enabled: false,
       fire_detection_enabled: false,
+      phone_usage_enabled: false,
       health_monitoring_enabled: true
     };
   }
@@ -74,6 +78,7 @@ function defaultModulesForRole(role?: string | null): CameraModules {
       person_after_hours_enabled: false,
       animal_detection_enabled: false,
       fire_detection_enabled: false,
+      phone_usage_enabled: false,
       health_monitoring_enabled: true
     };
   }
@@ -83,6 +88,7 @@ function defaultModulesForRole(role?: string | null): CameraModules {
     person_after_hours_enabled: true,
     animal_detection_enabled: true,
     fire_detection_enabled: true,
+    phone_usage_enabled: true,
     health_monitoring_enabled: true
   };
 }
