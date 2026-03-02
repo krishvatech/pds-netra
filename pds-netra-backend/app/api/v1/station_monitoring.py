@@ -1,24 +1,85 @@
-"""Station monitoring alert endpoints."""
+"""Station monitoring alert and workstation config endpoints."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...core.auth import UserContext, get_current_user
 from ...core.db import get_db
 from ...core.pagination import clamp_page_size
 from ...models.event import Alert
-from ...models.godown import Godown
+from ...models.godown import Camera, Godown
+from ...services import station_workstations
 
 
 router = APIRouter(prefix="/api/v1/station-monitoring", tags=["station-monitoring"])
 
 ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
 ALERT_TYPE = "WORKPLACE_WORKSTATION_ABSENCE"
+
+
+class WorkstationUpdatePayload(BaseModel):
+    godown_id: str
+    camera_id: str
+    seat_label: Optional[str] = None
+    employee_name: Optional[str] = None
+    status: Optional[str] = None
+    shift_start: Optional[str] = None
+    shift_end: Optional[str] = None
+    leave_from: Optional[str] = None
+    leave_to: Optional[str] = None
+
+
+def _normalize_status(raw: Optional[str]) -> str:
+    value = (raw or "ACTIVE").strip().upper()
+    if value not in {"ACTIVE", "ON_LEAVE", "DISABLED"}:
+        raise HTTPException(status_code=422, detail="Invalid workstation status")
+    return value
+
+
+def _validate_workstation_payload(payload: WorkstationUpdatePayload) -> dict:
+    status = _normalize_status(payload.status)
+    shift_start = (payload.shift_start or "").strip() or None
+    shift_end = (payload.shift_end or "").strip() or None
+    leave_from = (payload.leave_from or "").strip() or None
+    leave_to = (payload.leave_to or "").strip() or None
+
+    if bool(shift_start) != bool(shift_end):
+        raise HTTPException(status_code=422, detail="Shift start and shift end must both be set or both be empty")
+    if bool(leave_from) != bool(leave_to):
+        raise HTTPException(status_code=422, detail="Leave from and leave to must both be set or both be empty")
+
+    if status == "ACTIVE":
+        if leave_from or leave_to:
+            raise HTTPException(status_code=422, detail="ACTIVE workstations cannot have a leave window")
+    elif status == "ON_LEAVE":
+        if not (leave_from and leave_to):
+            raise HTTPException(status_code=422, detail="ON_LEAVE workstations require both leave from and leave to")
+        if shift_start or shift_end:
+            raise HTTPException(status_code=422, detail="ON_LEAVE workstations cannot have shift times")
+        try:
+            from_dt = datetime.fromisoformat(leave_from.replace("Z", "+00:00"))
+            to_dt = datetime.fromisoformat(leave_to.replace("Z", "+00:00"))
+        except Exception:
+            raise HTTPException(status_code=422, detail="Invalid leave window datetime format")
+        if to_dt <= from_dt:
+            raise HTTPException(status_code=422, detail="Leave to must be after leave from")
+    elif status == "DISABLED":
+        if shift_start or shift_end or leave_from or leave_to:
+            raise HTTPException(status_code=422, detail="DISABLED workstations cannot have shift or leave values")
+
+    return {
+        "status": status,
+        "shift_start": shift_start,
+        "shift_end": shift_end,
+        "leave_from": leave_from,
+        "leave_to": leave_to,
+    }
 
 
 def _is_admin(user: UserContext) -> bool:
@@ -31,6 +92,14 @@ def _apply_scope(query, user: UserContext):
     if not user.user_id:
         return query.filter(Alert.godown_id == "__forbidden__")
     return query.join(Godown, Godown.id == Alert.godown_id).filter(Godown.created_by_user_id == user.user_id)
+
+
+def _apply_camera_scope(query, user: UserContext):
+    if _is_admin(user):
+        return query
+    if not user.user_id:
+        return query.filter(Camera.godown_id == "__forbidden__")
+    return query.join(Godown, Godown.id == Camera.godown_id).filter(Godown.created_by_user_id == user.user_id)
 
 
 @router.get("/alerts", response_model=dict)
@@ -101,3 +170,52 @@ def list_station_monitoring_alerts(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.get("/workstations", response_model=dict)
+def list_workstations(
+    godown_id: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    camera_query = _apply_camera_scope(db.query(Camera), user)
+    if godown_id:
+        camera_query = camera_query.filter(Camera.godown_id == godown_id)
+    if camera_id:
+        camera_query = camera_query.filter(Camera.id == camera_id)
+    allowed = {(str(cam.godown_id), str(cam.id)) for cam in camera_query.all()}
+    items = station_workstations.list_workstations(db, godown_id=godown_id, camera_id=camera_id)
+    items = [item for item in items if (item["godown_id"], item["camera_id"]) in allowed]
+    return {"items": items, "total": len(items)}
+
+
+@router.patch("/workstations/{zone_id}", response_model=dict)
+def update_workstation(
+    zone_id: str,
+    payload: WorkstationUpdatePayload,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    camera_query = _apply_camera_scope(db.query(Camera), user)
+    camera = (
+        camera_query
+        .filter(Camera.godown_id == payload.godown_id, Camera.id == payload.camera_id)
+        .first()
+    )
+    if camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    cleaned = _validate_workstation_payload(payload)
+    workstation = station_workstations.upsert_workstation(
+        godown_id=payload.godown_id,
+        camera_id=payload.camera_id,
+        zone_id=zone_id,
+        seat_label=payload.seat_label,
+        employee_name=payload.employee_name,
+        status=cleaned["status"],
+        shift_start=cleaned["shift_start"],
+        shift_end=cleaned["shift_end"],
+        leave_from=cleaned["leave_from"],
+        leave_to=cleaned["leave_to"],
+    )
+    return workstation

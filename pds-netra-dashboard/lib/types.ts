@@ -256,6 +256,20 @@ export interface StationMonitoringAlertItem {
   extra?: Record<string, unknown> | null;
 }
 
+export interface StationMonitoringWorkstationItem {
+  godown_id: string;
+  camera_id: string;
+  zone_id: string;
+  seat_label?: string | null;
+  employee_name?: string | null;
+  status: 'ACTIVE' | 'ON_LEAVE' | 'DISABLED' | string;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  leave_from?: string | null;
+  leave_to?: string | null;
+  updated_at?: string | null;
+}
+
 export interface GodownHealth {
   godown_id: string;
   timestamp_utc?: string | null;

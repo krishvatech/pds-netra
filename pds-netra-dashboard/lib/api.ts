@@ -42,7 +42,8 @@ import type {
   AnprDailyPlanItem,
   AnprDailyReportResponse,
   CsvImportSummary,
-  StationMonitoringAlertItem
+  StationMonitoringAlertItem,
+  StationMonitoringWorkstationItem
 } from './types';
 import { clearSession, getToken, getUser } from './auth';
 
@@ -455,6 +456,34 @@ export async function getStationMonitoringAlerts(params?: {
 }): Promise<Paginated<StationMonitoringAlertItem>> {
   const q = buildQuery(params);
   return apiFetch(`/api/v1/station-monitoring/alerts${q}`);
+}
+
+export async function getStationMonitoringWorkstations(params?: {
+  godown_id?: string;
+  camera_id?: string;
+}): Promise<{ items: StationMonitoringWorkstationItem[]; total: number }> {
+  const q = buildQuery(params);
+  return apiFetch(`/api/v1/station-monitoring/workstations${q}`);
+}
+
+export async function updateStationMonitoringWorkstation(
+  zoneId: string,
+  payload: {
+    godown_id: string;
+    camera_id: string;
+    seat_label?: string | null;
+    employee_name?: string | null;
+    status?: string | null;
+    shift_start?: string | null;
+    shift_end?: string | null;
+    leave_from?: string | null;
+    leave_to?: string | null;
+  }
+): Promise<StationMonitoringWorkstationItem> {
+  return apiFetch(`/api/v1/station-monitoring/workstations/${encodeURIComponent(zoneId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getAlertDetail(alertId: string): Promise<AlertDetail> {
