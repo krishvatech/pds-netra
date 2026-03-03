@@ -158,6 +158,7 @@ export interface AlertItem {
     match_score?: number | null;
     snapshot_url?: string | null;
     detected_count?: number | null;
+    group_size?: number | null;
     vehicle_plate?: string | null;
     occurred_at?: string | null;
     last_seen_at?: string | null;
