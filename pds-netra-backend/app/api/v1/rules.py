@@ -15,6 +15,7 @@ from ...models.rule import Rule
 from ...models.godown import Godown
 from ...models.anpr_vehicle import AnprVehicle
 from ...services.rule_seed import seed_rules_for_godown
+from ...services.mqtt_publisher import publish_rules_config_changed
 from ...schemas.rule import RuleCreate, RuleOut, RuleUpdate
 from ...core.pagination import clamp_page_size
 from ...core.auth import UserContext, get_current_user
@@ -340,6 +341,7 @@ def create_rule(
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    publish_rules_config_changed(rule.godown_id, rule.camera_id)
     return _to_rule_out(rule)
 
 
@@ -372,6 +374,7 @@ def update_rule(
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    publish_rules_config_changed(rule.godown_id, rule.camera_id)
     return _to_rule_out(rule)
 
 
@@ -382,6 +385,9 @@ def delete_rule(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     rule = _get_rule_for_user(db, rule_id, user)
+    godown_id = rule.godown_id
+    camera_id = rule.camera_id
     db.delete(rule)
     db.commit()
+    publish_rules_config_changed(godown_id, camera_id)
     return {"status": "deleted", "id": rule_id}

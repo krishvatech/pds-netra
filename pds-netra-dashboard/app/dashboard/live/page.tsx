@@ -924,22 +924,23 @@ export default function LiveCamerasPage() {
                 onMouseUp={() => setDragIndex(null)}
                 onMouseLeave={() => setDragIndex(null)}
               >
+                <AuthedLiveImage
+                  requestUrl={zoneImageUrl}
+                  alt="Zone reference"
+                  className="w-full h-auto block"
+                  pollMs={0}
+                  onStatusChange={(ok) => setZoneImageError(!ok)}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setZoneImageSize({ w: img.naturalWidth, h: img.naturalHeight });
+                    setZoneImageError(false);
+                  }}
+                />
                 {zoneImageError ? (
-                  <div className="text-sm text-slate-400 p-4">No live frame yet. Try Refresh frame.</div>
-                ) : (
-                  <AuthedLiveImage
-                    requestUrl={zoneImageUrl}
-                    alt="Zone reference"
-                    className="w-full h-auto block"
-                    pollMs={0}
-                    onStatusChange={(ok) => setZoneImageError(!ok)}
-                    onLoad={(e) => {
-                      const img = e.currentTarget;
-                      setZoneImageSize({ w: img.naturalWidth, h: img.naturalHeight });
-                      setZoneImageError(false);
-                    }}
-                  />
-                )}
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400 bg-black/60">
+                    No live frame yet. Try Refresh frame.
+                  </div>
+                ) : null}
                 <svg
                   className="absolute inset-0 h-full w-full"
                   viewBox="0 0 100 100"
@@ -976,7 +977,14 @@ export default function LiveCamerasPage() {
           </div>
 
           <div className="flex items-center gap-3 text-sm text-slate-400">
-            <Button className="btn-refresh" variant="outline" onClick={() => setZoneImageNonce((n) => n + 1)}>
+            <Button
+              className="btn-refresh"
+              variant="outline"
+              onClick={() => {
+                setZoneImageError(false);
+                setZoneImageNonce((n) => n + 1);
+              }}
+            >
               Refresh frame
             </Button>
             <span>{zonePoints.length} points</span>

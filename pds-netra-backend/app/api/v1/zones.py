@@ -14,6 +14,7 @@ from ...core.db import get_db
 from ...core.auth import UserContext, get_current_user
 from ...models.zone import Zone
 from ...models.godown import Godown
+from ...services.mqtt_publisher import publish_zones_config_changed
 from ...schemas.zone import ZoneCreate, ZoneOut, ZoneUpdate
 from ...core.pagination import clamp_page_size
 
@@ -150,6 +151,8 @@ def create_zone(
     db.commit()
     db.refresh(zone)
 
+    publish_zones_config_changed(zone.godown_id, zone.camera_id)
+
     return ZoneOut.model_validate(zone)
 
 
@@ -177,6 +180,8 @@ def update_zone(
     db.commit()
     db.refresh(zone)
 
+    publish_zones_config_changed(zone.godown_id, zone.camera_id)
+
     return ZoneOut.model_validate(zone)
 
 
@@ -190,7 +195,11 @@ def delete_zone(
     """Delete a zone and any associated rules."""
     zone = _get_zone_for_user(db, zone_id, user)
 
+    godown_id = zone.godown_id
+    camera_id = zone.camera_id
     db.delete(zone)
     db.commit()
+
+    publish_zones_config_changed(godown_id, camera_id)
 
     return {"status": "deleted", "id": zone_id}

@@ -18,6 +18,7 @@ from ...models.godown import Camera, Godown
 from ...core.auth import UserContext, get_current_user
 from ...services.rule_seed import seed_rules_for_camera
 from ...services.live_frames import remove_live_frame_artifacts
+from ...services.mqtt_publisher import publish_camera_config_changed, publish_zones_config_changed
 from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
@@ -189,6 +190,8 @@ def update_camera_zones(
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    publish_zones_config_changed(camera.godown_id, camera.id)
+    publish_camera_config_changed(camera.godown_id, camera.id, "updated")
     return {
         "camera_id": camera.id,
         "godown_id": camera.godown_id,
@@ -263,6 +266,7 @@ def create_camera(
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    publish_camera_config_changed(camera.godown_id, camera.id, "created")
     if os.getenv("AUTO_SEED_RULES", "true").lower() in {"1", "true", "yes"}:
         seed_rules_for_camera(db, camera)
     return _camera_payload(camera)
@@ -301,6 +305,7 @@ def update_camera(
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    publish_camera_config_changed(camera.godown_id, camera.id, "updated")
     if prev_is_active and camera.is_active is False:
         _remove_live_latest_frame(camera.godown_id, camera.id)
     return _camera_payload(camera)
@@ -318,5 +323,6 @@ def delete_camera(
     godown_key = camera.godown_id
     db.delete(camera)
     db.commit()
+    publish_camera_config_changed(godown_key, camera_key, "deleted")
     _remove_live_latest_frame(godown_key, camera_key)
     return {"status": "deleted", "camera_id": camera_id}

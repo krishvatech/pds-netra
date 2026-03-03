@@ -18,6 +18,7 @@ export const dashboardNav = [
   { href: '/dashboard/after-hours/policies', label: 'After-hours Policies', icon: AfterHoursPolicyIcon },
   { href: '/dashboard/watchlist', label: 'Watchlist', icon: WatchlistIcon },
   { href: '/dashboard/animals', label: 'Animals', icon: AnimalsIcon },
+  { href: '/dashboard/proximity-socializing', label: 'Proximity Socializing', icon: ProximityIcon },
   { href: '/dashboard/fire', label: 'Fire', icon: FireIcon },
   { href: '/dashboard/phone', label: 'Phone', icon: PhoneIcon },
   { href: '/dashboard/incidents', label: 'Incidents', icon: IncidentIcon },
@@ -221,6 +222,27 @@ function FireIcon({ active }: { active: boolean }) {
       />
       <path
         d="M12 21C9.8 20.2 8.5 18.6 8.5 16.6C8.5 14.6 10 13 12 12"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ProximityIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="2.5" stroke={active ? '#f59e0b' : '#64748b'} strokeWidth="1.6" />
+      <circle cx="16" cy="8" r="2.5" stroke={active ? '#f59e0b' : '#64748b'} strokeWidth="1.6" />
+      <path
+        d="M4 20C4.5 16.5 6.6 14 9.5 14H10.5C13.4 14 15.5 16.5 16 20"
+        stroke={active ? '#f59e0b' : '#64748b'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8.5 12.5L10.5 12.5M13.5 12.5L15.5 12.5"
         stroke={active ? '#f59e0b' : '#64748b'}
         strokeWidth="1.6"
         strokeLinecap="round"
