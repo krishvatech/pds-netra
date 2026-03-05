@@ -5,9 +5,38 @@ import { useRouter } from 'next/navigation';
 import { AlertBox } from '@/components/ui/alert-box';
 import { getSessionUser } from '@/lib/auth';
 import type { Camera, CameraCreate } from '@/lib/types';
-import { createCamera, deleteCamera, getCameras, updateCamera } from '@/lib/api';
+import { createCamera, deleteCamera, getCameras, updateCamera, verifyPassword } from '@/lib/api';
 
 type FormMode = 'create' | 'edit';
+type RevealTarget = { type: 'camera'; id: string } | { type: 'form' };
+
+function maskRtspUrl(url: string) {
+  if (!url) return url;
+  const match = url.match(/^(rtsps?:\/\/)([^@]+)@(.+)$/i);
+  if (!match) return url;
+  const maskedCredentials = match[2].includes(':') ? '***:***' : '***';
+  return `${match[1]}${maskedCredentials}@${match[3]}`;
+}
+
+function EyeIcon({ revealed }: { revealed: boolean }) {
+  if (revealed) {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M1 1l22 22" />
+        <path d="M6.6 6.6C3.7 8.5 2 12 2 12s4 7 10 7c2 0 3.8-.6 5.2-1.5" />
+        <path d="M9.9 9.9A3 3 0 0 0 12 15a3 3 0 0 0 2.1-.9" />
+        <path d="M9.3 4.2A10.5 10.5 0 0 1 12 5c6 0 10 7 10 7s-1.2 2.1-3.3 3.9" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
 
 const EMPTY_FORM: CameraCreate = {
   camera_name: '',
@@ -29,6 +58,12 @@ export default function CamerasPage() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Camera | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [revealedCameraIds, setRevealedCameraIds] = useState<Record<string, boolean>>({});
+  const [isFormRtspRevealed, setIsFormRtspRevealed] = useState(true);
+  const [revealTarget, setRevealTarget] = useState<RevealTarget | null>(null);
+  const [revealPassword, setRevealPassword] = useState('');
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const [revealLoading, setRevealLoading] = useState(false);
 
   useEffect(() => {
     async function guard() {
@@ -62,6 +97,7 @@ export default function CamerasPage() {
     setFormData(EMPTY_FORM);
     setActiveCamera(null);
     setActionError(null);
+    setIsFormRtspRevealed(true);
     setShowForm(true);
   }
 
@@ -75,6 +111,7 @@ export default function CamerasPage() {
     });
     setActiveCamera(camera);
     setActionError(null);
+    setIsFormRtspRevealed(false);
     setShowForm(true);
   }
 
@@ -82,6 +119,51 @@ export default function CamerasPage() {
     if (saving) return;
     setShowForm(false);
     setActionError(null);
+    setIsFormRtspRevealed(true);
+  }
+
+  function requestReveal(target: RevealTarget) {
+    setRevealTarget(target);
+    setRevealPassword('');
+    setRevealError(null);
+  }
+
+  function hideCameraRtsp(cameraId: string) {
+    setRevealedCameraIds((prev) => {
+      const next = { ...prev };
+      delete next[cameraId];
+      return next;
+    });
+  }
+
+  function hideFormRtsp() {
+    setIsFormRtspRevealed(false);
+  }
+
+  async function handleRevealSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (revealLoading) return;
+    setRevealLoading(true);
+    setRevealError(null);
+    try {
+      const result = await verifyPassword({ password: revealPassword });
+      if (!result.valid) {
+        setRevealError('Incorrect password. Please try again.');
+        return;
+      }
+      if (revealTarget?.type === 'camera') {
+        setRevealedCameraIds((prev) => ({ ...prev, [revealTarget.id]: true }));
+      } else if (revealTarget?.type === 'form') {
+        setIsFormRtspRevealed(true);
+      }
+      setRevealTarget(null);
+      setRevealPassword('');
+      setRevealError(null);
+    } catch (err) {
+      setRevealError('Unable to verify password. Please try again.');
+    } finally {
+      setRevealLoading(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -142,20 +224,20 @@ export default function CamerasPage() {
             <span className="pulse-dot pulse-info" />
             Fleet Live
           </div>
-          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+          <div className="text-3xl sm:text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
             Cameras
           </div>
           <div className="text-sm text-slate-300">
             Manage active feeds and camera roles across your facilities.
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="hud-card px-4 py-2 text-xs text-slate-300">
+        <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto">
+          <div className="hud-card w-full px-4 py-2 text-center text-xs text-slate-300 sm:w-auto">
             Active {activeCount} / {cameras.length}
           </div>
           <button
             type="button"
-            className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em]"
+            className="btn-primary w-full rounded-full px-5 py-2 text-center text-xs font-semibold uppercase tracking-[0.25em] sm:w-auto"
             onClick={openCreate}
           >
             Add Camera
@@ -183,62 +265,158 @@ export default function CamerasPage() {
           </button>
         </div>
       ) : (
-        <div className="table-shell">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr>
-                <th className="text-left px-6">Name</th>
-                <th className="text-left px-6">Role</th>
-                <th className="text-left px-6">RTSP URL</th>
-                <th className="text-left px-6">Status</th>
-                <th className="text-right px-6">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cameras.map((camera) => (
-                <tr key={camera.id}>
-                  <td className="px-6 font-medium text-slate-100">{camera.camera_name}</td>
-                  <td className="px-6 text-slate-300">{camera.role}</td>
-                  <td className="px-6 text-slate-400">
-                    <div className="max-w-[320px] truncate">{camera.rtsp_url}</div>
-                  </td>
-                  <td className="px-6">
+        <>
+          <div className="grid gap-3 md:hidden">
+            {cameras.map((camera) => (
+              <div key={camera.id} className="hud-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Camera</div>
+                    <div className="text-lg font-semibold text-slate-100">{camera.camera_name}</div>
+                    <div className="text-xs text-slate-400 mt-1">{camera.role}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleToggle(camera)}
-                      className={[
-                        'hud-pill',
-                        camera.is_active ? 'sev-info' : 'sev-warning',
-                        togglingId === camera.id ? 'opacity-60 cursor-wait' : 'cursor-pointer'
-                      ].join(' ')}
-                      disabled={togglingId === camera.id}
+                      aria-label="Edit camera"
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                      onClick={() => openEdit(camera)}
                     >
-                      {camera.is_active ? 'Active' : 'Inactive'}
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
                     </button>
-                  </td>
-                  <td className="px-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        className="rounded-full border border-white/15 px-4 py-1.5 text-xs uppercase tracking-[0.2em] text-slate-200 hover:border-white/30"
-                        onClick={() => openEdit(camera)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger rounded-full px-4 py-1.5 text-xs uppercase tracking-[0.2em]"
-                        onClick={() => setDeleteTarget(camera)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+                    <button
+                      type="button"
+                      aria-label="Delete camera"
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
+                      onClick={() => setDeleteTarget(camera)}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M10 11v6M14 11v6" />
+                        <path d="M6 6l1 14h10l1-14" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+                  <div className="break-all">
+                    {revealedCameraIds[camera.id] ? camera.rtsp_url : maskRtspUrl(camera.rtsp_url)}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={revealedCameraIds[camera.id] ? 'Hide RTSP URL' : 'Reveal RTSP URL'}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                    onClick={() =>
+                      revealedCameraIds[camera.id]
+                        ? hideCameraRtsp(camera.id)
+                        : requestReveal({ type: 'camera', id: camera.id })
+                    }
+                  >
+                    <EyeIcon revealed={revealedCameraIds[camera.id]} />
+                  </button>
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggle(camera)}
+                    className={[
+                      'hud-pill',
+                      camera.is_active ? 'sev-info' : 'sev-warning',
+                      togglingId === camera.id ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+                    ].join(' ')}
+                    disabled={togglingId === camera.id}
+                  >
+                    {camera.is_active ? 'Active' : 'Inactive'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block table-shell table-shell-no-scroll">
+            <table className="w-full table-fixed text-sm">
+              <thead>
+                <tr>
+                  <th className="text-left px-6 w-[18%]">Name</th>
+                  <th className="text-left px-6 w-[16%]">Role</th>
+                  <th className="text-left px-6 w-[44%]">RTSP URL</th>
+                  <th className="text-left px-6 w-[10%]">Status</th>
+                  <th className="text-right px-6 w-[12%]">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {cameras.map((camera) => (
+                  <tr key={camera.id}>
+                    <td className="px-6 font-medium text-slate-100 w-[18%]">{camera.camera_name}</td>
+                    <td className="px-6 text-slate-300 w-[16%]">{camera.role}</td>
+                    <td className="px-6 text-slate-400 w-[44%]">
+                      <div className="flex items-center gap-2">
+                        <div className="w-full truncate">
+                          {revealedCameraIds[camera.id] ? camera.rtsp_url : maskRtspUrl(camera.rtsp_url)}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={revealedCameraIds[camera.id] ? 'Hide RTSP URL' : 'Reveal RTSP URL'}
+                          className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                          onClick={() =>
+                            revealedCameraIds[camera.id]
+                              ? hideCameraRtsp(camera.id)
+                              : requestReveal({ type: 'camera', id: camera.id })
+                          }
+                        >
+                          <EyeIcon revealed={revealedCameraIds[camera.id]} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 w-[10%]">
+                      <span
+                        className={[
+                          'hud-pill w-full justify-center',
+                          camera.is_active ? 'sev-info' : 'sev-warning'
+                        ].join(' ')}
+                        title="Edit camera to change status"
+                      >
+                        {camera.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-6">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          aria-label="Edit camera"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                          onClick={() => openEdit(camera)}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Delete camera"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
+                          onClick={() => setDeleteTarget(camera)}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M6 6l1 14h10l1-14" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {showForm && (
@@ -255,10 +433,13 @@ export default function CamerasPage() {
               </div>
               <button
                 type="button"
-                className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300 hover:border-white/30"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-slate-300 hover:border-white/30 hover:text-slate-100"
                 onClick={closeForm}
               >
-                Close
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
@@ -277,34 +458,49 @@ export default function CamerasPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
-                    Role
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                    value={formData.role}
-                    onChange={(event) => setFormData((prev) => ({ ...prev, role: event.target.value }))}
-                    placeholder="Loading bay"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
-                    Status
-                  </label>
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                  Role
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                  value={formData.role}
+                  onChange={(event) => setFormData((prev) => ({ ...prev, role: event.target.value }))}
+                  placeholder="Loading bay"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                  Status
+                </label>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     className={[
-                      'hud-pill',
-                      formData.is_active ? 'sev-info' : 'sev-warning',
-                      'px-4 py-2 text-xs uppercase tracking-[0.2em]'
+                      'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
+                      formData.is_active
+                        ? 'border-sky-300/60 bg-sky-300/10 text-sky-200'
+                        : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
                     ].join(' ')}
-                    onClick={() => setFormData((prev) => ({ ...prev, is_active: !prev.is_active }))}
+                    onClick={() => setFormData((prev) => ({ ...prev, is_active: true }))}
+                    aria-pressed={formData.is_active}
                   >
-                    {formData.is_active ? 'Active' : 'Inactive'}
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
+                      !formData.is_active
+                        ? 'border-amber-300/60 bg-amber-300/10 text-amber-200'
+                        : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
+                    ].join(' ')}
+                    onClick={() => setFormData((prev) => ({ ...prev, is_active: false }))}
+                    aria-pressed={!formData.is_active}
+                  >
+                    Inactive
                   </button>
                 </div>
               </div>
@@ -313,14 +509,36 @@ export default function CamerasPage() {
                 <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
                   RTSP URL
                 </label>
-                <input
-                  type="text"
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                  value={formData.rtsp_url}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, rtsp_url: event.target.value }))}
-                  placeholder="rtsp://user:pass@192.168.1.10:554/stream"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    className={[
+                      'w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 pr-12 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20',
+                      formMode === 'edit' && !isFormRtspRevealed ? 'cursor-not-allowed text-slate-400' : ''
+                    ].join(' ')}
+                    value={
+                      formMode === 'edit' && !isFormRtspRevealed
+                        ? maskRtspUrl(formData.rtsp_url)
+                        : formData.rtsp_url
+                    }
+                    onChange={(event) => setFormData((prev) => ({ ...prev, rtsp_url: event.target.value }))}
+                    placeholder="rtsp://user:pass@192.168.1.10:554/stream"
+                    readOnly={formMode === 'edit' && !isFormRtspRevealed}
+                    required
+                  />
+                  {formMode === 'edit' && (
+                    <button
+                      type="button"
+                      aria-label={isFormRtspRevealed ? 'Hide RTSP URL' : 'Reveal RTSP URL'}
+                      className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                      onClick={() =>
+                        isFormRtspRevealed ? hideFormRtsp() : requestReveal({ type: 'form' })
+                      }
+                    >
+                      <EyeIcon revealed={isFormRtspRevealed} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {actionError && <AlertBox variant="warning">{actionError}</AlertBox>}
@@ -376,6 +594,65 @@ export default function CamerasPage() {
                 {saving ? 'Deleting…' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {revealTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <div className="hud-card modal-shell p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Security check</div>
+                <div className="text-xl font-semibold font-display text-slate-100 mt-2">Reveal RTSP URL</div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-slate-300 hover:border-white/30 hover:text-slate-100"
+                onClick={() => setRevealTarget(null)}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleRevealSubmit} className="mt-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                  value={revealPassword}
+                  onChange={(event) => setRevealPassword(event.target.value)}
+                  placeholder="Enter reveal password"
+                  required
+                />
+              </div>
+
+              {revealError && <AlertBox variant="warning">{revealError}</AlertBox>}
+
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="rounded-full border border-white/15 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-200 hover:border-white/30"
+                  onClick={() => setRevealTarget(null)}
+                  disabled={revealLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:opacity-60"
+                  disabled={revealLoading}
+                >
+                  {revealLoading ? 'Checking…' : 'Reveal'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

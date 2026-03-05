@@ -27,6 +27,14 @@ class LoginIn(BaseModel):
     password: str
 
 
+class PasswordVerifyIn(BaseModel):
+    password: str = Field(min_length=1)
+
+
+class PasswordVerifyOut(BaseModel):
+    valid: bool
+
+
 class UserOut(BaseModel):
     id: UUID
     username: str

@@ -203,6 +203,28 @@ a {
     box-shadow: 0 24px 50px -40px rgba(2, 6, 23, 0.85);
   }
 
+  @media (max-width: 640px) {
+    .hud-value {
+      font-size: 24px;
+    }
+
+    .hud-label {
+      letter-spacing: 0.28em;
+    }
+
+    .metric-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .intel-banner {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      padding: 10px 12px;
+      text-align: center;
+      width: 100%;
+    }
+  }
+
   .report-tile {
     border-radius: 18px;
     border: 1px dashed rgba(148, 163, 184, 0.3);
@@ -412,9 +434,13 @@ a {
     z-index: 1;
   }
 
+  .table-shell-no-scroll {
+    overflow-x: hidden;
+  }
+
   .modal-shell {
-    width: 100%;
-    max-width: 95vw;
+    width: 92vw;
+    max-width: 720px;
     max-height: 85vh;
   }
 

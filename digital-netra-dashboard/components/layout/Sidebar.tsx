@@ -2,12 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Camera, LayoutGrid } from 'lucide-react';
-
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { href: '/dashboard/cameras', label: 'Cameras', icon: Camera }
-];
+import { navItems } from '@/components/layout/nav-items';
 
 export function Sidebar() {
   const pathname = usePathname();

@@ -37,6 +37,10 @@ export type EmailCheckResponse = {
   available: boolean;
 };
 
+export type PasswordVerifyResponse = {
+  valid: boolean;
+};
+
 export interface Camera {
   id: string;
   camera_name: string;

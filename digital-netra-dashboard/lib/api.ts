@@ -5,6 +5,7 @@ import type {
   CameraUpdate,
   EmailCheckResponse,
   LoginResponse,
+  PasswordVerifyResponse,
   SessionResponse,
   User,
   UsernameCheckResponse
@@ -71,6 +72,10 @@ export type AccountUpdateInput = {
   confirm_password?: string;
 };
 
+export type PasswordVerifyInput = {
+  password: string;
+};
+
 export async function signup(payload: SignupInput): Promise<LoginResponse> {
   return apiFetch<LoginResponse>('/auth/signup', {
     method: 'POST',
@@ -101,6 +106,13 @@ export async function getAccount(): Promise<User> {
 export async function updateAccount(payload: AccountUpdateInput): Promise<User> {
   return apiFetch<User>('/auth/account', {
     method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function verifyPassword(payload: PasswordVerifyInput): Promise<PasswordVerifyResponse> {
+  return apiFetch<PasswordVerifyResponse>('/auth/verify-password', {
+    method: 'POST',
     body: JSON.stringify(payload)
   });
 }

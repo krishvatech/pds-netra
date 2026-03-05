@@ -35,12 +35,12 @@ export default function DashboardPage() {
             <span className="pulse-dot pulse-info" />
             Live
           </div>
-          <div className="text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
+          <div className="text-3xl sm:text-4xl font-semibold font-display tracking-tight text-slate-100 drop-shadow">
             Dashboard
           </div>
           <div className="text-sm text-slate-300">Live operational health and incident pressure.</div>
         </div>
-        <div className="intel-banner">Updated Mar 5, 2026 · 2:45 PM IST</div>
+        <div className="intel-banner text-center">Updated Mar 5, 2026 · 2:45 PM IST</div>
       </div>
 
       <div className="metric-grid">
@@ -75,7 +75,7 @@ export default function DashboardPage() {
           <div className="text-lg font-semibold font-display">Incident queue</div>
           <div className="text-sm text-slate-400 mt-1">Highest severity alerts awaiting response.</div>
           <div className="mt-4 space-y-3">
-            <div className="incident-card p-4 flex items-start justify-between gap-4">
+            <div className="incident-card p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Alert</div>
                 <div className="text-base font-semibold text-slate-100">After-hours presence</div>
@@ -87,7 +87,7 @@ export default function DashboardPage() {
               </div>
               <div className="hud-pill sev-critical">CRITICAL</div>
             </div>
-            <div className="incident-card p-4 flex items-start justify-between gap-4">
+            <div className="incident-card p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Alert</div>
                 <div className="text-base font-semibold text-slate-100">Camera tamper</div>

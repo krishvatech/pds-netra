@@ -25,6 +25,8 @@ from app.schemas.auth import (
     EmailCheckResponse,
     LoginIn,
     LoginResponse,
+    PasswordVerifyIn,
+    PasswordVerifyOut,
     SignupIn,
     UsernameCheckResponse,
     UserOut,
@@ -163,6 +165,12 @@ def session(request: Request, db: Session = Depends(get_db)):
 def get_account(request: Request, db: Session = Depends(get_db)):
     user = _get_current_user(request, db)
     return UserOut.model_validate(user)
+
+
+@router.post("/verify-password", response_model=PasswordVerifyOut)
+def verify_account_password(payload: PasswordVerifyIn, request: Request, db: Session = Depends(get_db)):
+    user = _get_current_user(request, db)
+    return PasswordVerifyOut(valid=verify_password(payload.password, user.password_hash))
 
 
 @router.post("/logout")
