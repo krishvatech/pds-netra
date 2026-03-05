@@ -163,6 +163,10 @@ async function handle(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
     cache: 'no-store'
   });
 
+  if (upstream.status === 204) {
+    return new NextResponse(null, { status: 204 });
+  }
+
   const isAuthBootstrap = (joined === 'auth/login' || joined === 'auth/signup') && upstream.ok;
   if (isAuthBootstrap) {
     const payload = await upstream.json().catch(() => null);

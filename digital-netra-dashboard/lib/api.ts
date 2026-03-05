@@ -1,5 +1,8 @@
 import { clearSession, getToken } from '@/lib/auth';
 import type {
+  Camera,
+  CameraCreate,
+  CameraUpdate,
   EmailCheckResponse,
   LoginResponse,
   SessionResponse,
@@ -89,4 +92,26 @@ export async function checkUsername(username: string): Promise<UsernameCheckResp
 export async function checkEmail(email: string): Promise<EmailCheckResponse> {
   const params = new URLSearchParams({ email });
   return apiFetch<EmailCheckResponse>(`/auth/check-email?${params.toString()}`);
+}
+
+export async function getCameras(): Promise<Camera[]> {
+  return apiFetch<Camera[]>('/cameras');
+}
+
+export async function createCamera(payload: CameraCreate): Promise<Camera> {
+  return apiFetch<Camera>('/cameras', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateCamera(id: string, payload: CameraUpdate): Promise<Camera> {
+  return apiFetch<Camera>(`/cameras/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteCamera(id: string): Promise<void> {
+  await apiFetch(`/cameras/${id}`, { method: 'DELETE' });
 }
