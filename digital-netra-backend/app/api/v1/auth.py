@@ -21,16 +21,50 @@ from app.core.security import (
 )
 from app.models.app_user import AppUser
 from app.schemas.auth import (
+    AccountUpdateIn,
     EmailCheckResponse,
     LoginIn,
     LoginResponse,
     SignupIn,
     UsernameCheckResponse,
     UserOut,
+    UserSessionOut,
 )
 
 router = APIRouter()
 SESSION_COOKIE = "dn_session"
+
+
+def _extract_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    return request.cookies.get(SESSION_COOKIE)
+
+
+def _get_current_user(request: Request, db: Session) -> AppUser:
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="missing_token")
+    try:
+        payload = decode_access_token(token)
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="token_expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="invalid_token")
+
+    raw_user_id = payload.get("user_id")
+    if not raw_user_id:
+        raise HTTPException(status_code=401, detail="invalid_token")
+    try:
+        user_id = uuid.UUID(str(raw_user_id))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="invalid_token")
+
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="user_not_found")
+    return user
 
 
 def _secure_cookie() -> bool:
@@ -121,36 +155,14 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
 
 @router.get("/session")
 def session(request: Request, db: Session = Depends(get_db)):
-    token = None
-    auth = request.headers.get("authorization")
-    if auth and auth.lower().startswith("bearer "):
-        token = auth.split(" ", 1)[1].strip()
-    if not token:
-        token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        raise HTTPException(status_code=401, detail="missing_token")
+    user = _get_current_user(request, db)
+    return {"user": UserSessionOut.model_validate(user)}
 
-    try:
-        payload = decode_access_token(token)
-    except ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="token_expired")
-    except InvalidTokenError:
-        raise HTTPException(status_code=401, detail="invalid_token")
 
-    raw_user_id = payload.get("user_id")
-    if not raw_user_id:
-        raise HTTPException(status_code=401, detail="invalid_token")
-
-    try:
-        user_id = uuid.UUID(str(raw_user_id))
-    except ValueError:
-        raise HTTPException(status_code=401, detail="invalid_token")
-
-    user = db.get(AppUser, user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="user_not_found")
-
-    return {"user": UserOut.model_validate(user)}
+@router.get("/account", response_model=UserOut)
+def get_account(request: Request, db: Session = Depends(get_db)):
+    user = _get_current_user(request, db)
+    return UserOut.model_validate(user)
 
 
 @router.post("/logout")
@@ -180,3 +192,44 @@ def check_email(email: str = Query(""), db: Session = Depends(get_db)):
 
     exists = db.execute(select(AppUser.id).where(func.lower(AppUser.email) == normalized)).scalars().first()
     return EmailCheckResponse(email=normalized, available=not bool(exists))
+
+
+@router.put("/account", response_model=UserOut)
+def update_account(payload: AccountUpdateIn, request: Request, db: Session = Depends(get_db)):
+    user = _get_current_user(request, db)
+
+    if payload.email:
+        normalized_email = payload.email.strip().lower()
+        exists = db.execute(
+            select(AppUser.id).where(func.lower(AppUser.email) == normalized_email, AppUser.id != user.id)
+        ).scalars().first()
+        if exists:
+            raise HTTPException(status_code=409, detail="email_taken")
+        user.email = normalized_email
+
+    if payload.first_name is not None:
+        user.first_name = payload.first_name.strip()
+    if payload.last_name is not None:
+        user.last_name = payload.last_name.strip()
+    if payload.phone is not None:
+        user.phone = payload.phone.strip() or None
+
+    if payload.password:
+        password_errors = validate_password_strength(payload.password)
+        if password_errors:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "Password does not meet requirements", "rules": password_errors},
+            )
+        user.password_hash = hash_password(payload.password)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
+
+
+@router.post("/deactivate")
+def deactivate_account(request: Request, db: Session = Depends(get_db)):
+    _get_current_user(request, db)
+    raise HTTPException(status_code=403, detail="self_deactivate_not_allowed")

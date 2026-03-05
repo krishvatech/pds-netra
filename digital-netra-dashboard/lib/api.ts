@@ -6,6 +6,7 @@ import type {
   EmailCheckResponse,
   LoginResponse,
   SessionResponse,
+  User,
   UsernameCheckResponse
 } from '@/lib/types';
 
@@ -61,6 +62,15 @@ export type LoginInput = {
   password: string;
 };
 
+export type AccountUpdateInput = {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string | null;
+  password?: string;
+  confirm_password?: string;
+};
+
 export async function signup(payload: SignupInput): Promise<LoginResponse> {
   return apiFetch<LoginResponse>('/auth/signup', {
     method: 'POST',
@@ -83,6 +93,18 @@ export async function logout(): Promise<void> {
 export async function getSession(): Promise<SessionResponse> {
   return apiFetch<SessionResponse>('/auth/session');
 }
+
+export async function getAccount(): Promise<User> {
+  return apiFetch<User>('/auth/account');
+}
+
+export async function updateAccount(payload: AccountUpdateInput): Promise<User> {
+  return apiFetch<User>('/auth/account', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
 
 export async function checkUsername(username: string): Promise<UsernameCheckResponse> {
   const params = new URLSearchParams({ username });

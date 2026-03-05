@@ -1,22 +1,34 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AlertBox } from '@/components/ui/alert-box';
 import { getSessionUser } from '@/lib/auth';
+import type { User } from '@/lib/types';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     async function guard() {
-      const user = await getSessionUser();
-      if (!user) router.replace('/auth/login');
+      const sessionUser = await getSessionUser();
+      if (!sessionUser) {
+        router.replace('/auth/login');
+        return;
+      }
+      setUser(sessionUser);
     }
     guard();
   }, [router]);
 
   return (
     <div className="space-y-6">
+      {user && !user.is_active && (
+        <AlertBox variant="warning">
+          This account has been deactivated. Please contact an administrator to restore access.
+        </AlertBox>
+      )}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-2">
           <div className="hud-pill">

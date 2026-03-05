@@ -41,6 +41,33 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserSessionOut(BaseModel):
+    id: UUID
+    email: EmailStr
+    is_admin: bool
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountUpdateIn(BaseModel):
+    first_name: str | None = Field(default=None, max_length=128)
+    last_name: str | None = Field(default=None, max_length=128)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=15)
+    password: str | None = None
+    confirm_password: str | None = None
+
+    @model_validator(mode="after")
+    def validate_passwords_match(self) -> "AccountUpdateIn":
+        if self.password or self.confirm_password:
+            if not self.password or not self.confirm_password:
+                raise ValueError("Both password fields are required")
+            if self.password != self.confirm_password:
+                raise ValueError("Passwords do not match")
+        return self
+
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

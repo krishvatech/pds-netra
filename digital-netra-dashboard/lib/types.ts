@@ -6,6 +6,8 @@ export type User = {
   is_admin: boolean;
   is_active: boolean;
   created_at: string;
+  first_name: string;
+  last_name: string;
 };
 
 export type LoginResponse = {
@@ -15,7 +17,14 @@ export type LoginResponse = {
 };
 
 export type SessionResponse = {
-  user: User | null;
+  user: SessionUser | null;
+};
+
+export type SessionUser = {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  is_active: boolean;
 };
 
 export type UsernameCheckResponse = {

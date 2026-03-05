@@ -25,7 +25,7 @@ poetry install
 Run database migrations:
 
 ```bash
-poetry run alembic upgrade head
+
 ```
 
 Start the backend server:

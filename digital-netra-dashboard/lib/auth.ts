@@ -25,6 +25,11 @@ export function getUser(): User | null {
   }
 }
 
+export function setUser(user: User) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
 export function clearSession() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(TOKEN_KEY);
@@ -33,10 +38,10 @@ export function clearSession() {
 
 export async function getSessionUser(): Promise<User | null> {
   if (typeof window === 'undefined') return null;
-  const resp = await fetch('/api/v1/auth/session', { credentials: 'include' });
+  const resp = await fetch('/api/v1/auth/account', { credentials: 'include' });
   if (!resp.ok) return null;
   const data = await resp.json();
-  const user = (data?.user || null) as User | null;
+  const user = (data?.user || data || null) as User | null;
   if (user) {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
