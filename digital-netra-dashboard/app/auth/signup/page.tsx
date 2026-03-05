@@ -184,30 +184,40 @@ export default function SignupPage() {
     emailStatus === 'taken';
 
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/10 p-6 shadow-[0_28px_70px_-50px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:p-8">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <BrandLogo className="h-24 w-auto" />
+    <div className="rounded-2xl border border-white/15 bg-white/10 p-5 shadow-[0_28px_70px_-50px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:p-8 [@media(max-height:700px)]:p-4">
+      <div className="flex flex-col items-center gap-2 text-center sm:gap-3 [@media(max-height:700px)]:gap-1.5">
+        <BrandLogo className="h-16 w-auto sm:h-20 md:h-24 [@media(max-height:700px)]:h-12" />
         <div className="space-y-2">
           <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-300/80">
             Identity Setup
           </div>
-          <h1 className="text-2xl font-display text-slate-100 sm:text-3xl">Create Digital Netra ID</h1>
-          <p className="text-sm text-slate-400">Register to access the monitoring console.</p>
+          <h1 className="text-2xl font-display text-slate-100 sm:text-3xl [@media(max-height:700px)]:text-xl">
+            Create Digital Netra ID
+          </h1>
+          <p className="text-sm text-slate-400 [@media(max-height:700px)]:text-xs">
+            Register to access the monitoring console.
+          </p>
         </div>
       </div>
 
-      <div className="mt-6 h-px w-full bg-white/10" />
+      <div className="mt-4 h-px w-full bg-white/10 sm:mt-6 [@media(max-height:700px)]:mt-3" />
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-5">
+      <form
+        onSubmit={onSubmit}
+        className="mt-4 space-y-4 sm:mt-6 sm:space-y-5 [@media(max-height:700px)]:mt-3 [@media(max-height:700px)]:space-y-3"
+      >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="firstName">
+            <label
+              className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80 [@media(max-height:700px)]:text-[10px]"
+              htmlFor="firstName"
+            >
               First Name
             </label>
             <input
               id="firstName"
               type="text"
-              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20 [@media(max-height:700px)]:py-2"
               value={firstName}
               onChange={(event) => setFirstName(event.target.value)}
               placeholder="John"
@@ -215,13 +225,16 @@ export default function SignupPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="lastName">
+            <label
+              className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80 [@media(max-height:700px)]:text-[10px]"
+              htmlFor="lastName"
+            >
               Last Name
             </label>
             <input
               id="lastName"
               type="text"
-              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20 [@media(max-height:700px)]:py-2"
               value={lastName}
               onChange={(event) => setLastName(event.target.value)}
               placeholder="Duo"
@@ -232,7 +245,10 @@ export default function SignupPage() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="email">
+            <label
+              className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80 [@media(max-height:700px)]:text-[10px]"
+              htmlFor="email"
+            >
               Email
             </label>
             <AvailabilityBadge status={emailStatus} />
@@ -240,7 +256,7 @@ export default function SignupPage() {
           <input
             id="email"
             type="email"
-            className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+            className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20 [@media(max-height:700px)]:py-2"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@digitalnetra.ai"
@@ -254,7 +270,10 @@ export default function SignupPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="password">
+          <label
+            className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80 [@media(max-height:700px)]:text-[10px]"
+            htmlFor="password"
+          >
             Password
           </label>
           <PasswordInput
@@ -262,7 +281,7 @@ export default function SignupPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Create a strong password"
-            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20 [@media(max-height:700px)]:py-2"
             required
           />
           {passwordErrors.length > 0 && (
@@ -276,7 +295,10 @@ export default function SignupPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="confirmPassword">
+          <label
+            className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80 [@media(max-height:700px)]:text-[10px]"
+            htmlFor="confirmPassword"
+          >
             Confirm Password
           </label>
           <PasswordInput
@@ -284,7 +306,7 @@ export default function SignupPage() {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             placeholder="Re-enter password"
-            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20 [@media(max-height:700px)]:py-2"
             required
           />
           {!passwordsMatch && (
@@ -304,7 +326,7 @@ export default function SignupPage() {
 
         <button
           type="submit"
-          className="btn-primary w-full rounded-full py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn-primary w-full rounded-full py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 [@media(max-height:700px)]:py-2"
           disabled={disableSubmit}
         >
           {loading ? 'Creating account…' : 'Create account'}
