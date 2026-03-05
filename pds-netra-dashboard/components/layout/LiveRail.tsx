@@ -476,7 +476,8 @@ export function LiveRail({ initialUiPrefs, initialAlertCues }: RailProps) {
 
   return (
     <>
-      <aside className="hidden lg:flex lg:flex-col lg:w-[360px] h-full lg:py-4 lg:pr-6 lg:pl-4 gap-4 pt-8 overflow-y-auto border-l border-white/10">
+    <aside className="hidden lg:flex lg:flex-col lg:w-[360px] h-full lg:py-4 lg:pr-6 lg:pl-4 gap-4 pt-8 overflow-y-auto border-l border-white/10"></aside>
+      <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
         <div className="hud-card p-4 sticky top-28 z-20">
           <div className="flex items-center justify-between">
             <div>

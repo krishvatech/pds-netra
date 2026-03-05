@@ -156,6 +156,49 @@ def seed_rules_for_camera(db: Session, cam: Camera) -> int:
     return created
 
 
+def ensure_phone_usage_rules_for_camera(db: Session, cam: Camera, *, force: bool = False) -> int:
+    """
+    Ensure PHONE_USAGE rules exist for a camera.
+
+    When force=True, skip role checks and seed the rule for all zones.
+    """
+    created = 0
+    role = (cam.role or "").upper()
+    cam_id_u = (cam.id or "").upper()
+    if not force:
+        if not (
+            "SECURITY" in role
+            or "AISLE" in role
+            or "SECURITY" in cam_id_u
+            or "AISLE" in cam_id_u
+        ):
+            return 0
+
+    zones = _parse_zones(cam.zones_json)
+    zone_targets = zones or ["all"]
+    for zone_id in zone_targets:
+        rtype = "PHONE_USAGE"
+        params = {"start_time": "09:00", "end_time": "19:00", "cooldown_seconds": 30}
+        if _rule_exists(db, cam.godown_id, cam.id, zone_id, rtype):
+            continue
+        db.add(
+            Rule(
+                godown_id=cam.godown_id,
+                camera_id=cam.id,
+                zone_id=zone_id,
+                type=rtype,
+                enabled=True,
+                params=params,
+            )
+        )
+        created += 1
+
+    if created:
+        db.commit()
+        logging.getLogger("rule_seed").info("Seeded %s PHONE_USAGE rules for camera %s", created, cam.id)
+    return created
+
+
 def seed_rules_for_godown(db: Session, godown_id: str) -> int:
     """Seed baseline rules for all cameras of a godown."""
     created = 0

@@ -16,9 +16,13 @@ from ...core.db import get_db
 import os
 from ...models.godown import Camera, Godown
 from ...core.auth import UserContext, get_current_user
-from ...services.rule_seed import seed_rules_for_camera
+from ...services.rule_seed import seed_rules_for_camera, ensure_phone_usage_rules_for_camera
 from ...services.live_frames import remove_live_frame_artifacts
-from ...services.mqtt_publisher import publish_camera_config_changed, publish_zones_config_changed
+from ...services.mqtt_publisher import (
+    publish_camera_config_changed,
+    publish_rules_config_changed,
+    publish_zones_config_changed,
+)
 from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
@@ -281,6 +285,8 @@ def update_camera(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     camera = _get_camera(db, camera_id, godown_id, user)
+    prev_modules = _parse_modules(camera.modules_json) or {}
+    prev_phone_usage_enabled = bool(prev_modules.get("phone_usage_enabled"))
     prev_is_active = camera.is_active
     if payload.label is not None:
         camera.label = payload.label
@@ -306,6 +312,13 @@ def update_camera(
     db.commit()
     db.refresh(camera)
     publish_camera_config_changed(camera.godown_id, camera.id, "updated")
+    if payload.modules is not None:
+        new_modules = _parse_modules(camera.modules_json) or {}
+        new_phone_usage_enabled = bool(new_modules.get("phone_usage_enabled"))
+        if new_phone_usage_enabled and not prev_phone_usage_enabled:
+            created = ensure_phone_usage_rules_for_camera(db, camera, force=True)
+            if created:
+                publish_rules_config_changed(camera.godown_id, camera.id)
     if prev_is_active and camera.is_active is False:
         _remove_live_latest_frame(camera.godown_id, camera.id)
     return _camera_payload(camera)

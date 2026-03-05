@@ -70,28 +70,28 @@ export function AppShell({
       </header>
 
       <div className="flex-1 flex min-h-0 w-full relative z-10 overflow-hidden">
-        <Sidebar user={initialUser} />
+          <Sidebar user={initialUser} />
 
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
           <div className={`flex-1 flex h-full min-h-0 w-full ${layoutPrefs.railOpen ? 'flex-col lg:flex-row' : 'flex-col'}`}>
-            <main
-              ref={contentRef}
+              <main
+                ref={contentRef}
               className="flex-1 h-full overflow-y-auto min-w-0 space-y-4 md:space-y-6 px-4 pb-4 md:px-6 md:pb-6 lg:px-8 lg:pb-8 [&>*]:min-w-0"
-            >
-              <MobileRail
+              >
+                <MobileRail
+                  initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
+                  initialAlertCues={initialAlertCues}
+                />
+                {children}
+              </main>
+
+              <LiveRail
                 initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
                 initialAlertCues={initialAlertCues}
               />
-              {children}
-            </main>
-
-            <LiveRail
-              initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
-              initialAlertCues={initialAlertCues}
-            />
+            </div>
           </div>
         </div>
       </div>
-    </div>
   );
 }
