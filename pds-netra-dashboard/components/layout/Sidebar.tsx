@@ -625,15 +625,6 @@ export function Sidebar({ user }: { user: LoginResponse['user'] | null }) {
 
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-[260px] lg:shrink-0 lg:h-full lg:overflow-y-auto px-4 lg:px-5 py-6 border-r border-white/10 bg-slate-900/70 text-slate-100 backdrop-blur">
-      <div className="flex items-center gap-3 pb-5 border-b border-white/10">
-        <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white flex items-center justify-center text-lg font-semibold shadow-lg">
-          PN
-        </div>
-        <div>
-          <div className="text-xl font-semibold font-display tracking-tight">Digital Netra</div>
-          <div className="text-xs text-slate-400">State Command Center</div>
-        </div>
-      </div>
       <nav className="mt-6 space-y-1">
         {navItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/');
