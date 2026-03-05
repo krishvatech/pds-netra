@@ -1,13 +1,11 @@
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="app-shell relative min-h-screen">
-      <div className="app-bg" />
-      <div className="app-grid" />
-      <div className="app-scanlines" />
-      <div className="pointer-events-none absolute -top-20 right-16 hidden h-56 w-56 rounded-full bg-gradient-to-br from-amber-400/40 via-orange-400/30 to-transparent blur-3xl animate-float lg:block" />
-      <div className="pointer-events-none absolute bottom-[-120px] left-[-80px] hidden h-72 w-72 rounded-full bg-gradient-to-tr from-sky-400/40 via-blue-400/30 to-transparent blur-3xl animate-float lg:block" />
+    <div className="relative min-h-screen overflow-hidden bg-[#0b1020]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_15%_12%,rgba(255,255,255,0.12),rgba(9,15,30,0.85)_45%,rgba(6,10,20,0.98)_70%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1000px_circle_at_85%_5%,rgba(120,170,255,0.22),rgba(7,12,25,0.0)_35%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.9))]" />
       <main className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md sm:max-w-md lg:max-w-lg">{children}</div>
+        <div className="w-full max-w-md">{children}</div>
       </main>
     </div>
   );

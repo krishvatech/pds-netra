@@ -6,17 +6,19 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import { AlertBox } from '@/components/ui/alert-box';
+import { BrandLogo } from '@/components/ui/brand-logo';
 import { PasswordInput } from '@/components/ui/password-input';
 import { ApiError, checkEmail, checkUsername, signup } from '@/lib/api';
 import { setSession } from '@/lib/auth';
 
-type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error';
-
 type FieldErrors = {
-  username?: string;
   email?: string;
+  password?: string;
+  confirmPassword?: string;
   general?: string;
 };
+
+type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error';
 
 const passwordRules = [
   { id: 'min_length', label: 'At least 8 characters', test: (value: string) => value.length >= 8 },
@@ -30,7 +32,7 @@ function AvailabilityBadge({ status }: { status: Availability }) {
   if (status === 'idle') return null;
   if (status === 'checking') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-slate-500/30 bg-slate-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-400/30 bg-slate-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200">
         <Loader2 size={12} className="animate-spin" />
         Checking
       </span>
@@ -38,7 +40,7 @@ function AvailabilityBadge({ status }: { status: Availability }) {
   }
   if (status === 'available') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-200">
         <Check size={12} />
         Available
       </span>
@@ -46,14 +48,14 @@ function AvailabilityBadge({ status }: { status: Availability }) {
   }
   if (status === 'taken') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-amber-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-amber-200">
         <X size={12} />
         Taken
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-slate-500/30 bg-slate-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-300">
+    <span className="inline-flex items-center gap-1 rounded-full border border-slate-400/30 bg-slate-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-200">
       Unavailable
     </span>
   );
@@ -61,12 +63,11 @@ function AvailabilityBadge({ status }: { status: Availability }) {
 
 export default function SignupPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [usernameStatus, setUsernameStatus] = useState<Availability>('idle');
   const [emailStatus, setEmailStatus] = useState<Availability>('idle');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [success, setSuccess] = useState<string | null>(null);
@@ -77,23 +78,10 @@ export default function SignupPage() {
     [password]
   );
   const passwordsMatch = confirmPassword.length === 0 || password === confirmPassword;
-
-  useEffect(() => {
-    if (!username.trim()) {
-      setUsernameStatus('idle');
-      return;
-    }
-    setUsernameStatus('checking');
-    const handle = setTimeout(async () => {
-      try {
-        const resp = await checkUsername(username.trim());
-        setUsernameStatus(resp.available ? 'available' : 'taken');
-      } catch {
-        setUsernameStatus('error');
-      }
-    }, 500);
-    return () => clearTimeout(handle);
-  }, [username]);
+  const missingPasswordLabels = useMemo(
+    () => passwordRules.filter((rule) => passwordErrors.includes(rule.id)).map((rule) => rule.label),
+    [passwordErrors]
+  );
 
   useEffect(() => {
     const trimmed = email.trim();
@@ -113,17 +101,53 @@ export default function SignupPage() {
     return () => clearTimeout(handle);
   }, [email]);
 
+  function normalizeUsername(value: string) {
+    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  async function allocateUsername() {
+    const base = normalizeUsername(`${firstName}${lastName}`) || 'user';
+    const candidates = [base, `${base}${Math.floor(Math.random() * 900 + 100)}`];
+    for (const candidate of candidates) {
+      try {
+        const resp = await checkUsername(candidate);
+        if (resp.available) return candidate;
+      } catch {
+        // ignore and try next
+      }
+    }
+    return null;
+  }
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
     setFieldErrors({});
     setSuccess(null);
 
+    if (passwordErrors.length > 0) {
+      setFieldErrors({ password: `Missing: ${missingPasswordLabels.join(', ')}.` });
+      setLoading(false);
+      return;
+    }
+    if (!passwordsMatch) {
+      setFieldErrors({ confirmPassword: 'Passwords do not match.' });
+      setLoading(false);
+      return;
+    }
+
     try {
+      const username = await allocateUsername();
+      if (!username) {
+        setFieldErrors({ general: 'Unable to allocate a username. Please try again.' });
+        setLoading(false);
+        return;
+      }
       const resp = await signup({
-        username: username.trim(),
+        username,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         email: email.trim(),
-        phone: phone.trim() || undefined,
         password,
         confirm_password: confirmPassword
       });
@@ -131,11 +155,13 @@ export default function SignupPage() {
       setSuccess('Account created. Redirecting to login…');
       setTimeout(() => router.replace('/auth/login'), 900);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.status === 400 && err.body?.detail?.rules) {
+        const rules = Array.isArray(err.body.detail.rules) ? err.body.detail.rules : [];
+        const labels = passwordRules.filter((rule) => rules.includes(rule.id)).map((rule) => rule.label);
+        setFieldErrors({ password: `Missing: ${labels.join(', ')}.` });
+      } else if (err instanceof ApiError && err.status === 409) {
         const detail = err.body?.detail;
-        if (detail === 'username_taken') {
-          setFieldErrors({ username: 'Username already taken. Choose another.' });
-        } else if (detail === 'email_taken') {
+        if (detail === 'email_taken') {
           setFieldErrors({ email: 'Email already registered. Use another.' });
         } else {
           setFieldErrors({ general: 'Account already exists. Please sign in.' });
@@ -150,67 +176,71 @@ export default function SignupPage() {
 
   const disableSubmit =
     loading ||
-    !username.trim() ||
+    !firstName.trim() ||
+    !lastName.trim() ||
     !email.trim() ||
-    passwordErrors.length > 0 ||
     !password ||
     !confirmPassword ||
-    !passwordsMatch ||
-    usernameStatus === 'taken' ||
     emailStatus === 'taken';
 
   return (
-    <div className="hud-card p-6 sm:p-8">
-      <div className="space-y-2">
-        <div className="hud-label">Identity Setup</div>
-        <h1 className="text-2xl font-display text-slate-100 sm:text-3xl">Create Digital Netra ID</h1>
-        <p className="text-sm text-slate-400">Register to access the monitoring console.</p>
+    <div className="rounded-2xl border border-white/15 bg-white/10 p-6 shadow-[0_28px_70px_-50px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:p-8">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <BrandLogo className="h-24 w-auto" />
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-300/80">
+            Identity Setup
+          </div>
+          <h1 className="text-2xl font-display text-slate-100 sm:text-3xl">Create Digital Netra ID</h1>
+          <p className="text-sm text-slate-400">Register to access the monitoring console.</p>
+        </div>
       </div>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-5">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="mt-6 h-px w-full bg-white/10" />
+
+      <form onSubmit={onSubmit} className="mt-6 space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="hud-label" htmlFor="username">Username</label>
-              <AvailabilityBadge status={usernameStatus} />
-            </div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="firstName">
+              First Name
+            </label>
             <input
-              id="username"
+              id="firstName"
               type="text"
-              className="input-field w-full"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="operator-01"
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              placeholder="John"
               required
             />
-            {fieldErrors.username && (
-              <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs sev-warning">
-                {fieldErrors.username}
-              </span>
-            )}
           </div>
           <div className="space-y-2">
-            <label className="hud-label" htmlFor="phone">Phone</label>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="lastName">
+              Last Name
+            </label>
             <input
-              id="phone"
-              type="tel"
-              className="input-field w-full"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="+91 98765 43210"
+              id="lastName"
+              type="text"
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
+              placeholder="Duo"
+              required
             />
           </div>
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="hud-label" htmlFor="email">Email</label>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="email">
+              Email
+            </label>
             <AvailabilityBadge status={emailStatus} />
           </div>
           <input
             id="email"
             type="email"
-            className="input-field w-full"
+            className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@digitalnetra.ai"
@@ -224,34 +254,37 @@ export default function SignupPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="hud-label" htmlFor="password">Password</label>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="password">
+            Password
+          </label>
           <PasswordInput
             id="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Create a strong password"
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
             required
           />
-          <div className="space-y-1 text-xs text-slate-300">
-            {passwordRules.map((rule) => {
-              const met = rule.test(password);
-              return (
-                <div key={rule.id} className="flex items-center gap-2">
-                  {met ? <Check size={14} className="text-emerald-400" /> : <X size={14} className="text-rose-400" />}
-                  <span className={met ? 'text-emerald-300' : 'text-rose-300'}>{rule.label}</span>
-                </div>
-              );
-            })}
-          </div>
+          {passwordErrors.length > 0 && (
+            <div className="text-xs text-amber-200">Stronger password required.</div>
+          )}
+          {fieldErrors.password && (
+            <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs sev-warning">
+              {fieldErrors.password}
+            </span>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="hud-label" htmlFor="confirmPassword">Confirm Password</label>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80" htmlFor="confirmPassword">
+            Confirm Password
+          </label>
           <PasswordInput
             id="confirmPassword"
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             placeholder="Re-enter password"
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
             required
           />
           {!passwordsMatch && (
@@ -259,18 +292,27 @@ export default function SignupPage() {
               Passwords do not match
             </span>
           )}
+          {fieldErrors.confirmPassword && (
+            <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs sev-critical">
+              {fieldErrors.confirmPassword}
+            </span>
+          )}
         </div>
 
         {fieldErrors.general && <AlertBox variant="error">{fieldErrors.general}</AlertBox>}
         {success && <AlertBox variant="success">{success}</AlertBox>}
 
-        <button type="submit" className="btn-primary w-full" disabled={disableSubmit}>
+        <button
+          type="submit"
+          className="btn-primary w-full rounded-full py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={disableSubmit}
+        >
           {loading ? 'Creating account…' : 'Create account'}
         </button>
 
         <div className="text-sm text-slate-400">
           Already have access?{' '}
-          <Link href="/auth/login" className="text-sky-400 underline">
+          <Link href="/auth/login" className="text-sky-300 underline decoration-sky-300/40 underline-offset-4">
             Sign in
           </Link>
         </div>

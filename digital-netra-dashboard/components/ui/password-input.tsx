@@ -15,12 +15,7 @@ export function PasswordInput({ className, ...props }: PasswordInputProps) {
       <input
         {...props}
         type={inputType}
-        className={[
-          'input-field w-full pr-11',
-          className
-        ]
-          .filter(Boolean)
-          .join(' ')}
+        className={['w-full pr-11', className].filter(Boolean).join(' ')}
       />
       <button
         type="button"

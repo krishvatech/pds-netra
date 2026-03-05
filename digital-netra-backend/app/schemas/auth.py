@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 class SignupIn(BaseModel):
     username: str = Field(min_length=3, max_length=128)
+    first_name: str = Field(min_length=1, max_length=128)
+    last_name: str = Field(min_length=1, max_length=128)
     email: EmailStr
     phone: str | None = Field(default=None, max_length=15)
     password: str = Field(min_length=8)
@@ -29,6 +31,8 @@ class UserOut(BaseModel):
     id: UUID
     username: str
     email: EmailStr
+    first_name: str
+    last_name: str
     phone: str | None = None
     is_admin: bool
     is_active: bool

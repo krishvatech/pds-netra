@@ -87,6 +87,8 @@ def signup(payload: SignupIn, db: Session = Depends(get_db)):
     user = AppUser(
         username=username,
         email=email,
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
         phone=phone or None,
         password_hash=hash_password(payload.password),
     )

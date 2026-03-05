@@ -45,6 +45,8 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 export type SignupInput = {
   username: string;
+  first_name: string;
+  last_name: string;
   email: string;
   phone?: string;
   password: string;
