@@ -1,16 +1,15 @@
 'use client';
-'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, Menu, Settings } from 'lucide-react';
-import { Badge } from '../ui/badge';
+import { LogOut, Menu, Settings, UserCircle2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select } from '../ui/select';
 import { Label } from '../ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { clearSession, getUser } from '@/lib/auth';
 import { logout } from '@/lib/api';
 import type { LoginResponse } from '@/lib/types';
@@ -45,12 +44,10 @@ export function Topbar({
   const [cues, setCues] = useState(() => initialAlertCues ?? DEFAULT_ALERT_CUES);
   const [alertPulse, setAlertPulse] = useState(false);
   const [uiPrefs, setUiPrefsState] = useState(() => initialUiPrefs ?? DEFAULT_UI_PREFS);
-  const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuQuery, setMenuQuery] = useState('');
   const [profile, setProfile] = useState(() => getAlertProfile());
   const [controlsExpanded, setControlsExpanded] = useState(false);
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -87,25 +84,6 @@ export function Topbar({
     }
     return onUiPrefsChange(setUiPrefsState);
   }, [initialUiPrefs]);
-
-  useEffect(() => {
-    if (!showSettings) return;
-    const onClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (panelRef.current && target && !panelRef.current.contains(target)) {
-        setShowSettings(false);
-      }
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowSettings(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [showSettings]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -223,7 +201,7 @@ export function Topbar({
     return (
       <div className={`space-y-3 ${isCompact ? '' : 'px-4 pb-6 pt-4'}`}>
         <div className={`${isCompact ? '' : 'rounded-2xl border border-white/10 bg-white/5 p-3'}`}>
-          <div className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Mode</div>
+          <div className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Mode <span>(Alert pulse)</span> <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} /></div>
           <div className="mt-2 flex w-full rounded-xl bg-slate-900/70 p-1">
             <button
               type="button"
@@ -243,8 +221,7 @@ export function Topbar({
             </button>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] uppercase tracking-[0.24em] text-slate-500">
-            <span>Alert pulse</span>
-            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
+            
           </div>
         </div>
 
@@ -285,16 +262,6 @@ export function Topbar({
           </div>
         </div>
 
-        <Button
-          variant="ghost"
-          className="h-11 w-full rounded-xl text-xs uppercase tracking-[0.24em] btn-outline"
-          onClick={() => {
-            setMobileMenuOpen(false);
-            setShowSettings(true);
-          }}
-        >
-          Settings
-        </Button>
       </div>
     );
   };
@@ -309,7 +276,7 @@ export function Topbar({
 
   return (
     <header className="relative z-20 border-b border-white/10 bg-slate-900/70 px-4 py-3 text-slate-100 backdrop-blur">
-      <div className="flex w-full min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex w-full min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 w-full lg:w-auto">
           <div className="relative mb-1 flex items-center gap-2 lg:hidden">
             <div className="flex items-center gap-2">
@@ -324,36 +291,47 @@ export function Topbar({
               </Button>
             </div>
             <div className="pointer-events-none absolute left-1/2 max-w-[60%] -translate-x-1/2 truncate text-center text-base font-semibold font-display tracking-tight">
-              Digital Netra
+              DIGITAL NETRA DASHBOARD
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={iconBtn}
-                onClick={() => setShowSettings((prev) => !prev)}
-                aria-label="Open settings"
-                title="Open settings"
-              >
-                <Settings className={iconSize} aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={iconBtn}
-                onClick={handleLogout}
-                aria-label="Logout"
-                title="Logout"
-              >
-                <LogOut className={iconSize} aria-hidden />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className={iconBtn} aria-label="Open settings" title="Open settings">
+                    <Settings className={iconSize} aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-[300px] p-3 space-y-3">
+                  <DropdownMenuLabel className="px-0 py-0 text-slate-100">Settings</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="my-0" />
+                  {renderControlDeckPanel('full')}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className={iconBtn} aria-label="Open profile menu" title="Profile menu">
+                    <UserCircle2 className={iconSize} aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="truncate font-medium text-slate-100">{user?.name ?? user?.username ?? 'Account'}</div>
+                    {user?.role ? <div className="mt-0.5 text-[11px] uppercase tracking-[0.18em] text-slate-400">{user.role}</div> : null}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => router.push('/dashboard/account')}>
+                    Account settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem destructive onClick={handleLogout}>
+                    <LogOut className="h-4 w-4" aria-hidden />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-          <div className="hidden text-[11px] uppercase tracking-[0.2em] text-slate-400 lg:block sm:text-sm">Control Deck</div>
-          <div className="hidden truncate text-lg font-semibold font-display tracking-tight lg:block sm:text-xl">Digital Netra Dashboard</div>
-          <div className="mt-1 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-[11px] sm:tracking-[0.3em]">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Live perimeter
+          <div className="hidden text-[10px] uppercase tracking-[0.28em] text-slate-400 lg:block">Control Deck</div>
+          <div className="hidden truncate bg-gradient-to-r from-slate-100 via-white to-slate-300 bg-clip-text text-2xl font-semibold font-display tracking-tight text-transparent drop-shadow-[0_3px_16px_rgba(255,255,255,0.18)] lg:block xl:text-3xl">
+            DIGITAL NETRA DASHBOARD
           </div>
           {quietActive && (
             <div className="mt-2 inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-slate-500 sm:tracking-[0.3em]">
@@ -362,133 +340,90 @@ export function Topbar({
             </div>
           )}
         </div>
-        <div className="hidden lg:flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3">
-          <div className="hidden lg:flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.visual ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleVisual}
-            >
-              Visual
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.sound ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleSound}
-            >
-              Sound
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${cues.quietHoursEnabled ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleQuiet}
-            >
-              Quiet
-            </Button>
-            <Button
-              variant="ghost"
-              className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${uiPrefs.railOpen ? 'btn-outline' : 'opacity-60'}`}
-              onClick={toggleRail}
-            >
-              Rail
-            </Button>
-            <span className={`pulse-dot ${alertPulse ? 'pulse-warning' : 'pulse-info'}`} />
-          </div>
-          <Button
-            variant="ghost"
-            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] btn-outline sm:px-3 sm:text-[11px]"
-            onClick={() => setShowSettings((prev) => !prev)}
-          >
-            Settings
-          </Button>
-          {user ? (
-            <>
-              <div className="hidden lg:block text-sm text-slate-200">
-                {user.name ?? user.username}
-              </div>
-              {mounted && <Badge variant="outline" className="hidden lg:inline-flex">Profile: {profile}</Badge>}
-              <Badge variant="outline" className="hidden sm:inline-flex">{user.role}</Badge>
+        <div className="hidden lg:flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
-                variant="outline"
-                className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.25)] transition hover:border-rose-400 hover:bg-rose-500/20 hover:text-rose-200 hover:shadow-[0_0_14px_rgba(244,63,94,0.4)] active:scale-95 sm:px-4 sm:text-xs"
-                onClick={handleLogout}
-                aria-label="Logout"
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                aria-label="Open settings"
+                title="Settings"
               >
-                <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                Logout
+                <Settings className="h-4 w-4" aria-hidden />
               </Button>
-            </>
-          ) : (
-            <Badge variant="outline" className="text-[11px]">Not signed in</Badge>
-          )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[340px] p-3 space-y-3">
+              <DropdownMenuLabel className="px-0 py-0 text-slate-100">Control settings</DropdownMenuLabel>
+              <DropdownMenuSeparator className="my-0" />
+              {renderControlDeckPanel('full')}
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                <div>
+                  <Label>Alert profile</Label>
+                  <Select
+                    value={profile}
+                    onChange={(e) => handleProfileChange(e.target.value)}
+                    options={[
+                      { label: 'Default', value: 'default' },
+                      { label: 'Shift A', value: 'shift-a' },
+                      { label: 'Shift B', value: 'shift-b' },
+                      { label: 'Night Ops', value: 'night-ops' }
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Label>Minimum severity</Label>
+                  <Select
+                    value={cues.minSeverity}
+                    onChange={(e) => updateThreshold(e.target.value as 'info' | 'warning' | 'critical')}
+                    options={[
+                      { label: 'Info', value: 'info' },
+                      { label: 'Warning', value: 'warning' },
+                      { label: 'Critical', value: 'critical' }
+                    ]}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Quiet start</Label>
+                    <Input type="time" value={cues.quietHoursStart} onChange={(e) => updateQuietStart(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Quiet end</Label>
+                    <Input type="time" value={cues.quietHoursEnd} onChange={(e) => updateQuietEnd(e.target.value)} />
+                  </div>
+                </div>
+                <Button className="w-full" onClick={handleTestAlert}>Test alert</Button>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                aria-label="Open profile menu"
+                title="Profile"
+              >                                                                                                                           
+                <UserCircle2 className="h-4 w-4" aria-hidden />
+                                  </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-60">
+              <DropdownMenuLabel>
+                <div className="truncate font-medium text-slate-100">{user?.name ?? user?.username ?? 'Not signed in'}</div>
+                {mounted && <div className="mt-0.5 text-[11px] uppercase tracking-[0.18em] text-slate-400">Profile: {profile}</div>}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/dashboard/account')}>Account settings</DropdownMenuItem>
+              <DropdownMenuItem destructive onClick={handleLogout}>
+                <LogOut className="h-4 w-4" aria-hidden />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
-      {mounted && showSettings && (
-        <div ref={panelRef} className="settings-panel animate-fade-up">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Alert Settings</div>
-              <div className="text-base font-semibold text-white">
-                {user?.name ?? user?.username ?? 'Default profile'}
-              </div>
-            </div>
-            <button
-              className="text-xs uppercase tracking-[0.3em] text-slate-400"
-              onClick={() => setShowSettings(false)}
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            <div>
-              <Label>Alert profile</Label>
-              <Select
-                value={profile}
-                onChange={(e) => handleProfileChange(e.target.value)}
-                options={[
-                  { label: 'Default', value: 'default' },
-                  { label: 'Shift A', value: 'shift-a' },
-                  { label: 'Shift B', value: 'shift-b' },
-                  { label: 'Night Ops', value: 'night-ops' }
-                ]}
-              />
-            </div>
-            <div>
-              <Label>Minimum severity</Label>
-              <Select
-                value={cues.minSeverity}
-                onChange={(e) => updateThreshold(e.target.value as 'info' | 'warning' | 'critical')}
-                options={[
-                  { label: 'Info', value: 'info' },
-                  { label: 'Warning', value: 'warning' },
-                  { label: 'Critical', value: 'critical' }
-                ]}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <Label>Quiet start</Label>
-                <Input type="time" value={cues.quietHoursStart} onChange={(e) => updateQuietStart(e.target.value)} />
-              </div>
-              <div>
-                <Label>Quiet end</Label>
-                <Input type="time" value={cues.quietHoursEnd} onChange={(e) => updateQuietEnd(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
-              <span>Quiet hours</span>
-              <span>{cues.quietHoursEnabled ? 'Enabled' : 'Disabled'}</span>
-            </div>
-
-            <Button className="w-full" onClick={handleTestAlert}>
-              Test alert
-            </Button>
-          </div>
-        </div>
-      )}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="w-[92vw] max-w-[360px] overflow-y-auto border-r border-white/15 bg-slate-950/98">
           <SheetHeader className="space-y-2 bg-gradient-to-r from-slate-950 to-slate-900/80">

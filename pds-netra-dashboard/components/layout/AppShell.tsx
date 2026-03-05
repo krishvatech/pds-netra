@@ -50,7 +50,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="app-shell min-h-screen grid grid-rows-[auto_minmax(0,1fr)]">
+    <div className="app-shell h-[100dvh] w-full flex flex-col overflow-hidden">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div className="app-bg" />
         <div className="app-grid" />
@@ -64,34 +64,31 @@ export function AppShell({
         </div>
       </div>
 
-      <header className="sticky top-0 z-[60] bg-slate-950/90 backdrop-blur border-b border-white/10">
+      <header className="flex-none relative z-[60] bg-slate-950/90 backdrop-blur border-b border-white/10">
         <StatusBanner initialDismissed={initialBannerDismissed} />
         <Topbar user={initialUser} initialAlertCues={initialAlertCues} initialUiPrefs={initialUiPrefs} />
       </header>
 
-      <div className="relative z-10 min-h-0 w-full overflow-hidden">
-        <div className="grid min-h-0 w-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <Sidebar user={initialUser} />
-          <div className="min-h-0 min-w-0">
-            <div
-              className={`grid min-h-0 w-full ${layoutPrefs.railOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'
-                }`}
+      <div className="flex-1 flex min-h-0 w-full relative z-10 overflow-hidden">
+        <Sidebar user={initialUser} />
+
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          <div className={`flex-1 flex h-full min-h-0 w-full ${layoutPrefs.railOpen ? 'flex-col lg:flex-row' : 'flex-col'}`}>
+            <main
+              ref={contentRef}
+              className="flex-1 h-full overflow-y-auto min-w-0 space-y-4 md:space-y-6 px-4 pb-4 md:px-6 md:pb-6 lg:px-8 lg:pb-8 [&>*]:min-w-0"
             >
-              <main
-                ref={contentRef}
-                className="min-h-0 min-w-0 space-y-4 md:space-y-6 px-4 pb-4 md:px-6 md:pb-6 lg:px-8 lg:pb-8 [&>*]:min-w-0"
-              >
-                <MobileRail
-                  initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
-                  initialAlertCues={initialAlertCues}
-                />
-                {children}
-              </main>
-              <LiveRail
+              <MobileRail
                 initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
                 initialAlertCues={initialAlertCues}
               />
-            </div>
+              {children}
+            </main>
+
+            <LiveRail
+              initialUiPrefs={initialUiPrefs ?? DEFAULT_UI_PREFS}
+              initialAlertCues={initialAlertCues}
+            />
           </div>
         </div>
       </div>

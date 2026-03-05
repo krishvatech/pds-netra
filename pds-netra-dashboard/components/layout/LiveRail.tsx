@@ -162,7 +162,7 @@ function AlertSnapshot({
 
     if (!url) {
       setFailed(true);
-      return () => {};
+      return () => { };
     }
 
     (async () => {
@@ -476,7 +476,7 @@ export function LiveRail({ initialUiPrefs, initialAlertCues }: RailProps) {
 
   return (
     <>
-      <aside className="hidden lg:flex lg:flex-col lg:w-[360px] lg:py-4 lg:pr-6 gap-4 pt-8 overflow-hidden">
+      <aside className="hidden lg:flex lg:flex-col lg:w-[360px] h-full lg:py-4 lg:pr-6 lg:pl-4 gap-4 pt-8 overflow-y-auto border-l border-white/10">
         <div className="hud-card p-4 sticky top-28 z-20">
           <div className="flex items-center justify-between">
             <div>
@@ -552,13 +552,12 @@ export function LiveRail({ initialUiPrefs, initialAlertCues }: RailProps) {
                 <div className="flex items-center justify-between">
                   <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Alert</div>
                   <span
-                    className={`pulse-dot ${
-                      alert.severity_final === 'critical'
+                    className={`pulse-dot ${alert.severity_final === 'critical'
                         ? 'pulse-critical'
                         : alert.severity_final === 'warning'
                           ? 'pulse-warning'
                           : 'pulse-info'
-                    }`}
+                      }`}
                   />
                 </div>
 
@@ -709,13 +708,12 @@ export function MobileRail({ initialUiPrefs, initialAlertCues }: RailProps) {
               <div className="flex items-center justify-between">
                 <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Alert</div>
                 <span
-                  className={`pulse-dot ${
-                    alert.severity_final === 'critical'
+                  className={`pulse-dot ${alert.severity_final === 'critical'
                       ? 'pulse-critical'
                       : alert.severity_final === 'warning'
                         ? 'pulse-warning'
                         : 'pulse-info'
-                  }`}
+                    }`}
                 />
               </div>
               <div className="mt-1 text-sm font-semibold text-white">{alertTitleNode(alert)}</div>
