@@ -54,7 +54,6 @@ def _get_user_context(request: Request) -> tuple[uuid.UUID, bool]:
 
 def _edge_auth(request: Request, db: Session) -> EdgeDevice | None:
     raw_key = request.headers.get("x-edge-key")
-    raw_edge_id = request.headers.get("x-edge-id")
     if not raw_key:
         return None
     edge = db.execute(
@@ -62,8 +61,6 @@ def _edge_auth(request: Request, db: Session) -> EdgeDevice | None:
     ).scalars().first()
     if not edge:
         raise HTTPException(status_code=401, detail="invalid_edge_key")
-    if raw_edge_id and str(edge.id) != raw_edge_id.strip():
-        raise HTTPException(status_code=401, detail="edge_id_mismatch")
     return edge
 
 

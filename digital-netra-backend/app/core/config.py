@@ -23,6 +23,8 @@ class Settings(BaseSettings):
         default="http://localhost:3001,http://127.0.0.1:3001",
         env="CORS_ORIGINS",
     )
+    live_dir: str = Field(default="data/live", env="PDS_LIVE_DIR")
+    live_stale_threshold_sec: int = Field(default=30, env="PDS_LIVE_STALE_THRESHOLD_SEC")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
