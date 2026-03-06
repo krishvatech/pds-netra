@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent, SyntheticEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createCamera, deleteCamera, getCameraZones, getEvents, getGodownDetail, getGodowns, getLiveCameras, updateCamera, updateCameraZones } from '@/lib/api';
 import { getUser } from '@/lib/auth';
@@ -9,6 +9,7 @@ import type { GodownDetail, GodownListItem } from '@/lib/types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { ToastStack, type ToastItem } from '@/components/ui/toast';
 import { ConfirmDeletePopover } from '@/components/ui/dialog';
 import { EventsTable } from '@/components/tables/EventsTable';
 import { friendlyErrorMessage } from '@/lib/friendly-error';
@@ -198,8 +199,64 @@ function ZoneOverlay({ zones, className }: { zones: any[]; className?: string })
             stroke="rgba(59, 130, 246, 0.95)"
             strokeWidth="0.6"
           />
-        );
-      })}
+      );
+    })}
+  </svg>
+);
+}
+
+function parseLineCross(line?: string | null): Array<{ x: number; y: number }> {
+  if (!line) return [];
+  const clamp = (value: number) => Math.max(0, Math.min(1, value));
+  const segments = line.split(';').map((segment) => segment.trim());
+  if (segments.length !== 2) return [];
+  const points: Array<{ x: number; y: number }> = [];
+  for (const segment of segments) {
+    const coords = segment.split(',').map((coord) => coord.trim());
+    if (coords.length !== 2) return [];
+    const x = Number(coords[0]);
+    const y = Number(coords[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+    points.push({ x: clamp(x), y: clamp(y) });
+  }
+  return points.length === 2 ? points : [];
+}
+
+function formatLineCrossString(points: Array<{ x: number; y: number }>): string | null {
+  if (points.length !== 2) return null;
+  const clampCoord = (value: number) => Math.max(0, Math.min(1, value));
+  return points
+    .map((point) => `${clampCoord(point.x).toFixed(3)},${clampCoord(point.y).toFixed(3)}`)
+    .join(';');
+}
+
+function LineOverlay({ points, className }: { points: Array<{ x: number; y: number }>; className?: string }) {
+  if (points.length !== 2) return null;
+  const [start, end] = points;
+  return (
+    <svg
+      className={`absolute inset-0 h-full w-full pointer-events-none ${className ?? ''}`}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <line
+        x1={start.x * 100}
+        y1={start.y * 100}
+        x2={end.x * 100}
+        y2={end.y * 100}
+        stroke="#f97316"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      />
+      {[start, end].map((point, idx) => (
+        <circle
+          key={`${point.x}-${point.y}-${idx}`}
+          cx={point.x * 100}
+          cy={point.y * 100}
+          r="1.6"
+          fill="#f97316"
+        />
+      ))}
     </svg>
   );
 }
@@ -223,6 +280,14 @@ export default function LiveCamerasPage() {
   const [zoneImageNonce, setZoneImageNonce] = useState(0);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [zoneImageError, setZoneImageError] = useState(false);
+  const [linePoints, setLinePoints] = useState<Array<{ x: number; y: number }>>([]);
+  const [lineCameraId, setLineCameraId] = useState<string>('');
+  const [lineName, setLineName] = useState('');
+  const [lineEnabled, setLineEnabled] = useState(false);
+  const [lineSaving, setLineSaving] = useState(false);
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [lineImageNonce, setLineImageNonce] = useState(0);
+  const [lineImageError, setLineImageError] = useState(false);
   const [cameraErrors, setCameraErrors] = useState<Record<string, boolean>>({});
   const [cameraFrameMeta, setCameraFrameMeta] = useState<Record<string, { ageSeconds: number | null; capturedAtUtc: string | null }>>({});
   const [liveCameraIds, setLiveCameraIds] = useState<string[]>([]);
@@ -241,6 +306,12 @@ export default function LiveCamerasPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [fullscreenCameraId, setFullscreenCameraId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const pushToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((items) => [...items, { id, ...toast }]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -273,6 +344,7 @@ export default function LiveCamerasPage() {
         if (detail.cameras.length > 0) {
           setSelectedCamera((prev) => prev || detail.cameras[0].camera_id);
           setZoneCameraId((prev) => prev || detail.cameras[0].camera_id);
+          setLineCameraId((prev) => prev || detail.cameras[0].camera_id);
         }
       } catch (_e) {
         if (mounted) setError('Unable to load cameras for this godown; try again.');
@@ -396,11 +468,45 @@ export default function LiveCamerasPage() {
       mounted = false;
     };
   }, [zoneCameraId, selectedGodown]);
+
+  useEffect(() => {
+    if (!godownDetail || !lineCameraId) {
+      setLinePoints([]);
+      setLineEnabled(false);
+      setLineName('');
+      return;
+    }
+    const camera = godownDetail.cameras.find((cam) => cam.camera_id === lineCameraId);
+    if (!camera) {
+      setLinePoints([]);
+      setLineEnabled(false);
+      setLineName('');
+      return;
+    }
+    setLineEnabled(Boolean(camera.line_cross_enabled));
+    setLinePoints(parseLineCross(camera.line_cross));
+    setLineName(camera.line_cross_name ?? camera.label ?? '');
+    setLineError(null);
+  }, [godownDetail, lineCameraId]);
+  useEffect(() => {
+    if (!lineCameraId) {
+      setLineImageError(false);
+      return;
+    }
+    setLineImageError(false);
+    setLineImageNonce((n) => n + 1);
+  }, [lineCameraId]);
   const zoneImageUrl = useMemo(() => {
     if (!selectedGodown || !zoneCameraId) return '';
     if (liveCameraIds.length > 0 && !liveCameraIds.includes(zoneCameraId)) return '';
     return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(zoneCameraId)}?z=${zoneImageNonce}`;
   }, [selectedGodown, zoneCameraId, zoneImageNonce, liveCameraIds]);
+
+  const lineImageUrl = useMemo(() => {
+    if (!selectedGodown || !lineCameraId) return '';
+    if (liveCameraIds.length > 0 && !liveCameraIds.includes(lineCameraId)) return '';
+    return `/api/v1/live/frame/${encodeURIComponent(selectedGodown)}/${encodeURIComponent(lineCameraId)}?line=${lineImageNonce}`;
+  }, [selectedGodown, lineCameraId, lineImageNonce, liveCameraIds]);
 
   useEffect(() => {
     if (zonePoints.length >= 3) {
@@ -434,6 +540,13 @@ export default function LiveCamerasPage() {
       setZoneImageNonce((n) => n + 1);
     }
   }, [liveCameraIds, zoneCameraId]);
+  useEffect(() => {
+    if (!liveCameraIds.length) return;
+    if (!lineCameraId || !liveCameraIds.includes(lineCameraId)) {
+      setLineCameraId(liveCameraIds[0]);
+      setLineImageNonce((n) => n + 1);
+    }
+  }, [liveCameraIds, lineCameraId]);
 
   const handleZoneClick = (evt: MouseEvent<HTMLDivElement>) => {
     if (!zoneImageSize) return;
@@ -449,6 +562,64 @@ export default function LiveCamerasPage() {
     const x = Math.max(0, Math.min(1, (evt.clientX - rect.left) / rect.width));
     const y = Math.max(0, Math.min(1, (evt.clientY - rect.top) / rect.height));
     setZonePoints((prev) => prev.map((p, idx) => (idx === dragIndex ? { x, y } : p)));
+  };
+
+  const handleLineClick = (evt: MouseEvent<HTMLDivElement>) => {
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (evt.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (evt.clientY - rect.top) / rect.height));
+    setLineError(null);
+    setLinePoints((prev) => {
+      if (prev.length >= 2) {
+        return [{ x, y }];
+      }
+      return [...prev, { x, y }];
+    });
+  };
+
+  const handleClearLine = () => {
+    setLinePoints([]);
+    setLineError(null);
+  };
+
+  const handleSaveLine = async () => {
+    if (!selectedGodown || !lineCameraId) {
+      setLineError('Select a camera before saving the line crossing.');
+      return;
+    }
+    if (linePoints.length === 1) {
+      setLineError('Click two points to draw the line before saving.');
+      return;
+    }
+    const formattedLine = linePoints.length === 2 ? formatLineCrossString(linePoints) : null;
+    const normalizedLineName = lineName.trim();
+    const payload: {
+      line_cross_enabled: boolean;
+      line_cross?: string | null;
+      line_cross_name?: string | null;
+    } = {
+      line_cross_enabled: lineEnabled
+    };
+    if (linePoints.length === 2 && formattedLine) {
+      payload.line_cross = formattedLine;
+    } else if (linePoints.length === 0) {
+      payload.line_cross = null;
+    }
+    payload.line_cross_name = normalizedLineName || null;
+    setLineSaving(true);
+    setLineError(null);
+    try {
+      await updateCamera(lineCameraId, payload, selectedGodown);
+      const detail = await getGodownDetail(selectedGodown);
+      setGodownDetail(detail);
+      const savedCamera = detail.cameras.find((cam) => cam.camera_id === lineCameraId);
+      const toastName = normalizedLineName || savedCamera?.label || lineCameraId;
+      pushToast({ type: 'success', title: 'Line crossing saved', message: `${toastName} updated` });
+    } catch (e) {
+      setLineError(friendlyErrorMessage(e, 'Unable to save line crossing right now.'));
+    } finally {
+      setLineSaving(false);
+    }
   };
 
   const handleSaveZone = async () => {
@@ -853,6 +1024,100 @@ export default function LiveCamerasPage() {
 
       <Card className="hud-card">
         <CardHeader>
+          <div className="text-lg font-semibold font-display text-slate-100">Line Crossing (Tripwire)</div>
+          <div className="text-sm text-slate-400">Click 2 points to draw a line. Alerts trigger when a person crosses this line.</div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {lineError && <p className={inlineErrorClass}>{lineError}</p>}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-400">
+              Camera
+              <div className="mt-2">
+                <Select
+                  value={lineCameraId}
+                  onChange={(e) => setLineCameraId(e.target.value)}
+                  options={cameras.map((c) => ({
+                    label: c.label ?? c.camera_id,
+                    value: c.camera_id
+                  }))}
+                  placeholder="Select a camera"
+                  disabled={cameras.length === 0}
+                />
+              </div>
+            </label>
+            <label className="text-sm text-slate-400">
+              Line name
+              <input
+                className="mt-2 w-full rounded-xl px-3 py-2 text-sm input-field"
+                value={lineName}
+                onChange={(e) => setLineName(e.target.value)}
+                placeholder="Line name (optional)"
+                disabled={!lineCameraId}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border border-slate-600 text-orange-500 focus:ring-orange-400"
+                checked={lineEnabled}
+                onChange={(e) => setLineEnabled(e.target.checked)}
+              />
+              Enabled
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" className="text-slate-800 border-slate-300" onClick={handleClearLine} disabled={lineSaving || linePoints.length === 0}>
+              Clear line
+            </Button>
+            <Button onClick={handleSaveLine} disabled={lineSaving || !lineCameraId}>
+              {lineSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+          <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/80">
+            {lineImageUrl ? (
+              <div
+                className="relative w-full cursor-crosshair"
+                onClick={handleLineClick}
+                aria-label="Line crossing preview"
+              >
+                <AuthedLiveImage
+                  requestUrl={lineImageUrl}
+                  alt="Line crossing reference"
+                  className="w-full h-auto block"
+                  pollMs={0}
+                  onStatusChange={(ok) => setLineImageError(!ok)}
+                />
+                {lineImageError ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400 bg-black/60">
+                    No live frame yet. Try Refresh frame.
+                  </div>
+                ) : null}
+                <LineOverlay points={linePoints} className="z-10" />
+              </div>
+            ) : (
+              <div className="text-sm text-slate-400 p-4">Live frame not available for this camera.</div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+            <Button
+              variant="outline"
+              className="btn-refresh"
+              onClick={() => {
+                setLineImageError(false);
+                setLineImageNonce((n) => n + 1);
+              }}
+            >
+              Refresh frame
+            </Button>
+            <span>{linePoints.length === 2 ? '2 points drawn' : `${linePoints.length} point(s)`}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="hud-card">
+        <CardHeader>
           <div className="text-lg font-semibold font-display text-slate-100">Zone editor</div>
           <div className="text-sm text-slate-400">Click to add polygon points, then save.</div>
         </CardHeader>
@@ -1108,6 +1373,11 @@ export default function LiveCamerasPage() {
           document.body
         )
         : null}
+
+      <ToastStack
+        items={toasts}
+        onDismiss={(id) => setToasts((items) => items.filter((t) => t.id !== id))}
+      />
 
     </div>
   );

@@ -199,6 +199,9 @@ def get_godown_detail(
                 "is_active": c.is_active,
                 "zones_json": c.zones_json,
                 "modules": _parse_modules(c.modules_json),
+                "line_cross_enabled": c.line_cross_enabled,
+                "line_cross": c.line_cross,
+                "line_cross_name": c.line_cross_name,
             }
             for c in cameras
         ],

@@ -56,6 +56,9 @@ export interface CameraInfo {
   is_active?: boolean | null;
   zones_json?: string | null;
   modules?: CameraModules | null;
+  line_cross_enabled?: boolean | null;
+  line_cross?: string | null;
+  line_cross_name?: string | null;
 
   // Health hints (if backend provides)
   online?: boolean | null;

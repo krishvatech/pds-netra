@@ -9,7 +9,7 @@ alerts.
 
 from __future__ import annotations
 
-from sqlalchemy import Column, String, ForeignKey
+from sqlalchemy import Column, String, ForeignKey, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from . import Base
@@ -46,5 +46,8 @@ class Camera(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     zones_json: Mapped[str | None] = mapped_column(String, nullable=True)
     modules_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    line_cross_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    line_cross: Mapped[str | None] = mapped_column(Text, nullable=True)
+    line_cross_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     godown: Mapped[Godown] = relationship("Godown", back_populates="cameras")

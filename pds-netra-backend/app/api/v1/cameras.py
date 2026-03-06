@@ -5,6 +5,7 @@ Camera configuration endpoints.
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -27,6 +28,8 @@ from ...core.pagination import clamp_page_size, set_pagination_headers
 
 
 router = APIRouter(prefix="/api/v1/cameras", tags=["cameras"])
+
+logger = logging.getLogger(__name__)
 
 
 ADMIN_ROLES = {"STATE_ADMIN", "HQ_ADMIN"}
@@ -78,6 +81,9 @@ class CameraCreate(BaseModel):
     source_run_id: Optional[str] = None
     is_active: bool = True
     modules: Optional[CameraModules] = None
+    line_cross_enabled: bool = False
+    line_cross: Optional[str] = None
+    line_cross_name: Optional[str] = None
 
 
 class CameraUpdate(BaseModel):
@@ -89,6 +95,9 @@ class CameraUpdate(BaseModel):
     source_run_id: Optional[str] = None
     is_active: Optional[bool] = None
     modules: Optional[CameraModules] = None
+    line_cross_enabled: Optional[bool] = None
+    line_cross: Optional[str] = None
+    line_cross_name: Optional[str] = None
 
 
 def _parse_modules(modules_json: str | None) -> Optional[dict]:
@@ -116,6 +125,9 @@ def _camera_payload(camera: Camera) -> dict:
         "is_active": camera.is_active,
         "zones_json": camera.zones_json,
         "modules": _parse_modules(camera.modules_json),
+        "line_cross_enabled": camera.line_cross_enabled,
+        "line_cross": camera.line_cross,
+        "line_cross_name": camera.line_cross_name,
     }
 
 
@@ -149,6 +161,44 @@ def _parse_zones(zones_json: str | None) -> List[dict]:
     except Exception:
         return []
     return []
+
+
+def _normalize_line_cross(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    parts = [segment.strip() for segment in trimmed.split(';') if segment.strip() != '']
+    if len(parts) != 2:
+        raise HTTPException(
+            status_code=422,
+            detail="line_cross must be two points in the format x1,y1;x2,y2 with each coordinate between 0 and 1"
+        )
+    normalized_points: list[str] = []
+    for segment in parts:
+        coords = [coord.strip() for coord in segment.split(',')]
+        if len(coords) != 2:
+            raise HTTPException(
+                status_code=422,
+                detail="line_cross must contain exactly two coordinates per point"
+            )
+        try:
+            x = float(coords[0])
+            y = float(coords[1])
+        except ValueError:
+            raise HTTPException(status_code=422, detail="line_cross coordinates must be numbers")
+        if not (0 <= x <= 1) or not (0 <= y <= 1):
+            raise HTTPException(status_code=422, detail="line_cross coordinates must be between 0 and 1")
+        normalized_points.append(f"{x:.3f},{y:.3f}")
+    return ';'.join(normalized_points)
+
+
+def _normalize_line_cross_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
 
 def _get_camera(db: Session, camera_id: str, godown_id: Optional[str], user: UserContext) -> Camera:
     query = _camera_query_for_user(db, user).filter(Camera.id == camera_id)
@@ -255,6 +305,14 @@ def create_camera(
     if payload.modules is not None:
         modules_data = payload.modules.model_dump(exclude_none=True)
         modules_json = json.dumps(modules_data) if modules_data else None
+    line_cross = _normalize_line_cross(payload.line_cross)
+    line_cross_name = _normalize_line_cross_name(payload.line_cross_name)
+    if payload.line_cross_enabled and not line_cross:
+        logger.warning(
+            "Camera %s/%s configured with line_cross_enabled but no line_cross coordinates",
+            payload.godown_id,
+            payload.camera_id,
+        )
     camera = Camera(
         id=payload.camera_id,
         godown_id=payload.godown_id,
@@ -266,6 +324,9 @@ def create_camera(
         source_run_id=payload.source_run_id if (payload.source_type or "live") == "test" else None,
         is_active=payload.is_active,
         modules_json=modules_json,
+        line_cross_enabled=payload.line_cross_enabled,
+        line_cross=line_cross,
+        line_cross_name=line_cross_name,
     )
     db.add(camera)
     db.commit()
@@ -308,6 +369,18 @@ def update_camera(
     if payload.modules is not None:
         modules_data = payload.modules.model_dump(exclude_none=True)
         camera.modules_json = json.dumps(modules_data) if modules_data else None
+    if payload.line_cross is not None:
+        camera.line_cross = _normalize_line_cross(payload.line_cross)
+    if payload.line_cross_name is not None:
+        camera.line_cross_name = _normalize_line_cross_name(payload.line_cross_name)
+    if payload.line_cross_enabled is not None:
+        camera.line_cross_enabled = payload.line_cross_enabled
+        if payload.line_cross_enabled and not camera.line_cross:
+            logger.warning(
+                "Camera %s/%s enabled line_cross without coordinates",
+                camera.godown_id,
+                camera.id,
+            )
     db.add(camera)
     db.commit()
     db.refresh(camera)

@@ -397,6 +397,9 @@ export async function createCamera(payload: {
   rtsp_url: string;
   is_active?: boolean;
   modules?: CameraModules;
+  line_cross_enabled?: boolean;
+  line_cross?: string | null;
+  line_cross_name?: string | null;
 }): Promise<CameraInfo> {
   return apiFetch('/api/v1/cameras', {
     method: 'POST',
@@ -406,7 +409,16 @@ export async function createCamera(payload: {
 
 export async function updateCamera(
   cameraId: string,
-  payload: { label?: string; role?: string; rtsp_url?: string; is_active?: boolean; modules?: CameraModules },
+  payload: {
+    label?: string;
+    role?: string;
+    rtsp_url?: string;
+    is_active?: boolean;
+    modules?: CameraModules;
+    line_cross_enabled?: boolean;
+    line_cross?: string | null;
+    line_cross_name?: string | null;
+  },
   godownId?: string
 ): Promise<CameraInfo> {
   const q = buildQuery({ godown_id: godownId });
