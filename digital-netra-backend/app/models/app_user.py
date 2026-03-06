@@ -13,7 +13,6 @@ class AppUser(Base):
     __tablename__ = "app_user"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username: Mapped[str] = mapped_column(sa.String(128), unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(sa.String(255), unique=True, index=True, nullable=False)
     first_name: Mapped[str] = mapped_column(sa.String(128), nullable=False)
     last_name: Mapped[str] = mapped_column(sa.String(128), nullable=False)

@@ -78,3 +78,11 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 cd /home/yashvi-radadiya/pds-netras/pds-netra/digital-netra-dashboard
 npm run dev
 ```
+
+docker rm pdsnetra-postgres
+docker run -d --name pdsnetra-postgres \
+  -e POSTGRES_USER=digitalnetra \
+  -e POSTGRES_PASSWORD=digitalnetra \
+  -e POSTGRES_DB=digitalnetra \
+  -p 55432:5432 \
+  postgres:14

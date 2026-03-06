@@ -8,7 +8,7 @@ import { LogOut, Menu, Settings, User } from 'lucide-react';
 import { logout } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 import type { User as UserType } from '@/lib/types';
-import { navItems } from '@/components/layout/nav-items';
+import { getNavItems } from '@/components/layout/nav-items';
 
 export function Header() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const navItems = getNavItems(Boolean(user?.is_admin));
 
   useEffect(() => {
     setUser(getUser());

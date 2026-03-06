@@ -27,6 +27,8 @@ class CameraOut(BaseModel):
     rtsp_url: str
     is_active: bool
     user_id: UUID
+    owner_first_name: str | None = None
+    owner_last_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

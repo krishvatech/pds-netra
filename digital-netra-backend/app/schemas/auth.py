@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class SignupIn(BaseModel):
-    username: str = Field(min_length=3, max_length=128)
     first_name: str = Field(min_length=1, max_length=128)
     last_name: str = Field(min_length=1, max_length=128)
     email: EmailStr
@@ -37,7 +36,6 @@ class PasswordVerifyOut(BaseModel):
 
 class UserOut(BaseModel):
     id: UUID
-    username: str
     email: EmailStr
     first_name: str
     last_name: str
@@ -80,11 +78,6 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
-
-
-class UsernameCheckResponse(BaseModel):
-    username: str
-    available: bool
 
 
 class EmailCheckResponse(BaseModel):

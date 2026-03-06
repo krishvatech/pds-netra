@@ -1,6 +1,5 @@
 export type User = {
   id: string;
-  username: string;
   email: string;
   phone?: string | null;
   is_admin: boolean;
@@ -27,11 +26,6 @@ export type SessionUser = {
   is_active: boolean;
 };
 
-export type UsernameCheckResponse = {
-  username: string;
-  available: boolean;
-};
-
 export type EmailCheckResponse = {
   email: string;
   available: boolean;
@@ -48,6 +42,8 @@ export interface Camera {
   rtsp_url: string;
   is_active: boolean;
   user_id: string;
+  owner_first_name?: string | null;
+  owner_last_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -64,4 +60,25 @@ export interface CameraUpdate {
   role?: string;
   rtsp_url?: string;
   is_active?: boolean;
+}
+
+export interface RuleType {
+  id: string;
+  rule_type_name: string;
+  rule_type_slug: string;
+  model_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuleTypeCreate {
+  rule_type_name: string;
+  rule_type_slug: string;
+  model_name: string;
+}
+
+export interface RuleTypeUpdate {
+  rule_type_name: string;
+  rule_type_slug: string;
+  model_name: string;
 }

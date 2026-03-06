@@ -28,7 +28,6 @@ from app.schemas.auth import (
     PasswordVerifyIn,
     PasswordVerifyOut,
     SignupIn,
-    UsernameCheckResponse,
     UserOut,
     UserSessionOut,
 )
@@ -106,14 +105,7 @@ def signup(payload: SignupIn, db: Session = Depends(get_db)):
             detail={"message": "Password does not meet requirements", "rules": password_errors},
         )
 
-    username = payload.username.strip()
     email = payload.email.lower().strip()
-
-    existing_username = db.execute(
-        select(AppUser).where(func.lower(AppUser.username) == username.lower())
-    ).scalars().first()
-    if existing_username:
-        raise HTTPException(status_code=409, detail="username_taken")
 
     existing_email = db.execute(select(AppUser).where(func.lower(AppUser.email) == email)).scalars().first()
     if existing_email:
@@ -121,7 +113,6 @@ def signup(payload: SignupIn, db: Session = Depends(get_db)):
 
     phone = payload.phone.strip() if payload.phone else None
     user = AppUser(
-        username=username,
         email=email,
         first_name=payload.first_name.strip(),
         last_name=payload.last_name.strip(),
@@ -167,6 +158,16 @@ def get_account(request: Request, db: Session = Depends(get_db)):
     return UserOut.model_validate(user)
 
 
+@router.get("/users", response_model=list[UserOut])
+def list_users(request: Request, db: Session = Depends(get_db)):
+    user = _get_current_user(request, db)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin_only")
+
+    users = db.execute(select(AppUser).order_by(AppUser.created_at.desc())).scalars().all()
+    return [UserOut.model_validate(record) for record in users]
+
+
 @router.post("/verify-password", response_model=PasswordVerifyOut)
 def verify_account_password(payload: PasswordVerifyIn, request: Request, db: Session = Depends(get_db)):
     user = _get_current_user(request, db)
@@ -178,18 +179,6 @@ def logout():
     response = JSONResponse({"status": "ok"})
     _clear_session_cookie(response)
     return response
-
-
-@router.get("/check-username", response_model=UsernameCheckResponse)
-def check_username(username: str = Query("", min_length=1), db: Session = Depends(get_db)):
-    normalized = username.strip()
-    if not normalized:
-        raise HTTPException(status_code=400, detail="username_required")
-
-    exists = db.execute(
-        select(AppUser.id).where(func.lower(AppUser.username) == normalized.lower())
-    ).scalars().first()
-    return UsernameCheckResponse(username=normalized, available=not bool(exists))
 
 
 @router.get("/check-email", response_model=EmailCheckResponse)

@@ -1,11 +1,21 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { navItems } from '@/components/layout/nav-items';
+import { getNavItems } from '@/components/layout/nav-items';
+import { getUser } from '@/lib/auth';
+import type { User as UserType } from '@/lib/types';
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<UserType | null>(null);
+
+  useEffect(() => {
+    setUser(getUser());
+  }, []);
+
+  const items = useMemo(() => getNavItems(Boolean(user?.is_admin)), [user]);
 
   return (
     <aside className="hidden h-full min-h-0 w-[240px] flex-col border-r border-white/10 bg-slate-900/70 px-5 py-6 backdrop-blur lg:flex">
@@ -15,7 +25,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-8 space-y-2">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
           return (

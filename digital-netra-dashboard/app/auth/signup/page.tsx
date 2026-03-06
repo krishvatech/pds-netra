@@ -8,7 +8,7 @@ import { Check, Loader2, X } from 'lucide-react';
 import { AlertBox } from '@/components/ui/alert-box';
 import { BrandLogo } from '@/components/ui/brand-logo';
 import { PasswordInput } from '@/components/ui/password-input';
-import { ApiError, checkEmail, checkUsername, signup } from '@/lib/api';
+import { ApiError, checkEmail, signup } from '@/lib/api';
 import { setSession } from '@/lib/auth';
 
 type FieldErrors = {
@@ -101,24 +101,6 @@ export default function SignupPage() {
     return () => clearTimeout(handle);
   }, [email]);
 
-  function normalizeUsername(value: string) {
-    return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-  }
-
-  async function allocateUsername() {
-    const base = normalizeUsername(`${firstName}${lastName}`) || 'user';
-    const candidates = [base, `${base}${Math.floor(Math.random() * 900 + 100)}`];
-    for (const candidate of candidates) {
-      try {
-        const resp = await checkUsername(candidate);
-        if (resp.available) return candidate;
-      } catch {
-        // ignore and try next
-      }
-    }
-    return null;
-  }
-
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
@@ -137,14 +119,7 @@ export default function SignupPage() {
     }
 
     try {
-      const username = await allocateUsername();
-      if (!username) {
-        setFieldErrors({ general: 'Unable to allocate a username. Please try again.' });
-        setLoading(false);
-        return;
-      }
       const resp = await signup({
-        username,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         email: email.trim(),

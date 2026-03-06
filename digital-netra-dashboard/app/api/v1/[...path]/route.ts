@@ -11,13 +11,14 @@ type RouteCtx = { params: Promise<{ path?: string[] }> };
 
 function sanitizeUserCookiePayload(raw: any): any | null {
   if (!raw || typeof raw !== 'object') return null;
-  const username = typeof raw.username === 'string' ? raw.username : undefined;
+  const email = typeof raw.email === 'string' ? raw.email : undefined;
   const is_admin = typeof raw.is_admin === 'boolean' ? raw.is_admin : undefined;
-  if (!username || typeof is_admin !== 'boolean') return null;
+  if (!email || typeof is_admin !== 'boolean') return null;
   return {
     id: typeof raw.id === 'string' ? raw.id : undefined,
-    username,
-    email: typeof raw.email === 'string' ? raw.email : undefined,
+    email,
+    first_name: typeof raw.first_name === 'string' ? raw.first_name : undefined,
+    last_name: typeof raw.last_name === 'string' ? raw.last_name : undefined,
     phone: typeof raw.phone === 'string' ? raw.phone : undefined,
     is_admin,
     is_active: typeof raw.is_active === 'boolean' ? raw.is_active : undefined,

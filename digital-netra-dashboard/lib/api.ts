@@ -6,9 +6,11 @@ import type {
   EmailCheckResponse,
   LoginResponse,
   PasswordVerifyResponse,
+  RuleType,
+  RuleTypeCreate,
+  RuleTypeUpdate,
   SessionResponse,
-  User,
-  UsernameCheckResponse
+  User
 } from '@/lib/types';
 
 export class ApiError extends Error {
@@ -49,7 +51,6 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 }
 
 export type SignupInput = {
-  username: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -103,6 +104,10 @@ export async function getAccount(): Promise<User> {
   return apiFetch<User>('/auth/account');
 }
 
+export async function getUsers(): Promise<User[]> {
+  return apiFetch<User[]>('/auth/users');
+}
+
 export async function updateAccount(payload: AccountUpdateInput): Promise<User> {
   return apiFetch<User>('/auth/account', {
     method: 'PUT',
@@ -115,12 +120,6 @@ export async function verifyPassword(payload: PasswordVerifyInput): Promise<Pass
     method: 'POST',
     body: JSON.stringify(payload)
   });
-}
-
-
-export async function checkUsername(username: string): Promise<UsernameCheckResponse> {
-  const params = new URLSearchParams({ username });
-  return apiFetch<UsernameCheckResponse>(`/auth/check-username?${params.toString()}`);
 }
 
 export async function checkEmail(email: string): Promise<EmailCheckResponse> {
@@ -148,4 +147,26 @@ export async function updateCamera(id: string, payload: CameraUpdate): Promise<C
 
 export async function deleteCamera(id: string): Promise<void> {
   await apiFetch(`/cameras/${id}`, { method: 'DELETE' });
+}
+
+export async function getRuleTypes(): Promise<RuleType[]> {
+  return apiFetch<RuleType[]>('/rule-types');
+}
+
+export async function createRuleType(payload: RuleTypeCreate): Promise<RuleType> {
+  return apiFetch<RuleType>('/rule-types', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateRuleType(id: string, payload: RuleTypeUpdate): Promise<RuleType> {
+  return apiFetch<RuleType>(`/rule-types/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteRuleType(id: string): Promise<void> {
+  await apiFetch(`/rule-types/${id}`, { method: 'DELETE' });
 }
