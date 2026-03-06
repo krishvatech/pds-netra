@@ -55,6 +55,7 @@ export interface CameraCreate {
   role: string;
   rtsp_url: string;
   is_active: boolean;
+  edge_id?: string | null;
 }
 
 export interface CameraUpdate {
@@ -62,6 +63,17 @@ export interface CameraUpdate {
   role?: string;
   rtsp_url?: string;
   is_active?: boolean;
+  edge_id?: string | null;
+}
+
+export interface Zone {
+  id: string;
+  camera_id: string;
+  zone_name: string;
+  polygon: number[][];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface EdgeDevice {

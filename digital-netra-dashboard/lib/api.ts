@@ -14,7 +14,8 @@ import type {
   RuleTypeUpdate,
   SessionResponse,
   UserRuleType,
-  User
+  User,
+  Zone
 } from '@/lib/types';
 
 export class ApiError extends Error {
@@ -223,6 +224,35 @@ export async function setUserRuleTypes(userId: string, ruleTypeIds: string[]): P
 
 export async function getLiveCameras(): Promise<Camera[]> {
   return apiFetch<Camera[]>('/live');
+}
+
+export async function getZones(cameraId: string): Promise<Zone[]> {
+  return apiFetch<Zone[]>(`/cameras/${cameraId}/zones`);
+}
+
+export async function createZone(
+  cameraId: string,
+  data: { zone_name: string; polygon: number[][]; is_active?: boolean }
+): Promise<Zone> {
+  return apiFetch<Zone>(`/cameras/${cameraId}/zones`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, camera_id: cameraId })
+  });
+}
+
+export async function updateZone(
+  cameraId: string,
+  zoneId: string,
+  data: Partial<{ zone_name: string; polygon: number[][]; is_active: boolean }>
+): Promise<Zone> {
+  return apiFetch<Zone>(`/cameras/${cameraId}/zones/${zoneId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteZone(cameraId: string, zoneId: string): Promise<void> {
+  await apiFetch(`/cameras/${cameraId}/zones/${zoneId}`, { method: 'DELETE' });
 }
 
 export async function uploadFrame(cameraId: string, blob: Blob): Promise<void> {

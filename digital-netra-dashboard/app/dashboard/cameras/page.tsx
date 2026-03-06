@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertBox } from '@/components/ui/alert-box';
 import { getSessionUser } from '@/lib/auth';
@@ -430,6 +431,16 @@ export default function CamerasPage() {
                   </div>
                   {canManage && (
                     <div className="flex items-center gap-2">
+                      <Link
+                        href={`/dashboard/cameras/${camera.id}/zones`}
+                        aria-label="Manage zones"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 3h18v18H3z" />
+                          <path d="M7 7h10v10H7z" />
+                        </svg>
+                      </Link>
                       <button
                         type="button"
                         aria-label="Edit camera"
@@ -595,6 +606,16 @@ export default function CamerasPage() {
                     {(canManage || canApprove) && (
                       <td className="px-6">
                         <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={`/dashboard/cameras/${camera.id}/zones`}
+                            aria-label="Manage zones"
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 3h18v18H3z" />
+                              <path d="M7 7h10v10H7z" />
+                            </svg>
+                          </Link>
                           {canManage && (
                             <>
                               <button
