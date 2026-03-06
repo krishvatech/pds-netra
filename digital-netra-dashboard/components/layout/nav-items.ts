@@ -1,4 +1,4 @@
-import { Camera, LayoutGrid, Server, Settings, Users } from 'lucide-react';
+import { Camera, LayoutGrid, Server, Settings, ShieldCheck, Users } from 'lucide-react';
 
 export type NavItem = {
   href: string;
@@ -14,7 +14,8 @@ export const navItems: NavItem[] = [
   { href: '/dashboard/my-edges', label: 'My Edges', icon: Server, userOnly: true },
   { href: '/dashboard/edge-devices', label: 'Edge Devices', icon: Server, adminOnly: true },
   { href: '/dashboard/users', label: 'Users', icon: Users, adminOnly: true },
-  { href: '/dashboard/rule-types', label: 'Rule Types', icon: Settings, adminOnly: true }
+  { href: '/dashboard/rule-types', label: 'Rule Types', icon: Settings, adminOnly: true },
+  { href: '/dashboard/user-rule-types', label: 'User Rule Access', icon: ShieldCheck, adminOnly: true }
 ];
 
 export function getNavItems(isAdmin: boolean) {

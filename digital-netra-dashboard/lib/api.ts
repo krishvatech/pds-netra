@@ -13,6 +13,7 @@ import type {
   RuleTypeCreate,
   RuleTypeUpdate,
   SessionResponse,
+  UserRuleType,
   User
 } from '@/lib/types';
 
@@ -206,6 +207,18 @@ export async function updateRuleType(id: string, payload: RuleTypeUpdate): Promi
 
 export async function deleteRuleType(id: string): Promise<void> {
   await apiFetch(`/rule-types/${id}`, { method: 'DELETE' });
+}
+
+export async function getUserRuleTypes(userId?: string): Promise<UserRuleType[]> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+  return apiFetch<UserRuleType[]>(`/user-rule-types${params}`);
+}
+
+export async function setUserRuleTypes(userId: string, ruleTypeIds: string[]): Promise<UserRuleType[]> {
+  return apiFetch<UserRuleType[]>(`/user-rule-types/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ rule_type_ids: ruleTypeIds })
+  });
 }
 
 export async function getLiveCameras(): Promise<Camera[]> {

@@ -116,3 +116,11 @@ export interface RuleTypeUpdate {
   rule_type_slug: string;
   model_name: string;
 }
+
+export interface UserRuleType {
+  id: string;
+  user_id: string;
+  rule_type_id: string;
+  created_at: string;
+  updated_at: string;
+}
