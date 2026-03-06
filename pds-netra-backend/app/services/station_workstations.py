@@ -32,6 +32,8 @@ class WorkstationConfig:
     status: str = "ACTIVE"
     shift_start: Optional[str] = None
     shift_end: Optional[str] = None
+    break_start: Optional[str] = None
+    break_end: Optional[str] = None
     leave_from: Optional[str] = None
     leave_to: Optional[str] = None
     updated_at: Optional[str] = None
@@ -178,6 +180,8 @@ def list_workstations(
                 status=_normalize_status(saved.get("status")),
                 shift_start=saved.get("shift_start"),
                 shift_end=saved.get("shift_end"),
+                break_start=saved.get("break_start"),
+                break_end=saved.get("break_end"),
                 leave_from=saved.get("leave_from"),
                 leave_to=saved.get("leave_to"),
                 updated_at=saved.get("updated_at"),
@@ -208,6 +212,8 @@ def upsert_workstation(
     status: Optional[str] = None,
     shift_start: Optional[str] = None,
     shift_end: Optional[str] = None,
+    break_start: Optional[str] = None,
+    break_end: Optional[str] = None,
     leave_from: Optional[str] = None,
     leave_to: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -222,6 +228,8 @@ def upsert_workstation(
         "status": _normalize_status(status),
         "shift_start": shift_start or None,
         "shift_end": shift_end or None,
+        "break_start": break_start or None,
+        "break_end": break_end or None,
         "leave_from": leave_from or None,
         "leave_to": leave_to or None,
         "updated_at": _utc_now(),

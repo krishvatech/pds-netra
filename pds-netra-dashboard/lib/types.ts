@@ -266,6 +266,8 @@ export interface StationMonitoringWorkstationItem {
   status: 'ACTIVE' | 'ON_LEAVE' | 'DISABLED' | string;
   shift_start?: string | null;
   shift_end?: string | null;
+  break_start?: string | null;
+  break_end?: string | null;
   leave_from?: string | null;
   leave_to?: string | null;
   updated_at?: string | null;

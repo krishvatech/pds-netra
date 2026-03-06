@@ -31,6 +31,8 @@ class WorkstationUpdatePayload(BaseModel):
     status: Optional[str] = None
     shift_start: Optional[str] = None
     shift_end: Optional[str] = None
+    break_start: Optional[str] = None
+    break_end: Optional[str] = None
     leave_from: Optional[str] = None
     leave_to: Optional[str] = None
 
@@ -46,13 +48,24 @@ def _validate_workstation_payload(payload: WorkstationUpdatePayload) -> dict:
     status = _normalize_status(payload.status)
     shift_start = (payload.shift_start or "").strip() or None
     shift_end = (payload.shift_end or "").strip() or None
+    break_start = (payload.break_start or "").strip() or None
+    break_end = (payload.break_end or "").strip() or None
     leave_from = (payload.leave_from or "").strip() or None
     leave_to = (payload.leave_to or "").strip() or None
 
     if bool(shift_start) != bool(shift_end):
         raise HTTPException(status_code=422, detail="Shift start and shift end must both be set or both be empty")
+    if bool(break_start) != bool(break_end):
+        raise HTTPException(status_code=422, detail="Break start and break end must both be set or both be empty")
     if bool(leave_from) != bool(leave_to):
         raise HTTPException(status_code=422, detail="Leave from and leave to must both be set or both be empty")
+
+    if break_start and break_end:
+        try:
+            datetime.strptime(break_start, "%H:%M")
+            datetime.strptime(break_end, "%H:%M")
+        except Exception:
+            raise HTTPException(status_code=422, detail="Break start and break end must be in HH:MM format")
 
     if status == "ACTIVE":
         if leave_from or leave_to:
@@ -60,8 +73,8 @@ def _validate_workstation_payload(payload: WorkstationUpdatePayload) -> dict:
     elif status == "ON_LEAVE":
         if not (leave_from and leave_to):
             raise HTTPException(status_code=422, detail="ON_LEAVE workstations require both leave from and leave to")
-        if shift_start or shift_end:
-            raise HTTPException(status_code=422, detail="ON_LEAVE workstations cannot have shift times")
+        if shift_start or shift_end or break_start or break_end:
+            raise HTTPException(status_code=422, detail="ON_LEAVE workstations cannot have shift or break times")
         try:
             from_dt = datetime.fromisoformat(leave_from.replace("Z", "+00:00"))
             to_dt = datetime.fromisoformat(leave_to.replace("Z", "+00:00"))
@@ -70,13 +83,15 @@ def _validate_workstation_payload(payload: WorkstationUpdatePayload) -> dict:
         if to_dt <= from_dt:
             raise HTTPException(status_code=422, detail="Leave to must be after leave from")
     elif status == "DISABLED":
-        if shift_start or shift_end or leave_from or leave_to:
-            raise HTTPException(status_code=422, detail="DISABLED workstations cannot have shift or leave values")
+        if shift_start or shift_end or break_start or break_end or leave_from or leave_to:
+            raise HTTPException(status_code=422, detail="DISABLED workstations cannot have shift, break, or leave values")
 
     return {
         "status": status,
         "shift_start": shift_start,
         "shift_end": shift_end,
+        "break_start": break_start,
+        "break_end": break_end,
         "leave_from": leave_from,
         "leave_to": leave_to,
     }
@@ -222,6 +237,8 @@ def update_workstation(
         status=cleaned["status"],
         shift_start=cleaned["shift_start"],
         shift_end=cleaned["shift_end"],
+        break_start=cleaned["break_start"],
+        break_end=cleaned["break_end"],
         leave_from=cleaned["leave_from"],
         leave_to=cleaned["leave_to"],
     )

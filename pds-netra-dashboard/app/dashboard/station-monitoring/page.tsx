@@ -45,6 +45,8 @@ export default function StationMonitoringPage() {
         status: nextStatus,
         shift_start: null,
         shift_end: null,
+        break_start: null,
+        break_end: null,
       };
     }
     return {
@@ -52,6 +54,8 @@ export default function StationMonitoringPage() {
       status: nextStatus,
       shift_start: null,
       shift_end: null,
+      break_start: null,
+      break_end: null,
       leave_from: null,
       leave_to: null,
     };
@@ -63,19 +67,22 @@ export default function StationMonitoringPage() {
       if ((ws.shift_start && !ws.shift_end) || (!ws.shift_start && ws.shift_end)) {
         return 'ACTIVE workstation shift start and shift end must both be set or both be empty.';
       }
+      if ((ws.break_start && !ws.break_end) || (!ws.break_start && ws.break_end)) {
+        return 'ACTIVE workstation break start and break end must both be set or both be empty.';
+      }
       return null;
     }
     if (ws.status === 'ON_LEAVE') {
       if (!ws.leave_from || !ws.leave_to) return 'ON_LEAVE workstations require both leave from and leave to.';
-      if (ws.shift_start || ws.shift_end) return 'ON_LEAVE workstations cannot have shift times.';
+      if (ws.shift_start || ws.shift_end || ws.break_start || ws.break_end) return 'ON_LEAVE workstations cannot have shift or break times.';
       if (new Date(String(ws.leave_to)).getTime() <= new Date(String(ws.leave_from)).getTime()) {
         return 'Leave to must be after leave from.';
       }
       return null;
     }
     if (ws.status === 'DISABLED') {
-      if (ws.shift_start || ws.shift_end || ws.leave_from || ws.leave_to) {
-        return 'DISABLED workstations cannot have shift or leave values.';
+      if (ws.shift_start || ws.shift_end || ws.break_start || ws.break_end || ws.leave_from || ws.leave_to) {
+        return 'DISABLED workstations cannot have shift, break, or leave values.';
       }
     }
     return null;
@@ -325,6 +332,8 @@ export default function StationMonitoringPage() {
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 pr-3">Shift start</th>
                   <th className="py-2 pr-3">Shift end</th>
+                  <th className="py-2 pr-3">Break start</th>
+                  <th className="py-2 pr-3">Break end</th>
                   <th className="py-2 pr-3">Leave from</th>
                   <th className="py-2 pr-3">Leave to</th>
                   <th className="py-2 pr-3">Action</th>
@@ -376,6 +385,22 @@ export default function StationMonitoringPage() {
                     </td>
                     <td className="py-2 pr-3">
                       <Input
+                        type="time"
+                        value={ws.break_start ?? ''}
+                        disabled={ws.status !== 'ACTIVE'}
+                        onChange={(e) => setWorkstations((prev) => prev.map((row, i) => i === idx ? { ...row, break_start: e.target.value } : row))}
+                      />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Input
+                        type="time"
+                        value={ws.break_end ?? ''}
+                        disabled={ws.status !== 'ACTIVE'}
+                        onChange={(e) => setWorkstations((prev) => prev.map((row, i) => i === idx ? { ...row, break_end: e.target.value } : row))}
+                      />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Input
                         type="datetime-local"
                         value={ws.leave_from ? String(ws.leave_from).replace('Z', '').slice(0, 16) : ''}
                         disabled={ws.status !== 'ON_LEAVE'}
@@ -410,6 +435,8 @@ export default function StationMonitoringPage() {
                               status: ws.status,
                               shift_start: ws.shift_start ?? null,
                               shift_end: ws.shift_end ?? null,
+                              break_start: ws.break_start ?? null,
+                              break_end: ws.break_end ?? null,
                               leave_from: ws.leave_from ?? null,
                               leave_to: ws.leave_to ?? null,
                             });
@@ -429,7 +456,7 @@ export default function StationMonitoringPage() {
                 ))}
                 {workstations.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-6 text-center text-slate-500">
+                    <td colSpan={12} className="py-6 text-center text-slate-500">
                       No workstation zones found.
                     </td>
                   </tr>
