@@ -12,7 +12,7 @@ import threading
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from ...core.pagination import clamp_page_size
 from ...core.db import get_db
 from ...core.auth import get_current_user_or_authorized_users_service
@@ -186,7 +186,7 @@ def stream_live(godown_id: str, camera_id: str) -> StreamingResponse:
 
 
 @router.get("/frame/{godown_id}/{camera_id}")
-def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
+def latest_frame(godown_id: str, camera_id: str) -> Response:
     live_root = _live_root()
     latest_path = _latest_path(live_root, godown_id, camera_id)
     if not latest_path.exists():
@@ -212,11 +212,9 @@ def latest_frame(godown_id: str, camera_id: str) -> FileResponse:
             age_seconds=float(meta["age_seconds"]),
             threshold_seconds=threshold_seconds,
         )
-    return FileResponse(
-        latest_path,
-        media_type="image/jpeg",
-        headers=headers,
-    )
+    # Read bytes once to avoid Content-Length mismatches if the file is replaced mid-response.
+    data = latest_path.read_bytes()
+    return Response(content=data, media_type="image/jpeg", headers=headers)
 
 
 @router.get("/frame-meta/{godown_id}/{camera_id}")

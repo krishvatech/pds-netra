@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -212,7 +213,12 @@ def _get_embedding_fn() -> Optional[Callable[[str], list[float]]]:
     if _embedding_fn_attempted:
         return _embedding_fn
     _embedding_fn_attempted = True
-    edge_path = Path(__file__).resolve().parents[3] / "pds-netra-edge"
+    # Allow override when edge repo isn't a sibling of backend.
+    edge_repo_override = os.getenv("EDGE_REPO_PATH")
+    if edge_repo_override:
+        edge_path = Path(edge_repo_override).expanduser()
+    else:
+        edge_path = Path(__file__).resolve().parents[3] / "pds-netra-edge"
     if not edge_path.exists():
         return None
     if str(edge_path) not in sys.path:
