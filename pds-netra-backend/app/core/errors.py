@@ -43,6 +43,10 @@ def safe_json_load(path: str | Path, default: T, *, logger: logging.Logger | Non
     try:
         with Path(path).open("r", encoding="utf-8") as f:
             return json.load(f)
+    except FileNotFoundError:
+        # Missing file is a common first-run state for file-backed stores.
+        # Return default quietly instead of polluting logs with tracebacks.
+        return default
     except Exception as exc:
         if logger:
             log_exception(logger, "JSON load failed", extra={"path": str(path), **(context or {})}, exc=exc)
