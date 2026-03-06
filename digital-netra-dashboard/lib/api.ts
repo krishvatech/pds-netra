@@ -3,6 +3,9 @@ import type {
   Camera,
   CameraCreate,
   CameraUpdate,
+  EdgeDevice,
+  EdgeDeviceCreate,
+  EdgeDeviceUpdate,
   EmailCheckResponse,
   LoginResponse,
   PasswordVerifyResponse,
@@ -147,6 +150,36 @@ export async function updateCamera(id: string, payload: CameraUpdate): Promise<C
 
 export async function deleteCamera(id: string): Promise<void> {
   await apiFetch(`/cameras/${id}`, { method: 'DELETE' });
+}
+
+export async function approveCamera(id: string, edgeId: string): Promise<Camera> {
+  return apiFetch<Camera>(`/cameras/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ edge_id: edgeId })
+  });
+}
+
+export async function getEdgeDevices(userId?: string): Promise<EdgeDevice[]> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+  return apiFetch<EdgeDevice[]>(`/edge-devices${params}`);
+}
+
+export async function createEdgeDevice(payload: EdgeDeviceCreate): Promise<EdgeDevice> {
+  return apiFetch<EdgeDevice>('/edge-devices', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateEdgeDevice(id: string, payload: EdgeDeviceUpdate): Promise<EdgeDevice> {
+  return apiFetch<EdgeDevice>(`/edge-devices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteEdgeDevice(id: string): Promise<void> {
+  await apiFetch(`/edge-devices/${id}`, { method: 'DELETE' });
 }
 
 export async function getRuleTypes(): Promise<RuleType[]> {

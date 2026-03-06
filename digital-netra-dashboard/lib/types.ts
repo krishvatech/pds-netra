@@ -41,6 +41,7 @@ export interface Camera {
   role: string;
   rtsp_url: string;
   is_active: boolean;
+  approval_status: string;
   user_id: string;
   owner_first_name?: string | null;
   owner_last_name?: string | null;
@@ -54,7 +55,6 @@ export interface CameraCreate {
   role: string;
   rtsp_url: string;
   is_active: boolean;
-  edge_id?: string | null;
 }
 
 export interface CameraUpdate {
@@ -62,8 +62,39 @@ export interface CameraUpdate {
   role?: string;
   rtsp_url?: string;
   is_active?: boolean;
-  edge_id?: string | null;
-  }
+}
+
+export interface EdgeDevice {
+  id: string;
+  name: string;
+  api_key: string;
+  is_active: boolean;
+  location: string;
+  ip: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EdgeDeviceCreate {
+  name: string;
+  api_key: string;
+  is_active: boolean;
+  location: string;
+  ip: string;
+  password: string;
+  user_id: string;
+}
+
+export interface EdgeDeviceUpdate {
+  name?: string;
+  api_key?: string;
+  is_active?: boolean;
+  location?: string;
+  ip?: string;
+  password?: string;
+  user_id?: string;
+}
 
 export interface RuleType {
   id: string;

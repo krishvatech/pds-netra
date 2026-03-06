@@ -81,11 +81,15 @@ def _get_camera_or_404(db: Session, camera_id: uuid.UUID, user_id: uuid.UUID | N
 def list_live_cameras(request: Request, db: Session = Depends(get_db)):
     edge = _edge_auth(request, db)
     if edge:
-        query = select(Camera).where(Camera.is_active.is_(True), Camera.edge_id == edge.id)
+        query = select(Camera).where(
+            Camera.is_active.is_(True),
+            Camera.approval_status == "approved",
+            Camera.edge_id == edge.id,
+        )
         return db.execute(query.order_by(Camera.created_at.desc())).scalars().all()
 
     user_id, is_admin = _get_user_context(request)
-    query = select(Camera).where(Camera.is_active.is_(True))
+    query = select(Camera).where(Camera.is_active.is_(True), Camera.approval_status == "approved")
     if not is_admin:
         query = query.where(Camera.user_id == user_id)
     return db.execute(query.order_by(Camera.created_at.desc())).scalars().all()
@@ -101,11 +105,15 @@ def upload_live_frame(
     edge = _edge_auth(request, db)
     if edge:
         camera = _get_camera_or_404(db, camera_id, None, True)
+        if camera.approval_status != "approved":
+            raise HTTPException(status_code=403, detail="camera_not_approved")
         if camera.edge_id != edge.id:
             raise HTTPException(status_code=403, detail="camera_not_allowed")
     else:
         user_id, is_admin = _get_user_context(request)
-        _get_camera_or_404(db, camera_id, user_id, is_admin)
+        camera = _get_camera_or_404(db, camera_id, user_id, is_admin)
+        if camera.approval_status != "approved":
+            raise HTTPException(status_code=403, detail="camera_not_approved")
 
     live_root = Path(settings.live_dir)
     live_root.mkdir(parents=True, exist_ok=True)
@@ -137,11 +145,15 @@ def get_live_frame(camera_id: uuid.UUID, request: Request, db: Session = Depends
     edge = _edge_auth(request, db)
     if edge:
         camera = _get_camera_or_404(db, camera_id, None, True)
+        if camera.approval_status != "approved":
+            raise HTTPException(status_code=403, detail="camera_not_approved")
         if camera.edge_id != edge.id:
             raise HTTPException(status_code=403, detail="camera_not_allowed")
     else:
         user_id, is_admin = _get_user_context(request)
-        _get_camera_or_404(db, camera_id, user_id, is_admin)
+        camera = _get_camera_or_404(db, camera_id, user_id, is_admin)
+        if camera.approval_status != "approved":
+            raise HTTPException(status_code=403, detail="camera_not_approved")
 
     live_root = Path(settings.live_dir)
     frame_path = live_latest_path(live_root, camera_id)

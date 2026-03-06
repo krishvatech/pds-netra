@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,8 @@ from app.core.db import get_db
 from app.core.security import ExpiredSignatureError, InvalidTokenError, decode_access_token
 from app.models.app_user import AppUser
 from app.models.camera import Camera
-from app.schemas.camera import CameraCreate, CameraOut, CameraUpdate
+from app.models.edge_device import EdgeDevice
+from app.schemas.camera import CameraApprove, CameraCreate, CameraOut, CameraUpdate
 
 router = APIRouter(redirect_slashes=False)
 SESSION_COOKIE = "dn_session"
@@ -85,16 +86,27 @@ def _get_camera_or_404(db: Session, camera_id: uuid.UUID, user_id: uuid.UUID) ->
 
 
 @router.get("", response_model=list[CameraOut])
-def list_cameras(request: Request, db: Session = Depends(get_db)):
+def list_cameras(
+    request: Request,
+    status: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
     user_id, is_admin = _get_auth_context(request)
     query = select(Camera).order_by(Camera.created_at.desc())
+    if status:
+        query = query.where(Camera.approval_status == status.strip())
     if not is_admin:
         query = query.where(Camera.user_id == user_id)
     if is_admin:
-        admin_rows = db.execute(
+        admin_query = (
             select(Camera, AppUser.first_name, AppUser.last_name)
             .join(AppUser, AppUser.id == Camera.user_id)
             .order_by(Camera.created_at.desc())
+        )
+        if status:
+            admin_query = admin_query.where(Camera.approval_status == status.strip())
+        admin_rows = db.execute(
+            admin_query
         ).all()
         return [
             _serialize_camera(camera, True, first_name, last_name) for camera, first_name, last_name in admin_rows
@@ -113,6 +125,7 @@ def create_camera(payload: CameraCreate, request: Request, db: Session = Depends
         role=payload.role.strip(),
         rtsp_url=payload.rtsp_url.strip(),
         is_active=payload.is_active,
+        approval_status="pending",
         user_id=user_id,
     )
     db.add(camera)
@@ -153,6 +166,31 @@ def update_camera(camera_id: uuid.UUID, payload: CameraUpdate, request: Request,
     if payload.is_active is not None:
         camera.is_active = payload.is_active
 
+    db.commit()
+    db.refresh(camera)
+    return camera
+
+
+@router.post("/{camera_id}/approve", response_model=CameraOut)
+def approve_camera(camera_id: uuid.UUID, payload: CameraApprove, request: Request, db: Session = Depends(get_db)):
+    _, is_admin = _get_auth_context(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="admin_only")
+
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(status_code=404, detail="camera_not_found")
+
+    edge = db.get(EdgeDevice, payload.edge_id)
+    if not edge:
+        raise HTTPException(status_code=404, detail="edge_not_found")
+    if not edge.is_active:
+        raise HTTPException(status_code=400, detail="edge_inactive")
+    if edge.user_id != camera.user_id:
+        raise HTTPException(status_code=400, detail="edge_user_mismatch")
+
+    camera.edge_id = edge.id
+    camera.approval_status = "approved"
     db.commit()
     db.refresh(camera)
     return camera

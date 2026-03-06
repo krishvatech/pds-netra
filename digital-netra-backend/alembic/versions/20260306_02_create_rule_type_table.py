@@ -1,7 +1,7 @@
 """create rule_type table
 
-Revision ID: 20260306_01
-Revises: 20260305_03
+Revision ID: 20260306_02
+Revises: 20260306_01
 Create Date: 2026-03-06
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "20260306_01"
-down_revision: Union[str, Sequence[str], None] = "20260305_03"
+revision: str = "20260306_02"
+down_revision: Union[str, Sequence[str], None] = "20260306_01"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

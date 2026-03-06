@@ -1,4 +1,4 @@
-import { Camera, LayoutGrid, Settings, Users } from 'lucide-react';
+import { Camera, LayoutGrid, Server, Settings, Users } from 'lucide-react';
 
 export type NavItem = {
   href: string;
@@ -10,6 +10,7 @@ export type NavItem = {
 export const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   { href: '/dashboard/cameras', label: 'Cameras', icon: Camera },
+  { href: '/dashboard/edge-devices', label: 'Edge Devices', icon: Server, adminOnly: true },
   { href: '/dashboard/users', label: 'Users', icon: Users, adminOnly: true },
   { href: '/dashboard/rule-types', label: 'Rule Types', icon: Settings, adminOnly: true }
 ];

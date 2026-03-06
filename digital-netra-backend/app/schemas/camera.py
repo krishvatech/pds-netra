@@ -20,13 +20,19 @@ class CameraUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class CameraApprove(BaseModel):
+    edge_id: UUID
+
+
 class CameraOut(BaseModel):
     id: UUID
     camera_name: str
     role: str
     rtsp_url: str
     is_active: bool
+    approval_status: str
     user_id: UUID
+    edge_id: UUID | None = None
     owner_first_name: str | None = None
     owner_last_name: str | None = None
     created_at: datetime
