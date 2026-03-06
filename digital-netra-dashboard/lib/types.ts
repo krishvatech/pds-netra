@@ -44,6 +44,7 @@ export interface Camera {
   user_id: string;
   owner_first_name?: string | null;
   owner_last_name?: string | null;
+  edge_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +54,7 @@ export interface CameraCreate {
   role: string;
   rtsp_url: string;
   is_active: boolean;
+  edge_id?: string | null;
 }
 
 export interface CameraUpdate {
@@ -60,7 +62,8 @@ export interface CameraUpdate {
   role?: string;
   rtsp_url?: string;
   is_active?: boolean;
-}
+  edge_id?: string | null;
+  }
 
 export interface RuleType {
   id: string;

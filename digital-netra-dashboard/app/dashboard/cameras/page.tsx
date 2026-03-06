@@ -119,7 +119,8 @@ export default function CamerasPage() {
       camera_name: camera.camera_name,
       role: camera.role,
       rtsp_url: camera.rtsp_url,
-      is_active: camera.is_active
+      is_active: camera.is_active,
+      edge_id: camera.edge_id || null
     });
     setActiveCamera(camera);
     setActionError(null);

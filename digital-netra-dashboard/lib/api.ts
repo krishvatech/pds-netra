@@ -170,3 +170,27 @@ export async function updateRuleType(id: string, payload: RuleTypeUpdate): Promi
 export async function deleteRuleType(id: string): Promise<void> {
   await apiFetch(`/rule-types/${id}`, { method: 'DELETE' });
 }
+
+export async function getLiveCameras(): Promise<Camera[]> {
+  return apiFetch<Camera[]>('/live');
+}
+
+export async function uploadFrame(cameraId: string, blob: Blob): Promise<void> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', blob, 'frame.jpg');
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const resp = await fetch(`/api/v1/live/frame/${cameraId}`, {
+    method: 'POST',
+    headers,
+    body: form,
+    credentials: 'include'
+  });
+
+  if (!resp.ok && resp.status !== 204) {
+    const body = await resp.json().catch(() => ({}));
+    throw new ApiError(resp.status, body);
+  }
+}
