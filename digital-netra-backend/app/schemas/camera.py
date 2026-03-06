@@ -11,6 +11,7 @@ class CameraCreate(BaseModel):
     role: str = Field(min_length=1, max_length=64)
     rtsp_url: str = Field(min_length=1, max_length=512)
     is_active: bool = True
+    user_id: UUID | None = None
 
 
 class CameraUpdate(BaseModel):

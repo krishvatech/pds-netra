@@ -74,6 +74,26 @@ class AccountUpdateIn(BaseModel):
         return self
 
 
+class AdminUserUpdateIn(BaseModel):
+    first_name: str | None = Field(default=None, max_length=128)
+    last_name: str | None = Field(default=None, max_length=128)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=15)
+    password: str | None = None
+    confirm_password: str | None = None
+    is_admin: bool | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_passwords_match(self) -> "AdminUserUpdateIn":
+        if self.password or self.confirm_password:
+            if not self.password or not self.confirm_password:
+                raise ValueError("Both password fields are required")
+            if self.password != self.confirm_password:
+                raise ValueError("Passwords do not match")
+        return self
+
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

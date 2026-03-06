@@ -1,5 +1,6 @@
 import { clearSession, getToken } from '@/lib/auth';
 import type {
+  AdminUserUpdate,
   Camera,
   CameraCreate,
   CameraUpdate,
@@ -9,9 +10,12 @@ import type {
   EmailCheckResponse,
   LoginResponse,
   PasswordVerifyResponse,
+  Rule,
+  RuleCreate,
   RuleType,
   RuleTypeCreate,
   RuleTypeUpdate,
+  RuleUpdate,
   SessionResponse,
   UserRuleType,
   User,
@@ -113,8 +117,19 @@ export async function getUsers(): Promise<User[]> {
   return apiFetch<User[]>('/auth/users');
 }
 
+export async function getUser(userId: string): Promise<User> {
+  return apiFetch<User>(`/auth/users/${userId}`);
+}
+
 export async function updateAccount(payload: AccountUpdateInput): Promise<User> {
   return apiFetch<User>('/auth/account', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUser(userId: string, payload: AdminUserUpdate): Promise<User> {
+  return apiFetch<User>(`/auth/users/${userId}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
   });
@@ -132,8 +147,12 @@ export async function checkEmail(email: string): Promise<EmailCheckResponse> {
   return apiFetch<EmailCheckResponse>(`/auth/check-email?${params.toString()}`);
 }
 
-export async function getCameras(): Promise<Camera[]> {
-  return apiFetch<Camera[]>('/cameras');
+export async function getCameras(params?: { status?: string; userId?: string }): Promise<Camera[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set('status', params.status);
+  if (params?.userId) search.set('user_id', params.userId);
+  const suffix = search.toString();
+  return apiFetch<Camera[]>(`/cameras${suffix ? `?${suffix}` : ''}`);
 }
 
 export async function createCamera(payload: CameraCreate): Promise<Camera> {
@@ -253,6 +272,28 @@ export async function updateZone(
 
 export async function deleteZone(cameraId: string, zoneId: string): Promise<void> {
   await apiFetch(`/cameras/${cameraId}/zones/${zoneId}`, { method: 'DELETE' });
+}
+
+export async function getRules(zoneId: string): Promise<Rule[]> {
+  return apiFetch<Rule[]>(`/zones/${zoneId}/rules`);
+}
+
+export async function createRule(zoneId: string, data: Omit<RuleCreate, 'zone_id'>): Promise<Rule> {
+  return apiFetch<Rule>(`/zones/${zoneId}/rules`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, zone_id: zoneId })
+  });
+}
+
+export async function updateRule(zoneId: string, ruleId: string, data: RuleUpdate): Promise<Rule> {
+  return apiFetch<Rule>(`/zones/${zoneId}/rules/${ruleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteRule(zoneId: string, ruleId: string): Promise<void> {
+  await apiFetch(`/zones/${zoneId}/rules/${ruleId}`, { method: 'DELETE' });
 }
 
 export async function uploadFrame(cameraId: string, blob: Blob): Promise<void> {

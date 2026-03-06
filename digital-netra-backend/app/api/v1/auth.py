@@ -21,6 +21,7 @@ from app.core.security import (
 )
 from app.models.app_user import AppUser
 from app.schemas.auth import (
+    AdminUserUpdateIn,
     AccountUpdateIn,
     EmailCheckResponse,
     LoginIn,
@@ -65,6 +66,13 @@ def _get_current_user(request: Request, db: Session) -> AppUser:
     user = db.get(AppUser, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="user_not_found")
+    return user
+
+
+def _get_admin_user(request: Request, db: Session) -> AppUser:
+    user = _get_current_user(request, db)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin_only")
     return user
 
 
@@ -160,12 +168,68 @@ def get_account(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(request: Request, db: Session = Depends(get_db)):
-    user = _get_current_user(request, db)
-    if not user.is_admin:
-        raise HTTPException(status_code=403, detail="admin_only")
+    _get_admin_user(request, db)
 
     users = db.execute(select(AppUser).order_by(AppUser.created_at.desc())).scalars().all()
     return [UserOut.model_validate(record) for record in users]
+
+
+@router.get("/users/{user_id}", response_model=UserOut)
+def get_user(user_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    _get_admin_user(request, db)
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return UserOut.model_validate(user)
+
+
+@router.put("/users/{user_id}", response_model=UserOut)
+def update_user(user_id: uuid.UUID, payload: AdminUserUpdateIn, request: Request, db: Session = Depends(get_db)):
+    admin = _get_admin_user(request, db)
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    if user.id == admin.id:
+        if payload.is_active is False:
+            raise HTTPException(status_code=403, detail="self_deactivate_not_allowed")
+        if payload.is_admin is False:
+            raise HTTPException(status_code=403, detail="self_demote_not_allowed")
+
+    if payload.email:
+        normalized_email = payload.email.strip().lower()
+        exists = db.execute(
+            select(AppUser.id).where(func.lower(AppUser.email) == normalized_email, AppUser.id != user.id)
+        ).scalars().first()
+        if exists:
+            raise HTTPException(status_code=409, detail="email_taken")
+        user.email = normalized_email
+
+    if payload.first_name is not None:
+        user.first_name = payload.first_name.strip()
+    if payload.last_name is not None:
+        user.last_name = payload.last_name.strip()
+    if payload.phone is not None:
+        user.phone = payload.phone.strip() or None
+
+    if payload.password:
+        password_errors = validate_password_strength(payload.password)
+        if password_errors:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "Password does not meet requirements", "rules": password_errors},
+            )
+        user.password_hash = hash_password(payload.password)
+
+    if payload.is_admin is not None:
+        user.is_admin = payload.is_admin
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
 
 
 @router.post("/verify-password", response_model=PasswordVerifyOut)

@@ -89,14 +89,15 @@ def _get_camera_or_404(db: Session, camera_id: uuid.UUID, user_id: uuid.UUID) ->
 def list_cameras(
     request: Request,
     status: str | None = Query(default=None),
+    user_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    user_id, is_admin = _get_auth_context(request)
+    auth_user_id, is_admin = _get_auth_context(request)
     query = select(Camera).order_by(Camera.created_at.desc())
     if status:
         query = query.where(Camera.approval_status == status.strip())
     if not is_admin:
-        query = query.where(Camera.user_id == user_id)
+        query = query.where(Camera.user_id == auth_user_id)
     if is_admin:
         admin_query = (
             select(Camera, AppUser.first_name, AppUser.last_name)
@@ -105,9 +106,9 @@ def list_cameras(
         )
         if status:
             admin_query = admin_query.where(Camera.approval_status == status.strip())
-        admin_rows = db.execute(
-            admin_query
-        ).all()
+        if user_id:
+            admin_query = admin_query.where(Camera.user_id == user_id)
+        admin_rows = db.execute(admin_query).all()
         return [
             _serialize_camera(camera, True, first_name, last_name) for camera, first_name, last_name in admin_rows
         ]
@@ -119,7 +120,12 @@ def list_cameras(
 def create_camera(payload: CameraCreate, request: Request, db: Session = Depends(get_db)):
     user_id, is_admin = _get_auth_context(request)
     if is_admin:
-        raise HTTPException(status_code=403, detail="admin_read_only")
+        if not payload.user_id:
+            raise HTTPException(status_code=400, detail="user_id_required")
+        owner = db.get(AppUser, payload.user_id)
+        if not owner:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        user_id = payload.user_id
     camera = Camera(
         camera_name=payload.camera_name.strip(),
         role=payload.role.strip(),
@@ -154,8 +160,11 @@ def get_camera(camera_id: uuid.UUID, request: Request, db: Session = Depends(get
 def update_camera(camera_id: uuid.UUID, payload: CameraUpdate, request: Request, db: Session = Depends(get_db)):
     user_id, is_admin = _get_auth_context(request)
     if is_admin:
-        raise HTTPException(status_code=403, detail="admin_read_only")
-    camera = _get_camera_or_404(db, camera_id, user_id)
+        camera = db.get(Camera, camera_id)
+        if not camera:
+            raise HTTPException(status_code=404, detail="camera_not_found")
+    else:
+        camera = _get_camera_or_404(db, camera_id, user_id)
 
     if payload.camera_name is not None:
         camera.camera_name = payload.camera_name.strip()
@@ -217,8 +226,11 @@ def unassign_camera(camera_id: uuid.UUID, request: Request, db: Session = Depend
 def delete_camera(camera_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     user_id, is_admin = _get_auth_context(request)
     if is_admin:
-        raise HTTPException(status_code=403, detail="admin_read_only")
-    camera = _get_camera_or_404(db, camera_id, user_id)
+        camera = db.get(Camera, camera_id)
+        if not camera:
+            raise HTTPException(status_code=404, detail="camera_not_found")
+    else:
+        camera = _get_camera_or_404(db, camera_id, user_id)
     db.delete(camera)
     db.commit()
     return None

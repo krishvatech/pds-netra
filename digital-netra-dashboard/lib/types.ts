@@ -9,6 +9,17 @@ export type User = {
   last_name: string;
 };
 
+export type AdminUserUpdate = {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string | null;
+  password?: string;
+  confirm_password?: string;
+  is_admin?: boolean;
+  is_active?: boolean;
+};
+
 export type LoginResponse = {
   access_token: string;
   token_type: 'bearer';
@@ -56,6 +67,7 @@ export interface CameraCreate {
   rtsp_url: string;
   is_active: boolean;
   edge_id?: string | null;
+  user_id?: string;
 }
 
 export interface CameraUpdate {
@@ -127,6 +139,26 @@ export interface RuleTypeUpdate {
   rule_type_name: string;
   rule_type_slug: string;
   model_name: string;
+}
+
+export interface Rule {
+  id: string;
+  zone_id: string;
+  rule_name: string;
+  rule_type_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuleCreate {
+  zone_id: string;
+  rule_name: string;
+  rule_type_id: string;
+}
+
+export interface RuleUpdate {
+  rule_name?: string;
+  rule_type_id?: string;
 }
 
 export interface UserRuleType {

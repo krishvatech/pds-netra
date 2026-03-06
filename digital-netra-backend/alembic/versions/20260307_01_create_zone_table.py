@@ -1,7 +1,7 @@
 """create zone table
 
 Revision ID: 20260307_01
-Revises: 20260306_01
+Revises: 20260306_04
 Create Date: 2026-03-07
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "20260307_01"
-down_revision: Union[str, Sequence[str], None] = "20260306_01"
+down_revision: Union[str, Sequence[str], None] = "20260306_04"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

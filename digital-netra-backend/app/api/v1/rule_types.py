@@ -10,6 +10,7 @@ from app.core.db import get_db
 from app.core.security import ExpiredSignatureError, InvalidTokenError, decode_access_token
 from app.models.app_user import AppUser
 from app.models.rule_type import RuleType
+from app.models.user_rule_type import UserRuleType
 from app.schemas.rule_type import RuleTypeCreate, RuleTypeOut, RuleTypeUpdate
 
 router = APIRouter(redirect_slashes=False)
@@ -50,6 +51,31 @@ def _get_admin_user(request: Request, db: Session) -> AppUser:
     return user
 
 
+def _get_user(request: Request, db: Session) -> AppUser:
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="missing_token")
+    try:
+        payload = decode_access_token(token)
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="token_expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="invalid_token")
+
+    raw_user_id = payload.get("user_id")
+    if not raw_user_id:
+        raise HTTPException(status_code=401, detail="invalid_token")
+    try:
+        user_id = uuid.UUID(str(raw_user_id))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="invalid_token")
+
+    user = db.get(AppUser, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="user_not_found")
+    return user
+
+
 def _normalize_payload(payload: RuleTypeCreate | RuleTypeUpdate) -> tuple[str, str, str]:
     name = payload.rule_type_name.strip()
     slug = payload.rule_type_slug.strip().lower()
@@ -68,8 +94,17 @@ def _get_rule_type_or_404(db: Session, rule_type_id: uuid.UUID) -> RuleType:
 
 @router.get("", response_model=list[RuleTypeOut])
 def list_rule_types(request: Request, db: Session = Depends(get_db)):
-    _get_admin_user(request, db)
-    return db.execute(select(RuleType).order_by(RuleType.created_at.desc())).scalars().all()
+    user = _get_user(request, db)
+    if user.is_admin:
+        return db.execute(select(RuleType).order_by(RuleType.created_at.desc())).scalars().all()
+
+    query = (
+        select(RuleType)
+        .join(UserRuleType, UserRuleType.rule_type_id == RuleType.id)
+        .where(UserRuleType.user_id == user.id)
+        .order_by(RuleType.created_at.desc())
+    )
+    return db.execute(query).scalars().all()
 
 
 @router.post("", response_model=RuleTypeOut, status_code=201)
