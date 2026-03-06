@@ -29,6 +29,7 @@ export default function RuleTypesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<RuleTypeUpdate>(EMPTY_FORM);
   const [formMode, setFormMode] = useState<FormMode>('create');
   const [activeRuleType, setActiveRuleType] = useState<RuleType | null>(null);
@@ -75,6 +76,7 @@ export default function RuleTypesPage() {
     setFormData(EMPTY_FORM);
     setActionError(null);
     setSuccess(null);
+    setShowForm(true);
   }
 
   function openEdit(ruleType: RuleType) {
@@ -88,6 +90,13 @@ export default function RuleTypesPage() {
     });
     setActionError(null);
     setSuccess(null);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    if (saving) return;
+    setShowForm(false);
+    setActionError(null);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -116,6 +125,7 @@ export default function RuleTypesPage() {
         setRuleTypes((prev) => [created, ...prev]);
         setFormData(EMPTY_FORM);
         setSuccess('Rule type created.');
+        setShowForm(false);
       } else if (activeRuleType) {
         const updated = await updateRuleType(activeRuleType.id, {
           rule_type_name: name,
@@ -127,6 +137,7 @@ export default function RuleTypesPage() {
         setActiveRuleType(null);
         setFormData(EMPTY_FORM);
         setSuccess('Rule type updated.');
+        setShowForm(false);
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -185,78 +196,36 @@ export default function RuleTypesPage() {
           <div className="hud-card w-full px-4 py-2 text-center text-xs text-slate-300 sm:w-auto">
             Total {totalCount}
           </div>
+          <button
+            type="button"
+            className="btn-primary w-full rounded-full px-5 py-2 text-center text-xs font-semibold uppercase tracking-[0.25em] sm:w-auto"
+            onClick={openCreate}
+          >
+            Add Rule Type
+          </button>
         </div>
       </div>
 
       {error && <AlertBox variant="error">{error}</AlertBox>}
-
-      <div className="hud-card p-6">
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="ruleTypeName">Rule type name</label>
-              <input
-                id="ruleTypeName"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="Fire detection"
-                value={formData.rule_type_name}
-                onChange={(event) => updateField('rule_type_name', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="ruleTypeSlug">Rule type slug</label>
-              <input
-                id="ruleTypeSlug"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="fire_detection"
-                value={formData.rule_type_slug}
-                onChange={(event) => updateField('rule_type_slug', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="modelName">Model name</label>
-              <input
-                id="modelName"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="FireDetector"
-                value={formData.model_name}
-                onChange={(event) => updateField('model_name', event.target.value)}
-              />
-            </div>
-          </div>
-
-          {actionError && <AlertBox variant="error">{actionError}</AlertBox>}
-          {success && <AlertBox variant="success">{success}</AlertBox>}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={saving}
-            >
-              {saving ? 'Saving…' : formMode === 'create' ? 'Add Rule Type' : 'Update Rule Type'}
-            </button>
-            {formMode === 'edit' && (
-              <button
-                type="button"
-                className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-200 hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={openCreate}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+      {!showForm && actionError && <AlertBox variant="error">{actionError}</AlertBox>}
+      {!showForm && success && <AlertBox variant="success">{success}</AlertBox>}
 
       {loading ? (
         <div className="hud-card p-6 text-sm text-slate-300">Loading rule types…</div>
       ) : ruleTypes.length === 0 ? (
-        <div className="hud-card p-6 text-sm text-slate-300">No rule types created yet.</div>
+        <div className="hud-card p-6">
+          <div className="text-lg font-semibold font-display">No rule types yet</div>
+          <div className="text-sm text-slate-400 mt-2">
+            Create your first rule type to organize detector logic.
+          </div>
+          <button
+            type="button"
+            className="btn-primary mt-4 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em]"
+            onClick={openCreate}
+          >
+            Add Rule Type
+          </button>
+        </div>
       ) : (
         <div className="table-shell table-shell-no-scroll hidden md:block">
           <table className="w-full table-fixed text-sm">
@@ -280,19 +249,29 @@ export default function RuleTypesPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:border-white/20 hover:bg-white/10"
+                        aria-label="Edit rule type"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                         onClick={() => openEdit(ruleType)}
                         disabled={saving}
                       >
-                        Edit
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
                       </button>
                       <button
                         type="button"
-                        className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs text-red-200 hover:border-red-500/60 hover:bg-red-500/20"
+                        aria-label="Delete rule type"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
                         onClick={() => handleDelete(ruleType)}
                         disabled={saving}
                       >
-                        Delete
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M6 6l1 14h10l1-14" />
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -315,23 +294,124 @@ export default function RuleTypesPage() {
               <div className="mt-4 flex items-center gap-2">
                 <button
                   type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:border-white/20 hover:bg-white/10"
+                  aria-label="Edit rule type"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                   onClick={() => openEdit(ruleType)}
                   disabled={saving}
                 >
-                  Edit
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs text-red-200 hover:border-red-500/60 hover:bg-red-500/20"
+                  aria-label="Delete rule type"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
                   onClick={() => handleDelete(ruleType)}
                   disabled={saving}
                 >
-                  Delete
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M6 6l1 14h10l1-14" />
+                  </svg>
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <div className="hud-card modal-shell p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  {formMode === 'create' ? 'New Rule Type' : 'Edit Rule Type'}
+                </div>
+                <div className="text-xl font-semibold font-display text-slate-100 mt-2">
+                  {formMode === 'create' ? 'Add rule type' : 'Update rule type'}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-slate-300 hover:border-white/30 hover:text-slate-100"
+                onClick={closeForm}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form className="modal-body mt-6 space-y-4" onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Rule type name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="Fire detection"
+                    value={formData.rule_type_name}
+                    onChange={(event) => updateField('rule_type_name', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Rule type slug
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="fire_detection"
+                    value={formData.rule_type_slug}
+                    onChange={(event) => updateField('rule_type_slug', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Model name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="FireDetector"
+                    value={formData.model_name}
+                    onChange={(event) => updateField('model_name', event.target.value)}
+                  />
+                </div>
+              </div>
+
+              {actionError && <AlertBox variant="error">{actionError}</AlertBox>}
+              {success && <AlertBox variant="success">{success}</AlertBox>}
+
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="submit"
+                  className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : formMode === 'create' ? 'Add Rule Type' : 'Update Rule Type'}
+                </button>
+                {formMode === 'edit' && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-200 hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={closeForm}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

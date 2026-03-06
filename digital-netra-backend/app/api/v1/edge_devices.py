@@ -58,13 +58,14 @@ def list_edge_devices(
     user_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    _, is_admin = _get_auth_context(request)
-    if not is_admin:
-        raise HTTPException(status_code=403, detail="admin_only")
+    auth_user_id, is_admin = _get_auth_context(request)
 
     query = select(EdgeDevice).order_by(EdgeDevice.created_at.desc())
-    if user_id:
-        query = query.where(EdgeDevice.user_id == user_id)
+    if is_admin:
+        if user_id:
+            query = query.where(EdgeDevice.user_id == user_id)
+    else:
+        query = query.where(EdgeDevice.user_id == auth_user_id)
     return db.execute(query).scalars().all()
 
 

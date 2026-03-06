@@ -159,6 +159,10 @@ export async function approveCamera(id: string, edgeId: string): Promise<Camera>
   });
 }
 
+export async function unassignCamera(id: string): Promise<Camera> {
+  return apiFetch<Camera>(`/cameras/${id}/unassign`, { method: 'POST' });
+}
+
 export async function getEdgeDevices(userId?: string): Promise<EdgeDevice[]> {
   const params = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
   return apiFetch<EdgeDevice[]>(`/edge-devices${params}`);

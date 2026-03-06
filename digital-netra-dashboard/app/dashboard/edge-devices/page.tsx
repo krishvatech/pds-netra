@@ -55,6 +55,7 @@ export default function EdgeDevicesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>('create');
   const [activeEdge, setActiveEdge] = useState<EdgeDevice | null>(null);
   const [formData, setFormData] = useState<EdgeForm>(EMPTY_FORM);
@@ -96,6 +97,12 @@ export default function EdgeDevicesPage() {
     users.forEach((user) => map.set(user.id, user));
     return map;
   }, [users]);
+  const assignableUsers = useMemo(() => users.filter((user) => !user.is_admin), [users]);
+  const isActiveEdgeAdmin = useMemo(() => {
+    if (!activeEdge) return false;
+    const user = userMap.get(activeEdge.user_id);
+    return Boolean(user?.is_admin);
+  }, [activeEdge, userMap]);
 
   function updateField<K extends keyof EdgeForm>(field: K, value: EdgeForm[K]) {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -108,6 +115,7 @@ export default function EdgeDevicesPage() {
     setFormData(EMPTY_FORM);
     setActionError(null);
     setSuccess(null);
+    setShowForm(true);
   }
 
   function openEdit(edge: EdgeDevice) {
@@ -125,6 +133,13 @@ export default function EdgeDevicesPage() {
     });
     setActionError(null);
     setSuccess(null);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    if (saving) return;
+    setShowForm(false);
+    setActionError(null);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -161,6 +176,7 @@ export default function EdgeDevicesPage() {
         setEdges((prev) => [created, ...prev]);
         setFormData(EMPTY_FORM);
         setSuccess('Edge device created.');
+        setShowForm(false);
       } else if (activeEdge) {
         const updatePayload: EdgeDeviceUpdate = { ...payloadBase };
         if (formData.password.trim()) {
@@ -172,6 +188,7 @@ export default function EdgeDevicesPage() {
         setActiveEdge(null);
         setFormData(EMPTY_FORM);
         setSuccess('Edge device updated.');
+        setShowForm(false);
       }
     } catch (err) {
       setActionError('Unable to save edge device. Please try again.');
@@ -220,147 +237,36 @@ export default function EdgeDevicesPage() {
           <div className="hud-card w-full px-4 py-2 text-center text-xs text-slate-300 sm:w-auto">
             Active {activeCount} / {totalCount}
           </div>
+          <button
+            type="button"
+            className="btn-primary w-full rounded-full px-5 py-2 text-center text-xs font-semibold uppercase tracking-[0.25em] sm:w-auto"
+            onClick={openCreate}
+          >
+            Add Edge Device
+          </button>
         </div>
       </div>
 
       {error && <AlertBox variant="error">{error}</AlertBox>}
-
-      <div className="hud-card p-6">
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgeName">Edge name</label>
-              <input
-                id="edgeName"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="Warehouse Edge 01"
-                value={formData.name}
-                onChange={(event) => updateField('name', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgeApiKey">API key</label>
-              <input
-                id="edgeApiKey"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="edge_live_key_123"
-                value={formData.api_key}
-                onChange={(event) => updateField('api_key', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgeLocation">Location</label>
-              <input
-                id="edgeLocation"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="Dock 3, Building A"
-                value={formData.location}
-                onChange={(event) => updateField('location', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgeIp">IP address</label>
-              <input
-                id="edgeIp"
-                type="text"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder="192.168.1.20"
-                value={formData.ip}
-                onChange={(event) => updateField('ip', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgePassword">
-                {formMode === 'create' ? 'Password' : 'Password (leave blank to keep unchanged)'}
-              </label>
-              <input
-                id="edgePassword"
-                type="password"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                placeholder={formMode === 'create' ? 'Enter device password' : '••••••'}
-                value={formData.password}
-                onChange={(event) => updateField('password', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="hud-label" htmlFor="edgeUser">Assign user</label>
-              <select
-                id="edgeUser"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
-                value={formData.user_id}
-                onChange={(event) => updateField('user_id', event.target.value)}
-              >
-                <option value="">Select user</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {formatUserName(user)} · {user.email}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className={[
-                'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
-                formData.is_active
-                  ? 'border-sky-300/60 bg-sky-300/10 text-sky-200'
-                  : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
-              ].join(' ')}
-              onClick={() => updateField('is_active', true)}
-              aria-pressed={formData.is_active}
-            >
-              Active
-            </button>
-            <button
-              type="button"
-              className={[
-                'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
-                !formData.is_active
-                  ? 'border-amber-300/60 bg-amber-300/10 text-amber-200'
-                  : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
-              ].join(' ')}
-              onClick={() => updateField('is_active', false)}
-              aria-pressed={!formData.is_active}
-            >
-              Inactive
-            </button>
-          </div>
-
-          {actionError && <AlertBox variant="error">{actionError}</AlertBox>}
-          {success && <AlertBox variant="success">{success}</AlertBox>}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={saving}
-            >
-              {saving ? 'Saving…' : formMode === 'create' ? 'Add Edge Device' : 'Update Edge Device'}
-            </button>
-            {formMode === 'edit' && (
-              <button
-                type="button"
-                className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-200 hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={openCreate}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+      {!showForm && actionError && <AlertBox variant="error">{actionError}</AlertBox>}
+      {!showForm && success && <AlertBox variant="success">{success}</AlertBox>}
 
       {loading ? (
         <div className="hud-card p-6 text-sm text-slate-300">Loading edge devices…</div>
       ) : edges.length === 0 ? (
-        <div className="hud-card p-6 text-sm text-slate-300">No edge devices created yet.</div>
+        <div className="hud-card p-6">
+          <div className="text-lg font-semibold font-display">No edge devices yet</div>
+          <div className="text-sm text-slate-400 mt-2">
+            Add your first edge gateway to link devices and operators.
+          </div>
+          <button
+            type="button"
+            className="btn-primary mt-4 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em]"
+            onClick={openCreate}
+          >
+            Add Edge Device
+          </button>
+        </div>
       ) : (
         <div className="table-shell table-shell-no-scroll hidden md:block">
           <table className="w-full table-fixed text-sm">
@@ -392,19 +298,29 @@ export default function EdgeDevicesPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:border-white/20 hover:bg-white/10"
+                        aria-label="Edit edge device"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                         onClick={() => openEdit(edge)}
                         disabled={saving}
                       >
-                        Edit
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
                       </button>
                       <button
                         type="button"
-                        className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs text-red-200 hover:border-red-500/60 hover:bg-red-500/20"
+                        aria-label="Delete edge device"
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
                         onClick={() => handleDelete(edge)}
                         disabled={saving}
                       >
-                        Delete
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M6 6l1 14h10l1-14" />
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -439,23 +355,204 @@ export default function EdgeDevicesPage() {
               <div className="mt-4 flex items-center gap-2">
                 <button
                   type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200 hover:border-white/20 hover:bg-white/10"
+                  aria-label="Edit edge device"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                   onClick={() => openEdit(edge)}
                   disabled={saving}
                 >
-                  Edit
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs text-red-200 hover:border-red-500/60 hover:bg-red-500/20"
+                  aria-label="Delete edge device"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-red-400/30 text-red-300 hover:border-red-400/60 hover:text-red-200"
                   onClick={() => handleDelete(edge)}
                   disabled={saving}
                 >
-                  Delete
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M6 6l1 14h10l1-14" />
+                  </svg>
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <div className="hud-card modal-shell p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  {formMode === 'create' ? 'New Edge Device' : 'Edit Edge Device'}
+                </div>
+                <div className="text-xl font-semibold font-display text-slate-100 mt-2">
+                  {formMode === 'create' ? 'Add edge device' : 'Update edge device'}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-slate-300 hover:border-white/30 hover:text-slate-100"
+                onClick={closeForm}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form className="modal-body mt-6 space-y-4" onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Edge name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="Warehouse Edge 01"
+                    value={formData.name}
+                    onChange={(event) => updateField('name', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    API key
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="edge_live_key_123"
+                    value={formData.api_key}
+                    onChange={(event) => updateField('api_key', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="Dock 3, Building A"
+                    value={formData.location}
+                    onChange={(event) => updateField('location', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    IP address
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder="192.168.1.20"
+                    value={formData.ip}
+                    onChange={(event) => updateField('ip', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    {formMode === 'create' ? 'Password' : 'Password (leave blank to keep unchanged)'}
+                  </label>
+                  <input
+                    type="password"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-400/70 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    placeholder={formMode === 'create' ? 'Enter device password' : '••••••'}
+                    value={formData.password}
+                    onChange={(event) => updateField('password', event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                    Assign user
+                  </label>
+                  <select
+                    className="hud-select"
+                    value={formData.user_id}
+                    onChange={(event) => updateField('user_id', event.target.value)}
+                  >
+                    <option value="">Select user</option>
+                    {isActiveEdgeAdmin && (
+                      <option value={activeEdge?.user_id} disabled>
+                        Admin user (reassign required)
+                      </option>
+                    )}
+                    {assignableUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {formatUserName(user)} · {user.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-300/80">
+                  Status
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className={[
+                      'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
+                      formData.is_active
+                        ? 'border-sky-300/60 bg-sky-300/10 text-sky-200'
+                        : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
+                    ].join(' ')}
+                    onClick={() => updateField('is_active', true)}
+                    aria-pressed={formData.is_active}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    className={[
+                      'px-4 py-2 text-xs uppercase tracking-[0.2em] rounded-full border transition',
+                      !formData.is_active
+                        ? 'border-amber-300/60 bg-amber-300/10 text-amber-200'
+                        : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/30'
+                    ].join(' ')}
+                    onClick={() => updateField('is_active', false)}
+                    aria-pressed={!formData.is_active}
+                  >
+                    Inactive
+                  </button>
+                </div>
+              </div>
+
+              {actionError && <AlertBox variant="error">{actionError}</AlertBox>}
+              {success && <AlertBox variant="success">{success}</AlertBox>}
+
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="submit"
+                  className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : formMode === 'create' ? 'Add Edge Device' : 'Update Edge Device'}
+                </button>
+                {formMode === 'edit' && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-200 hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={closeForm}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

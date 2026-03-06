@@ -5,7 +5,16 @@ import { useRouter } from 'next/navigation';
 import { AlertBox } from '@/components/ui/alert-box';
 import { getSessionUser } from '@/lib/auth';
 import type { Camera, CameraCreate, EdgeDevice, User } from '@/lib/types';
-import { approveCamera, createCamera, deleteCamera, getCameras, getEdgeDevices, updateCamera, verifyPassword } from '@/lib/api';
+import {
+  approveCamera,
+  createCamera,
+  deleteCamera,
+  getCameras,
+  getEdgeDevices,
+  unassignCamera,
+  updateCamera,
+  verifyPassword
+} from '@/lib/api';
 
 type FormMode = 'create' | 'edit';
 type RevealTarget = { type: 'camera'; id: string } | { type: 'form' };
@@ -44,7 +53,15 @@ function formatOwnerName(camera: Camera) {
 }
 
 function formatApprovalStatus(camera: Camera) {
-  return camera.approval_status === 'approved' ? 'Approved' : 'Pending approval';
+  if (camera.approval_status === 'approved') return 'Approved';
+  if (camera.approval_status === 'not_approved') return 'Not approved';
+  return 'Pending';
+}
+
+function approvalBadgeClass(status: string) {
+  if (status === 'approved') return 'sev-info';
+  if (status === 'not_approved') return 'sev-critical';
+  return 'sev-warning';
 }
 
 const EMPTY_FORM: CameraCreate = {
@@ -80,6 +97,9 @@ export default function CamerasPage() {
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [approvalSaving, setApprovalSaving] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalRemoving, setApprovalRemoving] = useState(false);
+  const [edges, setEdges] = useState<EdgeDevice[]>([]);
+  const [edgesLoading, setEdgesLoading] = useState(false);
 
   useEffect(() => {
     async function guard() {
@@ -90,6 +110,7 @@ export default function CamerasPage() {
       }
       setUser(sessionUser);
       await loadCameras();
+      await loadEdges();
     }
     guard();
   }, [router]);
@@ -107,11 +128,32 @@ export default function CamerasPage() {
     }
   }
 
+  async function loadEdges() {
+    setEdgesLoading(true);
+    try {
+      const data = await getEdgeDevices();
+      setEdges(data);
+    } catch (err) {
+      setEdges([]);
+    } finally {
+      setEdgesLoading(false);
+    }
+  }
+
   const activeCount = useMemo(() => cameras.filter((camera) => camera.is_active).length, [cameras]);
   const canManage = Boolean(user && !user.is_admin);
   const canReveal = canManage;
   const showOwner = Boolean(user?.is_admin);
   const canApprove = Boolean(user?.is_admin);
+  const showEdge = true;
+  const edgeMap = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
+
+  function formatEdgeName(camera: Camera) {
+    if (!camera.edge_id) return 'No edge';
+    if (edgesLoading) return 'Loading…';
+    const edge = edgeMap.get(camera.edge_id);
+    return edge ? edge.name : 'Edge unavailable';
+  }
 
   function openCreate() {
     if (!canManage) return;
@@ -194,13 +236,14 @@ export default function CamerasPage() {
     if (!canApprove) return;
     setApprovalTarget(camera);
     setApprovalEdges([]);
-    setApprovalEdgeId('');
+    const initialEdgeId = camera.edge_id ?? '';
+    setApprovalEdgeId(initialEdgeId);
     setApprovalError(null);
     setApprovalLoading(true);
     try {
       const edges = await getEdgeDevices(camera.user_id);
       setApprovalEdges(edges);
-      if (edges.length === 1) {
+      if (!initialEdgeId && edges.length === 1) {
         setApprovalEdgeId(edges[0].id);
       }
     } catch (err) {
@@ -215,6 +258,7 @@ export default function CamerasPage() {
     setApprovalEdges([]);
     setApprovalEdgeId('');
     setApprovalError(null);
+    setApprovalRemoving(false);
   }
 
   async function submitApprove(event: React.FormEvent<HTMLFormElement>) {
@@ -227,9 +271,24 @@ export default function CamerasPage() {
       setCameras((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       closeApprove();
     } catch (err) {
-      setApprovalError('Unable to approve camera. Please try again.');
+      setApprovalError('Unable to save edge assignment. Please try again.');
     } finally {
       setApprovalSaving(false);
+    }
+  }
+
+  async function submitUnassign() {
+    if (!approvalTarget) return;
+    setApprovalRemoving(true);
+    setApprovalError(null);
+    try {
+      const updated = await unassignCamera(approvalTarget.id);
+      setCameras((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      closeApprove();
+    } catch (err) {
+      setApprovalError('Unable to remove edge assignment. Please try again.');
+    } finally {
+      setApprovalRemoving(false);
     }
   }
 
@@ -353,11 +412,16 @@ export default function CamerasPage() {
                         User: <span className="text-slate-200">{formatOwnerName(camera)}</span>
                       </div>
                     )}
+                    {showEdge && (
+                      <div className="text-xs text-slate-400 mt-1">
+                        Edge: <span className="text-slate-200">{formatEdgeName(camera)}</span>
+                      </div>
+                    )}
                     <div className="mt-2">
                       <span
                         className={[
                           'hud-pill',
-                          camera.approval_status === 'approved' ? 'sev-info' : 'sev-warning'
+                          approvalBadgeClass(camera.approval_status)
                         ].join(' ')}
                       >
                         {formatApprovalStatus(camera)}
@@ -436,14 +500,18 @@ export default function CamerasPage() {
                     </button>
                   )}
                 </div>
-                {canApprove && camera.approval_status !== 'approved' && (
-                  <div className="mt-3">
+                {canApprove && (
+                  <div className="mt-3 flex items-center justify-end">
                     <button
                       type="button"
-                      className="btn-primary w-full rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em]"
+                      aria-label={camera.approval_status === 'approved' ? 'Change edge assignment' : 'Assign edge device'}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                       onClick={() => openApprove(camera)}
                     >
-                      Approve & Assign Edge
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
                     </button>
                   </div>
                 )}
@@ -457,10 +525,11 @@ export default function CamerasPage() {
                 <tr>
                   <th className="text-left px-6 w-[16%]">Name</th>
                   {showOwner && <th className="text-left px-6 w-[16%]">User</th>}
-                  <th className={['text-left px-6', showOwner ? 'w-[12%]' : 'w-[14%]'].join(' ')}>Role</th>
-                  <th className={['text-left px-6', showOwner ? 'w-[28%]' : 'w-[34%]'].join(' ')}>RTSP URL</th>
-                  <th className={['text-left px-6', showOwner ? 'w-[14%]' : 'w-[12%]'].join(' ')}>Approval</th>
-                  <th className={['text-left px-6', showOwner ? 'w-[10%]' : 'w-[10%]'].join(' ')}>Status</th>
+                  <th className={['text-left px-6', showOwner ? 'w-[10%]' : 'w-[14%]'].join(' ')}>Role</th>
+                  {showEdge && <th className="text-left px-6 w-[14%]">Edge</th>}
+                  <th className={['text-left px-6', showOwner ? 'w-[24%]' : 'w-[34%]'].join(' ')}>RTSP URL</th>
+                  <th className={['text-left px-6', showOwner ? 'w-[12%]' : 'w-[12%]'].join(' ')}>Approval</th>
+                  <th className={['text-left px-6', showOwner ? 'w-[8%]' : 'w-[10%]'].join(' ')}>Status</th>
                   {(canManage || canApprove) && <th className="text-right px-6 w-[12%]">Actions</th>}
                 </tr>
               </thead>
@@ -473,8 +542,13 @@ export default function CamerasPage() {
                         {formatOwnerName(camera)}
                       </td>
                     )}
-                    <td className={['px-6 text-slate-300', showOwner ? 'w-[12%]' : 'w-[14%]'].join(' ')}>{camera.role}</td>
-                    <td className={['px-6 text-slate-400', showOwner ? 'w-[28%]' : 'w-[34%]'].join(' ')}>
+                    <td className={['px-6 text-slate-300', showOwner ? 'w-[10%]' : 'w-[14%]'].join(' ')}>{camera.role}</td>
+                    {showEdge && (
+                      <td className="px-6 text-slate-300 w-[14%]">
+                        {formatEdgeName(camera)}
+                      </td>
+                    )}
+                    <td className={['px-6 text-slate-400', showOwner ? 'w-[24%]' : 'w-[34%]'].join(' ')}>
                       <div className="flex items-center gap-2">
                         <div className="w-full truncate">
                           {canReveal && revealedCameraIds[camera.id]
@@ -501,7 +575,7 @@ export default function CamerasPage() {
                       <span
                         className={[
                           'hud-pill w-full justify-center',
-                          camera.approval_status === 'approved' ? 'sev-info' : 'sev-warning'
+                          approvalBadgeClass(camera.approval_status)
                         ].join(' ')}
                       >
                         {formatApprovalStatus(camera)}
@@ -549,13 +623,17 @@ export default function CamerasPage() {
                               </button>
                             </>
                           )}
-                          {canApprove && camera.approval_status !== 'approved' && (
+                          {canApprove && (
                             <button
                               type="button"
-                              className="btn-primary rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em]"
+                              aria-label={camera.approval_status === 'approved' ? 'Change edge assignment' : 'Assign edge device'}
+                              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-slate-200 hover:border-white/30 hover:text-white"
                               onClick={() => openApprove(camera)}
                             >
-                              Approve
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
                             </button>
                           )}
                         </div>
@@ -753,9 +831,11 @@ export default function CamerasPage() {
           <div className="hud-card modal-shell p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">Camera approval</div>
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  {approvalTarget.approval_status === 'approved' ? 'Edge assignment' : 'Camera approval'}
+                </div>
                 <div className="text-xl font-semibold font-display text-slate-100 mt-2">
-                  Assign edge device
+                  {approvalTarget.approval_status === 'approved' ? 'Edit edge assignment' : 'Assign edge device'}
                 </div>
                 <div className="text-sm text-slate-300 mt-2">
                   Select an edge device for <span className="font-semibold">{approvalTarget.camera_name}</span>.
@@ -782,7 +862,7 @@ export default function CamerasPage() {
                     Edge device
                   </label>
                   <select
-                    className="w-full rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-100 shadow-inner focus:border-sky-300/60 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
+                    className="hud-select"
                     value={approvalEdgeId}
                     onChange={(event) => setApprovalEdgeId(event.target.value)}
                     disabled={approvalEdges.length === 0}
@@ -803,20 +883,44 @@ export default function CamerasPage() {
               {approvalError && <AlertBox variant="warning">{approvalError}</AlertBox>}
 
               <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+                {approvalTarget.edge_id && approvalTarget.approval_status === 'approved' && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-red-400/30 px-4 py-2 text-xs uppercase tracking-[0.2em] text-red-200 hover:border-red-400/60"
+                    onClick={submitUnassign}
+                    disabled={approvalSaving || approvalRemoving}
+                  >
+                    {approvalRemoving ? 'Removing…' : 'Remove edge'}
+                  </button>
+                )}
+                {!approvalTarget.edge_id && approvalTarget.approval_status !== 'not_approved' && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-red-400/30 px-4 py-2 text-xs uppercase tracking-[0.2em] text-red-200 hover:border-red-400/60"
+                    onClick={submitUnassign}
+                    disabled={approvalSaving || approvalRemoving}
+                  >
+                    {approvalRemoving ? 'Updating…' : 'Not approved'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="rounded-full border border-white/15 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-200 hover:border-white/30"
                   onClick={closeApprove}
-                  disabled={approvalSaving}
+                  disabled={approvalSaving || approvalRemoving}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="btn-primary rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.25em] disabled:opacity-60"
-                  disabled={approvalSaving || approvalLoading || approvalEdges.length === 0 || !approvalEdgeId}
+                  disabled={approvalSaving || approvalRemoving || approvalLoading || approvalEdges.length === 0 || !approvalEdgeId}
                 >
-                  {approvalSaving ? 'Approving…' : 'Approve camera'}
+                  {approvalSaving
+                    ? 'Saving…'
+                    : approvalTarget.approval_status === 'approved'
+                      ? 'Update edge'
+                      : 'Assign edge'}
                 </button>
               </div>
             </form>

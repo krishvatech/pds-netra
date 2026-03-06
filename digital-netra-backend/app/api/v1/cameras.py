@@ -196,6 +196,23 @@ def approve_camera(camera_id: uuid.UUID, payload: CameraApprove, request: Reques
     return camera
 
 
+@router.post("/{camera_id}/unassign", response_model=CameraOut)
+def unassign_camera(camera_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
+    _, is_admin = _get_auth_context(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="admin_only")
+
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(status_code=404, detail="camera_not_found")
+
+    camera.edge_id = None
+    camera.approval_status = "not_approved"
+    db.commit()
+    db.refresh(camera)
+    return camera
+
+
 @router.delete("/{camera_id}", status_code=204)
 def delete_camera(camera_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     user_id, is_admin = _get_auth_context(request)

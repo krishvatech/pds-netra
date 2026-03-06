@@ -83,6 +83,25 @@ a {
   color: inherit;
 }
 
+@layer base {
+  select {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background-color: rgba(15, 23, 42, 0.98);
+    color: #e2e8f0;
+  }
+
+  select option:checked,
+  select option:focus,
+  select option:hover {
+    background-color: rgba(30, 41, 59, 0.98);
+    color: #f8fafc;
+  }
+}
+
 @layer components {
   .app-shell {
     @apply min-h-screen relative overflow-x-hidden;
@@ -237,6 +256,36 @@ a {
     box-shadow: 0 20px 50px -40px rgba(15, 23, 42, 0.7);
     backdrop-filter: blur(18px);
     color: var(--ink);
+  }
+
+  .hud-select {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 10px 2.75rem 10px 16px;
+    font-size: 14px;
+    color: #e2e8f0;
+    box-shadow: inset 0 1px 6px rgba(15, 23, 42, 0.35);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 14px;
+  }
+
+  .hud-select:focus {
+    outline: none;
+    border-color: rgba(125, 211, 252, 0.6);
+    box-shadow:
+      inset 0 1px 6px rgba(15, 23, 42, 0.35),
+      0 0 0 2px rgba(125, 211, 252, 0.2);
+  }
+
+  .hud-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .glass-panel-strong {
